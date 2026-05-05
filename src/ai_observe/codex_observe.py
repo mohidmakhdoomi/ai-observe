@@ -84,9 +84,7 @@ def run(argv: list[str], env: dict[str, str]) -> int:
     forced_terminated = False
     old_handlers: dict[int, Callable | int | None] = {}
 
-    def _handler(signum: int, _frame) -> None:  # type: ignore[no-untyped-def]
-        nonlocal interrupted
-        interrupted = signum
+    def _forward(signum: int) -> None:
         if proc and proc.poll() is None:
             try:
                 os.killpg(proc.pid, signum)
@@ -98,9 +96,29 @@ def run(argv: list[str], env: dict[str, str]) -> int:
                 except OSError:
                     pass
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    def _interrupt_handler(signum: int, _frame) -> None:  # type: ignore[no-untyped-def]
+        nonlocal interrupted
+        interrupted = signum
+        _forward(signum)
+
+    def _terminal_handler(signum: int, _frame) -> None:  # type: ignore[no-untyped-def]
+        _forward(signum)
+        if signum == getattr(signal, "SIGTSTP", None):
+            os.kill(os.getpid(), signal.SIGSTOP)
+
+    signal_handlers: list[tuple[int, Callable]] = [
+        (signal.SIGINT, _interrupt_handler),
+        (signal.SIGTERM, _interrupt_handler),
+    ]
+    for name in ("SIGQUIT", "SIGWINCH", "SIGTSTP", "SIGCONT"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            handler = _interrupt_handler if name == "SIGQUIT" else _terminal_handler
+            signal_handlers.append((sig, handler))
+
+    for sig, handler in signal_handlers:
         old_handlers[sig] = signal.getsignal(sig)
-        signal.signal(sig, _handler)
+        signal.signal(sig, handler)
     try:
         try:
             verify_log_path_safe(logs.trace_path, logs.observe_dir)

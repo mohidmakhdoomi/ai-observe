@@ -103,6 +103,13 @@ class CodexObserveTests(unittest.TestCase):
                 sys.exit(1)
             if os.environ.get('FAKE_STRACE_SLEEP') == '1':
                 import signal, time
+                def mark(signum, frame):
+                    marker = os.environ.get('FAKE_STRACE_SIGNAL_FILE')
+                    if marker:
+                        with open(marker, 'a', encoding='utf-8') as fh:
+                            fh.write(str(signum) + '\n')
+                if hasattr(signal, 'SIGWINCH'):
+                    signal.signal(signal.SIGWINCH, mark)
                 signal.signal(signal.SIGTERM, signal.SIG_IGN)
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
                 time.sleep(30)
@@ -253,6 +260,7 @@ class CodexObserveTests(unittest.TestCase):
             self.make_fake_tools(root)
             real = root / "real-codex"
             env = os.environ.copy()
+            marker = root / "signals.txt"
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
                 "CODEV_OBSERVE_REAL_CODEX": str(real),
@@ -261,9 +269,16 @@ class CodexObserveTests(unittest.TestCase):
                 "CODEV_OBSERVE_QUIET": "1",
                 "CODEV_OBSERVE_SIGNAL_GRACE": "0.05",
                 "FAKE_STRACE_SLEEP": "1",
+                "FAKE_STRACE_SIGNAL_FILE": str(marker),
             })
             proc = subprocess.Popen([sys.executable, str(ROOT / "bin" / "codex")], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             time.sleep(0.3)
+            if hasattr(signal, "SIGWINCH"):
+                os.kill(proc.pid, signal.SIGWINCH)
+                deadline = time.time() + 2
+                while not marker.exists() and time.time() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(marker.exists(), "SIGWINCH was not forwarded to traced process group")
             proc.terminate()
             stdout, stderr = proc.communicate(timeout=5)
             self.assertEqual(proc.returncode, 128 + signal.SIGTERM, stderr)

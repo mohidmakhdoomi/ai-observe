@@ -138,6 +138,7 @@ Rejected for initial scope:
 - `fchdir`, inherited fds, fd reuse, and cwd races are best effort.
 - `io_uring`, `copy_file_range`, `sendfile`, and `splice` may be missed or under-attributed.
 - `strace` adds overhead and can perturb timing-sensitive sessions.
+- Wrapper runs traced process in separate process group, forwards SIGINT/SIGTERM/SIGQUIT plus interactive terminal signals SIGWINCH/SIGTSTP/SIGCONT where available, and escalates termination after a short grace period.
 
 ## Troubleshooting
 
