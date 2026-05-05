@@ -9,7 +9,8 @@ gates:
     status: approved
     approved_at: '2026-05-05T18:04:53.096Z'
   plan-approval:
-    status: pending
+    status: approved
+    approved_at: '2026-05-05T18:08:32.624Z'
   pr:
     status: pending
   verify-approval:
@@ -18,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-05T17:54:20.241Z'
-updated_at: '2026-05-05T18:04:53.097Z'
+updated_at: '2026-05-05T18:08:32.624Z'
