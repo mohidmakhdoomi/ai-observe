@@ -1,0 +1,2 @@
+# strace 6.8-style fixture, synthetic single-process `strace -ttt -yy` line
+1714932000.100001 creat("solo.txt", 0600) = 3</tmp/work/solo.txt>

@@ -1,0 +1,4 @@
+# strace 6.8-style fixture, derived synthetic from `strace -f -ttt -yy` format
+123 1714932000.000001 openat(AT_FDCWD, "made.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</tmp/work/made.txt>
+123 1714932000.000002 write(3</tmp/work/made.txt>, "x", 1) = 1
+123 1714932000.000003 close(3</tmp/work/made.txt>) = 0
