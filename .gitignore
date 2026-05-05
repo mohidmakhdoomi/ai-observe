@@ -14,3 +14,6 @@ dist/
 .DS_Store
 *.swp
 *.swo
+
+# ai-observe default logs (may contain secrets)
+.codev/observe/
