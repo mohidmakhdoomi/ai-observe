@@ -1,0 +1,7 @@
+{
+  "shell": {
+    "architect": "codex",
+    "builder": "codex",
+    "shell": "bash"
+  }
+}
