@@ -1,0 +1,32 @@
+I reviewed the spec against the actual repo files on disk:
+
+- `src/ai_observe/codex_observe.py`
+- `src/ai_observe/trace_parser.py`
+- `tests/test_codex_observe.py`
+- `tests/test_trace_parser.py`
+
+Overall, this is a strong spec: it is scoped well, implementation is technically feasible with the current architecture, and the proposed tests are mostly aligned with the existing codebase. The current parser already keeps state incrementally (`TraceParser.events`, `unfinished`, per-PID state), so adding a live feed path is realistic without changing the schema or syscall semantics. I also verified there are currently 27 existing tests across the two test modules, so that acceptance criterion is grounded.
+
+Main feedback: there are a few contradictions / underspecified behaviors that are important enough to fix before build work starts.
+
+**Highlights**
+- **Clarity/completeness:** generally good; goals, non-goals, and fallback behavior are well framed.
+- **Feasibility:** good. The current code does a single post-hoc parse/write today, and the parser structure is compatible with incremental feeding.
+- **Edge cases:** strong coverage overall, especially unfinished/resumed, partial lines, no-mutation sessions, and fallback.
+- **Security:** the spec correctly tries to preserve current log-path hardening. Good that it explicitly keeps the raw `.trace` flow and no pipe-based streaming.
+- **Testing:** solid, especially the combination of isolated `LiveTracer` tests plus end-to-end wrapper integration.
+
+The issues below are the ones I’d fix in the spec.
+
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong and feasible spec, but it has a few important contradictions and one race-prone fallback detail that should be clarified before implementation.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The spec promises byte-equivalent final JSONL, but the live-write example uses plain `json.dumps(...)`; current writers use `json.dumps(..., sort_keys=True, separators=(",", ":"))`. The spec should require the live path to reuse the exact same serialization format/helper, or relax the byte-equivalence claim.
+- The join-timeout fallback is underspecified and potentially unsafe: if the live thread is “abandoned” after timeout, it may still hold the `.jsonl` fd and continue writing while the main thread truncates/rebuilds the file, and a non-daemon thread could also block process exit. The spec should define the thread lifecycle explicitly: daemon vs non-daemon, whether the append handle is closed before fallback, and how concurrent writes are prevented.
+- The env-knob section is internally inconsistent. It says there are “Two internal/optional knobs,” but later introduces `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`. That knob needs to be listed with default/bounds, or removed from the spec.
+- Parser-failure semantics are inconsistent in two places: success criterion 5 says `.jsonl` should end as a zero-byte pre-created file, while the test-scenario bullet says confirm `.jsonl` “is not written.” Those should be reconciled to one contract.
+- Secondary failure behavior is still unclear for the hardest write-path case: if live append fails (e.g. disk full) and the post-hoc rewrite also fails, the spec says the underlying error should surface, but it does not define the expected exit-code/stderr/artifact contract. That should be made explicit so builders and reviewers know what “correct” means.

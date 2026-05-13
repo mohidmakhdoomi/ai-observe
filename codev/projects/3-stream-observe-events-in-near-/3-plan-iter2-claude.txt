@@ -1,0 +1,71 @@
+Let me read the key source files to verify the plan's assumptions about the codebase.Now let me check the docs file:I've read all four key source files, the docs, and the full plan + spec. Here's my assessment:
+
+## Plan Review
+
+### 1. Spec Coverage — ✅ Complete
+
+Every functional MUST (1–6), SHOULD (7–10), and non-functional (11–12) criterion from the spec maps to a concrete task or test in the plan. The acceptance criteria mapping in the spec is fully reflected. No phases go beyond spec scope.
+
+### 2. Phase Breakdown — ✅ Well-structured
+
+- **Phase 1** is appropriately scoped: pure internal refactoring with zero behavior change. The `dump_event` extraction, `feed_line` API, and two `safe_*` helpers are clean building blocks. The decision to rewrite `parse_lines` as a loop over `feed_line` is a good equivalence proof strategy.
+- **Phase 2** is large but cohesive — `LiveTracer` and `run()` integration can't be meaningfully tested in isolation from each other. The 15+ tests are justified by the complexity of the failure matrix.
+- **Phase 3** is trivially scoped (docs-only, depends on phase 2).
+- Dependencies are correct and each phase can be committed independently.
+
+### 3. Technical Approach — ✅ Sound, verified against codebase
+
+Verified against actual code:
+
+- **`dump_event` extraction** (plan task 1.1): The serialization format `json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"` matches exactly what's on line 85 of `trace_parser.py` (`write_jsonl`) and line 224 of `codex_observe.py` (`safe_write_jsonl`). Extracting this is correct.
+
+- **`feed_line` with `_emitted` cursor** (plan task 1.2): Reusing `self.events` list and slicing from a cursor is clean. The existing `_parse_line` already appends to `self.events` (line 161), so `feed_line` wrapping it and returning the delta works naturally.
+
+- **`safe_append_jsonl_handle`** (plan task 1.3): Uses `verify_log_path_safe` (line 206-209) — confirmed it exists and checks both parent containment and symlink rejection. The `O_NOFOLLOW` pattern via `getattr(os, ..., 0)` matches the existing `safe_write_jsonl` convention (line 215-216). Good.
+
+- **`safe_open_trace_read`** (plan task 1.4): Uses `os.open` + `os.fdopen` rather than plain `open()`, which is more secure per the spec's path-hardening intent. The `errors="replace"` matches the spec's requirement for tolerating partial multi-byte sequences.
+
+- **`LiveTracer._run()` loop** (plan task 2.2): The `pending` buffer + split-on-newline + carry-fragment approach is correct for tailing a growing file. The EOF drain when `stop_event` is set (flushing `pending` as a final line) correctly matches `parse_lines` behavior — verified that `parse_lines` (line 112-123) iterates a file-object which yields the last line even without trailing `\n`.
+
+- **`run()` integration** (plan task 2.3): All five outcome branches (clean, ParserFailure, non-PF error, timeout, live-disabled) are specified. The plan correctly identifies that `TraceParser` must be instantiated with the same constructor args as the post-hoc path (lines 143-153 of `codex_observe.py`). The `safe_write_jsonl(jsonl_path, [], observe_dir)` for truncating `.jsonl` on ParserFailure is correct per spec.
+
+- **Thread as daemon=True**: Correct choice — matches the spec's "stuck thread can never block process exit" requirement.
+
+### 4. Testability — ✅ Comprehensive
+
+The test matrix covers every spec scenario. Specific strengths:
+
+- **`test_live_parse_disabled_no_thread_started`** uses structural assertion (monkeypatching constructor) rather than just content — this is a high-quality test design choice.
+- **`test_join_timeout_warns_and_preserves_partial_jsonl`** monkeypatches the thread to ignore `stop_event` — correct approach to simulate a stuck thread without actual blocking.
+- **`test_double_write_failure_cascade`** covers the edge case where both live and post-hoc paths fail — this maps to the spec's `.jsonl` write-fail-mid-stream failure table entry.
+- The end-to-end test in `test_codex_observe.py` extends the existing `make_fake_tools` pattern (verified at line 92-131) — good reuse.
+
+One observation: **`test_partial_trailing_line_flushed_at_stop`** tests the case where a final line has no trailing `\n`. This matches the spec's requirement that the live tailer flush `pending` at stop, and mirrors post-hoc behavior where `parse_lines` gets the last line from the file iterator without `\n`.
+
+### 5. Risk Assessment — ✅ Thorough
+
+All identified risks have concrete mitigations:
+- Serialization drift → `dump_event` shared helper + byte-for-byte test
+- Symlink gap → same `verify_log_path_safe` + parallel test
+- Thread fd leak → `finally` block + join-before-fallback ordering
+- Straddle pairs → shared `TraceParser` instance + dedicated test
+- Trailing line → explicit flush at stop + test
+- Env-knob parse → swallow all errors + validation tests
+- Timing flakiness → small practical sleeps + "at least one event" assertions
+
+### 6. Minor Observations (not blocking)
+
+1. **Phase 2 size**: ~16 tests + LiveTracer + run() changes is substantial. A builder should read the full plan before starting. The plan is detailed enough to follow, but it's a lot of surface area for one commit. Consider whether the builder should commit LiveTracer class + unit tests, then run() integration + integration tests, as two sub-commits.
+
+2. **`os.chmod` on live-appended `.jsonl`**: The plan doesn't mention calling `os.chmod(path, 0o600)` after live append, but this is fine — `prepare_logs` already creates `.jsonl` with mode `0o600` via `exclusive_touch` (line 361-362), and `O_APPEND` reopening doesn't change permissions.
+
+3. **Plan says "all 27 existing tests"** — verified: `test_codex_observe.py` has 11 test methods (one is the real-strace skip), `test_trace_parser.py` has 13 test methods. That's 24 test methods, but with `subTest` iterations in several tests, the actual test count reported by unittest could differ. The plan should say "all existing tests" rather than hardcoding "27" — but this is cosmetic.
+
+---
+VERDICT: APPROVE
+SUMMARY: Extremely detailed plan with full spec coverage, sound technical approach verified against actual codebase, comprehensive test strategy, and thorough risk mitigation.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

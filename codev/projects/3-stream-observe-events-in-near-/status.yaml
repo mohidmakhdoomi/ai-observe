@@ -1,0 +1,85 @@
+id: '3'
+title: stream-observe-events-in-near-
+protocol: spir
+phase: review
+plan_phases:
+  - id: phase-1-helpers
+    status: complete
+  - id: phase-2-live-tracer
+    status: complete
+  - id: phase-3-docs
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-05-13T03:06:54.443Z'
+    approved_at: '2026-05-13T03:07:55.566Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-05-13T05:17:41.118Z'
+    approved_at: '2026-05-13T05:18:46.708Z'
+  pr:
+    status: approved
+    requested_at: '2026-05-13T05:50:11.427Z'
+    approved_at: '2026-05-13T16:21:39.369Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: true
+history:
+  - iteration: 1
+    plan_phase: phase-1-helpers
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-gemini.txt
+      - model: codex
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase-2-live-tracer
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase-3-docs
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-gemini.txt
+      - model: codex
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-claude.txt
+started_at: '2026-05-13T01:11:05.630Z'
+updated_at: '2026-05-13T16:21:39.369Z'
+pr_history:
+  - phase: review
+    pr_number: 4
+    branch: builder/spir-3
+    created_at: '2026-05-13T05:45:32.346Z'

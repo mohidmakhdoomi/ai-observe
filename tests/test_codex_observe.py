@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 
@@ -254,6 +255,60 @@ class CodexObserveTests(unittest.TestCase):
             with self.assertRaises(codex_observe.ObserveError):
                 codex_observe.safe_write_jsonl(path, [], obs)
 
+    def test_safe_append_jsonl_handle_rejects_symlink_swap(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            obs = root / "obs"
+            obs.mkdir()
+            target = root / "target"
+            target.write_text("", encoding="utf-8")
+            path = obs / "s.jsonl"
+            path.symlink_to(target)
+            with self.assertRaises(codex_observe.ObserveError):
+                codex_observe.safe_append_jsonl_handle(path, obs)
+            self.assertEqual(target.read_text(encoding="utf-8"), "")
+
+    def test_safe_append_jsonl_handle_appends_without_truncating(self):
+        with tempfile.TemporaryDirectory() as td:
+            obs = Path(td) / "obs"
+            obs.mkdir()
+            path = obs / "s.jsonl"
+            codex_observe.exclusive_touch(path)
+            path.write_text("first\n", encoding="utf-8")
+            fh = codex_observe.safe_append_jsonl_handle(path, obs)
+            try:
+                fh.write("second\n")
+                fh.flush()
+            finally:
+                fh.close()
+            self.assertEqual(path.read_text(encoding="utf-8"), "first\nsecond\n")
+            mode = stat.S_IMODE(path.stat().st_mode)
+            self.assertEqual(mode, 0o600)
+
+    def test_safe_open_trace_read_rejects_symlink_swap(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            obs = root / "obs"
+            obs.mkdir()
+            target = root / "target"
+            target.write_text("secret\n", encoding="utf-8")
+            path = obs / "s.trace"
+            path.symlink_to(target)
+            with self.assertRaises(codex_observe.ObserveError):
+                codex_observe.safe_open_trace_read(path, obs)
+
+    def test_safe_open_trace_read_reads_existing_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            obs = Path(td) / "obs"
+            obs.mkdir()
+            path = obs / "s.trace"
+            path.write_text("line1\nline2\n", encoding="utf-8")
+            fh = codex_observe.safe_open_trace_read(path, obs)
+            try:
+                self.assertEqual(fh.read(), "line1\nline2\n")
+            finally:
+                fh.close()
+
     def test_signal_escalation_returns_conventional_signal_code(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -282,6 +337,69 @@ class CodexObserveTests(unittest.TestCase):
             proc.terminate()
             stdout, stderr = proc.communicate(timeout=5)
             self.assertEqual(proc.returncode, 128 + signal.SIGTERM, stderr)
+
+    def test_end_to_end_live_streaming_with_fake_strace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            obs = root / "obs"
+            # Custom fake strace that writes the trace in two stages with a sleep
+            # in between, so we can observe `.jsonl` growing during the run.
+            fake = root / "strace"
+            stage1 = '123 1714932000.000001 openat(AT_FDCWD, "first.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</tmp/work/first.txt>\n'
+            stage2 = '123 1714932000.000002 openat(AT_FDCWD, "second.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 4</tmp/work/second.txt>\n'
+            write_exe(fake, f"""
+                #!/usr/bin/env python3
+                import os, subprocess, sys, time
+                out = sys.argv[sys.argv.index('-o') + 1]
+                with open(out, 'w', encoding='utf-8') as fh:
+                    fh.write({stage1!r})
+                    fh.flush()
+                time.sleep(0.6)
+                with open(out, 'a', encoding='utf-8') as fh:
+                    fh.write({stage2!r})
+                    fh.flush()
+                idx = sys.argv.index('-e')
+                cmd = sys.argv[idx + 2:]
+                sys.exit(subprocess.run(cmd).returncode)
+            """)
+            real = root / "real-codex"
+            write_exe(real, f"#!{sys.executable}\nimport sys; sys.exit(0)\n")
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "CODEV_OBSERVE_REAL_CODEX": str(real),
+                "CODEV_OBSERVE_DIR": str(obs),
+                "CODEV_OBSERVE_SESSION_ID": "stream",
+                "CODEV_OBSERVE_QUIET": "1",
+                "CODEV_OBSERVE_LIVE_POLL_MS": "50",
+            })
+            jsonl_path = obs / "stream.jsonl"
+            mid_run_lines: list[str] = []
+            stop = threading.Event()
+
+            def watcher():
+                # Poll `.jsonl` while the wrapper is still running.
+                while not stop.is_set():
+                    if jsonl_path.exists():
+                        text = jsonl_path.read_text(encoding="utf-8")
+                        if text:
+                            mid_run_lines.append(text)
+                            if "first.txt" in text and "second.txt" not in text:
+                                return
+                    time.sleep(0.05)
+
+            t = threading.Thread(target=watcher, daemon=True)
+            t.start()
+            proc = self.run_wrapper(env)
+            stop.set()
+            t.join(timeout=2.0)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(
+                any("first.txt" in snap and "second.txt" not in snap for snap in mid_run_lines),
+                f"expected mid-run snapshot with first.txt only, got: {mid_run_lines}",
+            )
+            events = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([e["path"] for e in events], ["/tmp/work/first.txt", "/tmp/work/second.txt"])
 
     @unittest.skipUnless(shutil.which("strace"), "strace unavailable")
     def test_live_strace_child_process_tree_when_available(self):

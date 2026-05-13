@@ -1,0 +1,24 @@
+I'll read the phase-1 files directly from disk and verify the implementation against the scoped plan.I'll run the Python test suite to verify this phase didn't break existing behavior and that the new helper/parser tests pass.I’m also checking the spec/plan files on disk to confirm the scoped phase requirements match what I’m reviewing.Scoped to **phase-1-helpers** only, this looks aligned with the plan.
+
+What I verified from disk:
+- `trace_parser.py` adds `dump_event`, updates `write_jsonl` to use it, and introduces `TraceParser.feed_line()` while rewriting `parse_lines()` as a thin loop over it. That matches the phase-1 refactor and preserves the post-hoc API. (`src/ai_observe/trace_parser.py:82-89`, `:117-138`)
+- `codex_observe.py` adds both path-hardened helpers for the upcoming live path:
+  - `safe_append_jsonl_handle()` with `verify_log_path_safe()` + append/no-follow open (`src/ai_observe/codex_observe.py:231-252`)
+  - `safe_open_trace_read()` with `verify_log_path_safe()` + read/no-follow open + `errors="replace"` (`src/ai_observe/codex_observe.py:255-277`)
+- `safe_write_jsonl()` now shares the canonical serializer via `dump_event`, which is exactly what the plan wanted for byte-equivalence across writers. (`src/ai_observe/codex_observe.py:212-228`)
+- Tests were added in the right places and cover the new phase-1 surfaces:
+  - `dump_event` + `feed_line` behavior in `tests/test_trace_parser.py`
+  - append/read helper hardening in `tests/test_codex_observe.py`
+
+I did **not** flag missing `LiveTracer`/env knob integration because that is phase 2 scope.
+
+One note on verification: I attempted to run `python3 -m unittest discover -s tests -v`, but this sandbox is read-only and Python cannot create temp dirs here, so I could not fully execute the suite. That limits confidence a bit, but from direct code inspection the phase-1 work appears complete and coherent.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1’s helper/parser refactor is implemented as planned, with appropriate tests and no phase-scope gaps found.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- None

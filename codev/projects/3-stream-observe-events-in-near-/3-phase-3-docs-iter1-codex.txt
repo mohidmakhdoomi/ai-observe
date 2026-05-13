@@ -1,0 +1,8 @@
+---
+VERDICT: APPROVE
+SUMMARY: `docs/observe.md` covers the phase-3 docs deliverables: live streaming behavior, all three env knobs with defaults/bounds/fallbacks, and the new failure-mode semantics.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

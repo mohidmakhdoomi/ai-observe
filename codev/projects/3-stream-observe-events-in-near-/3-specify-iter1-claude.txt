@@ -1,0 +1,78 @@
+I'll review this spec by first checking the existing codebase to verify the claims and assumptions made.Now let me check the test count claim and the existing tests:Good — 14 + 13 = 27 tests, matching the spec's claim. Now I have enough context for a thorough review.
+
+---
+
+## Specification Review: Spec 3 — Stream observe events in near real time
+
+### Overall Assessment
+
+This is a very well-written, thorough specification. It clearly describes the problem (events only appear after Codex exits), the solution (a parser thread tailing the `.trace` file), and meticulously maps failure modes, compatibility concerns, and test scenarios. Having verified against the actual codebase, the claims are accurate.
+
+### 1. Completeness ✅
+
+**Strengths:**
+- Exhaustive failure-mode table covering 6 distinct scenarios
+- Clear non-goals that prevent scope creep
+- Acceptance criteria mapped to test scenarios
+- Open questions resolved inline rather than left dangling
+- The 27-test count is verified correct (14 in `test_codex_observe.py` + 13 in `test_trace_parser.py`)
+
+**Minor gaps:**
+- The spec says the live `.jsonl` is opened with `O_WRONLY | O_APPEND` after `verify_log_path_safe`. But looking at `prepare_logs()` (line 322-329), the `.jsonl` is already created with `exclusive_touch()` which uses `O_WRONLY | O_CREAT | O_EXCL`. The spec should clarify that the live mode *reopens* the already-created file — which it does say ("reopens it"), but could be more explicit about whether it uses `safe_write_jsonl` or a new open path. This is a plan-phase detail though, not a spec blocker.
+
+### 2. Technical Feasibility ✅
+
+**Verified claims:**
+- `TraceParser` does maintain `self.unfinished` as a dict keyed by `(pid, name)` — confirmed at line 108. The stitching-across-boundaries claim is accurate.
+- `parse_lines()` iterates line-by-line and calls `_parse_line()` — a `feed_lines` incremental API is a natural extension.
+- `self.events` is a plain list (line 109), so detecting new events by tracking `len(events)` before/after feeding is trivial.
+- The `ParserFailure` exception is raised inside `_parse_line()` (line 162-163), and `parse_lines` re-raises it (line 119-120). The spec's thread-level catch/re-raise strategy is sound.
+- The existing `safe_write_jsonl` uses `O_WRONLY | O_CREAT | O_TRUNC` (line 214), confirming the post-hoc fallback can overwrite a partially-written live `.jsonl`.
+
+**Thread design is appropriate:** The main thread blocks in `wait_for_process` (line 126) which loops with 0.2s timeouts. A threading.Thread for the parser is the simplest stdlib-only approach.
+
+### 3. Edge Cases and Error Scenarios ✅
+
+The failure semantics table is comprehensive. One consideration:
+
+- **Race between thread start and strace writing**: The spec says the parser thread opens the `.trace` file after strace starts. Since `prepare_logs` creates the `.trace` file with `exclusive_touch` *before* strace launches, the file exists but may be empty initially. The spec handles this (read returns empty → sleep poll interval), but it's worth confirming the thread doesn't raise on an empty initial read. The spec's approach (just sleep and retry) is correct.
+
+### 4. Security Considerations ✅
+
+- The spec correctly preserves the existing symlink safety checks (`verify_log_path_safe`, `exclusive_touch`).
+- Single-writer model avoids any TOCTOU issues on the `.jsonl`.
+- No new file paths or network surfaces introduced.
+- The `O_APPEND` atomicity note is well-documented and correctly dismissed as non-issue for single-writer.
+
+### 5. Testing Strategy ✅
+
+**Strengths:**
+- Tests drive `LiveTracer` directly against temp files rather than spawning real strace — fast, deterministic, no root needed.
+- Covers the critical cross-boundary stitching case explicitly.
+- Partial trailing line test ensures no premature event emission.
+- Existing 27 tests must pass unmodified — good regression fence.
+
+**One suggestion (non-blocking):**
+- Consider adding a test for `CODEV_OBSERVE_LIVE_POLL_MS` validation (out-of-range values, non-numeric strings). The spec defines bounds (10–2000) and fallback behavior, but the test scenarios don't explicitly cover it. This is minor — it's more of a plan/implementation detail.
+
+### 6. Ambiguities — Minor
+
+- **`feed_lines` vs generator API**: The spec says "Add a generator-style entry point **or** a `feed_lines(iterable)`-like helper." This is intentional flexibility for the plan phase, not ambiguity. Fine.
+- **Thread join timeout**: The spec doesn't mention a timeout on `thread.join()`. If the parser thread hangs (e.g., blocked on a read that never returns), the wrapper would hang too. In practice, the thread reads a local file and strace has exited, so this is unlikely — but a `join(timeout=...)` with a fallback would be defensive. Non-blocking.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-grounded spec with verified technical claims; ready for plan phase
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+```
+
+**Minor suggestions (non-blocking):**
+1. Consider specifying a `thread.join()` timeout as a defensive measure against hung parser threads.
+2. The test scenarios could explicitly cover `CODEV_OBSERVE_LIVE_POLL_MS` boundary validation, though this can be deferred to the plan.
+3. The `.jsonl` reopen semantics (after `exclusive_touch` creation) could be slightly more explicit about the open-flag transition, but the intent is clear.

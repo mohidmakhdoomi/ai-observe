@@ -1,0 +1,19 @@
+Using direct file inspection to verify the plan against the actual codebase.The plan is mostly strong and maps well onto the actual codebase.
+
+- **Spec alignment:** It covers the major spec requirements well: shared serialization, incremental parsing, live tailing, fallback rewrite, join timeout handling, env knobs, and docs. The file targets are accurate for this repo: `src/ai_observe/trace_parser.py`, `src/ai_observe/codex_observe.py`, and the existing test modules are the right touch points.
+- **Architecture:** The proposed `feed_line()` refactor fits the current `TraceParser.parse_lines()` shape cleanly, and extracting a shared serializer is especially important because `trace_parser.write_jsonl()` and `codex_observe.safe_write_jsonl()` currently duplicate formatting logic.
+- **Phase breakdown:** The sequencing is sensible. Phase 1 creates the right primitives before Phase 2 adds threading and wrapper branching. The docs phase is appropriately last.
+- **Risk handling:** The plan identifies the important race/consistency risks: serializer drift, symlink swap, unfinished/resumed stitching, trailing partial line handling, and join timeout behavior.
+- **Testing:** The new `tests/test_live_trace.py` module is a good addition, and extending the existing fake-`strace` pattern in `tests/test_codex_observe.py` is the right integration strategy.
+
+The main gaps are not in the overall direction, but in a few implementation details that should be explicit before a builder picks this up.
+
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong plan with the right architecture and file targets, but it needs explicit handling for live-start failures and tighter definition of strict-mode/opt-out behavior.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `LiveTracer.start()` is planned to open `.trace` and `.jsonl` synchronously, but the plan does not say what `run()` should do if one of those opens fails before the thread is started. Given the spec’s fallback guarantee, this should be called out explicitly as “warn and continue with post-hoc-only behavior,” not left implicit.
+- The new failure branches repeatedly say “strict-mode applies,” but they do not explicitly preserve the current wrapper contract of reporting the original Codex exit on stderr before returning `1` in strict mode. This is especially underspecified for the **join-timeout** branch and the **live-parser error → fallback** branch.
+- `test_live_parse_disabled_matches_post_hoc_only` is too weak if it only compares final `.jsonl` contents, because live mode should also converge to the same final file. The plan should require an explicit assertion that `LiveTracer` was never constructed/started when `CODEV_OBSERVE_LIVE_PARSE=0`.

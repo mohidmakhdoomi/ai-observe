@@ -39,6 +39,9 @@ strace -f -qq -ttt -s 4096 -yy -o <trace-file> -e trace=%file,%desc,%process <re
 - `CODEV_OBSERVE_INCLUDE_LOG_WRITES=1`: include active trace/JSONL artifact paths if Codex touches them.
 - `CODEV_OBSERVE_ALLOW_SYMLINK_DIR=1`: allow symlink final observe dir.
 - `CODEV_OBSERVE_QUIET=1`: suppress sensitive-log warning.
+- `CODEV_OBSERVE_LIVE_PARSE=0`: opt out of live-mode streaming (events still land in `.jsonl` post-hoc). Default is on — events stream live to `.jsonl` while Codex runs.
+- `CODEV_OBSERVE_LIVE_POLL_MS`: live tailer poll interval in milliseconds when the trace file shows no new bytes. Default `200`, bounds `[10, 2000]`. Out-of-range or unparseable values fall back to the default.
+- `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`: seconds to wait for the live tailer to drain after strace exits. Default `30`, bounds `[0.1, 600]`. Out-of-range or unparseable values fall back to the default.
 
 ## Real Codex lookup
 
@@ -61,6 +64,18 @@ Default location:
 Name collision uses deterministic suffix: `session-1`, `session-2`, etc. No overwrite.
 
 No-mutation sessions still create empty `.jsonl`.
+
+### Streaming events
+
+While Codex runs, the wrapper tails its `.trace` file from a background thread and appends parsed events to `.jsonl` as they land. Another shell can stream events live:
+
+```bash
+tail -F .codev/observe/<session-id>.jsonl
+```
+
+Latency is approximately the value of `CODEV_OBSERVE_LIVE_POLL_MS` (default 200 ms) plus parser cost — under normal load, sub-second. The raw `.trace` is still the durable record on disk. Set `CODEV_OBSERVE_LIVE_PARSE=0` to disable streaming and fall back to the original post-hoc parse.
+
+On any non-`ParserFailure` error from the live tailer, the wrapper prints a stderr warning, rebuilds `.jsonl` from the full `.trace` after Codex exits, and preserves Codex's exit code (unless `CODEV_OBSERVE_STRICT_PARSE=1`, in which case the wrapper exits `1` after first printing the original Codex exit code). If the tailer thread fails to exit within `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`, the wrapper leaves `.jsonl` in its partial state, prints a timeout warning, and applies the same strict-mode rule; no `.jsonl.partial` is written in that branch.
 
 On parser failure:
 

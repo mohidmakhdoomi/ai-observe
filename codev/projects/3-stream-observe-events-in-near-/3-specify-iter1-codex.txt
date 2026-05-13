@@ -1,0 +1,14 @@
+The spec is directionally solid and the implementation approach is feasible with the current codebase. Reusing the existing `TraceParser` incrementally is a good fit, and the fallback-to-post-hoc design keeps risk contained.
+
+The main problems are around **contract consistency with the current implementation** and one **security/detail gap** in how the live JSONL file would be reopened.
+
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Feasible and mostly clear, but it has a few important contract and security ambiguities that should be resolved before approval.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The spec contradicts current behavior around `.jsonl` on parser failure. In `src/ai_observe/codex_observe.py`, `prepare_logs()` pre-creates `<session>.jsonl`, so success criterion 5 saying “`.jsonl` is not written” and “behave exactly as today” do not line up. The spec needs one explicit contract: either `.jsonl` may exist as an empty/precreated file on `ParserFailure`, or live mode must delete/truncate it and that behavior must be called out as an intentional change from Spec 1.
+- The live-writer security story is underspecified. The spec says to reopen `.jsonl` with append after `verify_log_path_safe`, but current safe writes use `O_NOFOLLOW`. For the live path, the spec should require the same no-follow/open-hardening semantics, not just a prior path check, otherwise the “no symlink/path-escape races” claim is too strong.
+- EOF/partial-line handling conflicts with the “final output matches post-hoc parse” goal. Current post-hoc parsing reads the last line even without a trailing newline; the spec says a partial trailing line is buffered and “skipped safely at EOF if the newline never lands.” That can diverge from post-hoc behavior for a syntactically complete final line lacking `\\n`. The spec should define exactly how EOF fragments are treated so equivalence is preserved.
+- The testing plan is good at the unit level, but it is light on one end-to-end integration case through `run()`. Most new scenarios drive `LiveTracer` directly, which won’t fully validate thread startup/join, env knob wiring, and wrapper lifecycle. Add at least one wrapper-level test with fake `strace` appending over time to prove the real control flow.

@@ -1,0 +1,87 @@
+Let me review the actual codebase to verify the plan's assumptions about existing code structure.I've now reviewed the actual codebase. Let me check the docs file referenced in the plan:Good. I have enough context to deliver my review.
+
+---
+
+## Plan Review: stream-observe-events-in-near-real-time
+
+### 1. Spec Coverage
+
+**Strong.** The plan maps every spec requirement to a concrete task. The acceptance criteria mapping at the end of the spec is faithfully reflected: incremental emission, empty sessions, fallback semantics, `CODEV_OBSERVE_LIVE_PARSE=0`, `CODEV_OBSERVE_TEST_FAIL_AFTER`, strict mode, symlink-swap rejection, join timeout — all present with explicit tests.
+
+I checked for gaps:
+- ✅ All three env knobs parsed with clamping/fallback
+- ✅ `ParserFailure` vs. generic exception distinction preserved
+- ✅ Join timeout leaves `.jsonl` partial, no `.jsonl.partial`, no post-hoc rewrite
+- ✅ Double write failure cascade covered
+- ✅ Trailing partial line handling at EOF
+- ✅ Unfinished/resumed across poll boundaries
+- ✅ Phase 3 covers docs
+
+No phases go beyond spec scope. Phase 3 (docs) is explicitly called for in the spec.
+
+### 2. Phase Breakdown
+
+**Well structured.** Three phases with clean dependency ordering:
+
+- **Phase 1** (Helpers) is purely internal refactoring — zero behavior change, existing tests pass. This is the right foundation-first approach.
+- **Phase 2** (LiveTracer + integration) is the bulk of the work. It's large but cohesive — splitting it further would mean committing code that references helpers without the thread that uses them, or the thread without the wrapper integration. The plan describes the integration point precisely (after `wait_for_process`, before post-hoc parse), which I verified against the actual `run()` function at lines 141-167 of `codex_observe.py`.
+- **Phase 3** (Docs) is appropriately separated.
+
+Each phase can be committed independently. Phase 1 is green-on-existing-tests. Phase 2 adds all new behavior and its tests. Phase 3 is docs-only.
+
+### 3. Technical Approach
+
+**Sound and well-reasoned.** Verified against actual code:
+
+- `dump_event` extraction: The plan correctly identifies that both `write_jsonl` (line 82-85, `trace_parser.py`) and `safe_write_jsonl` (lines 222-224, `codex_observe.py`) independently duplicate the `json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"` serialization. Extracting a shared helper is the right call.
+
+- `feed_line` API: The plan's approach of adding an incremental feed method to `TraceParser` while preserving `parse_lines` as a thin wrapper is clean. Looking at `parse_lines` (lines 112-123), it's literally a loop over lines calling `_parse_line` with error handling — the refactor to route through `feed_line` is mechanical.
+
+- `safe_append_jsonl_handle` / `safe_open_trace_read`: These correctly mirror `safe_write_jsonl`'s pattern (lines 212-228) using `verify_log_path_safe` + `os.open` with `O_NOFOLLOW`. The `getattr(os, ..., 0)` fallback matches the existing convention at line 215.
+
+- `LiveTracer._run` loop: The chunk-read + split-on-newline + carry-fragment approach is standard for file tailing and correctly avoids partial-line parsing. The stop-event + final-drain design ensures the trailing fragment is flushed at EOF, matching `parse_lines`' behavior with unterminated lines.
+
+- **Integration point in `run()`**: The plan places LiveTracer start after `prepare_logs` / before strace launch, and the join/fallback after `wait_for_process` (line 126) but before the existing post-hoc parse block (lines 141-167). This is exactly right — the existing post-hoc block becomes the fallback path.
+
+**One minor observation:** The plan says LiveTracer starts "after `prepare_logs` and before launching strace." Looking at `run()`, strace is launched at line 125 inside a try block that also does `verify_log_path_safe`. The plan should be clear that the `LiveTracer.start()` call happens *after* the strace `Popen` succeeds, not before — otherwise a strace launch failure would leave an orphaned parser thread reading an empty trace file. The plan's Phase 2 Task 3 says "After `prepare_logs` and before launching strace" which is technically before `Popen`. A builder might wire this up wrong.
+
+**However**, re-reading more carefully: the LiveTracer opens `.trace` for reading, which already exists (created by `prepare_logs`). Starting it before `Popen` is actually fine — the thread would just poll an empty file until strace starts writing. And if strace fails, the main thread would need to clean up the LiveTracer. The plan's failure semantics table doesn't explicitly cover "strace never starts" but since LiveTracer would see an empty trace and the main thread would hit the `except` blocks, the thread would be cleaned up by the daemon flag. This is a minor edge case that a builder could handle, not a blocker.
+
+### 4. Testability
+
+**Excellent.** The test plan is the strongest part of this document. 14 targeted tests in `test_live_trace.py` plus 1 end-to-end in `test_codex_observe.py`:
+
+- Each spec test scenario maps to at least one test
+- Tests are described with concrete assertions, not vague "verify it works"
+- The end-to-end test extends the existing `make_fake_tools` pattern (verified this exists in the test file)
+- Env-knob validation tests cover boundary values and parse errors
+- The timing-flakiness mitigation (small polls, "at least one event" assertions) is pragmatic
+
+The `_emitted` cursor approach in `feed_line` makes it trivial to test "returns only new events," which is good.
+
+### 5. Risk Assessment
+
+**Thorough.** Seven risks identified with concrete mitigations. The serialization-drift risk (shared `dump_event`) and the thread-teardown/fd-race risk are the two most important, and both have clear mechanical solutions.
+
+The timing flakiness risk is well-handled by the "smallest practical sleeps + at-least-one assertions" approach.
+
+### 6. Minor Observations
+
+1. **`safe_write_jsonl` has its own `json` import** (line 222 in `codex_observe.py`): The `dump_event` extraction should move this to the module-level import. Trivial but a builder should know.
+
+2. **Phase 2 Task 3 integration ordering**: The plan describes the post-hoc fallback calling `parse_trace_file` which constructs a new `TraceParser`. But the existing code (line 144) also passes `active_artifacts` to filter log writes. The plan should ensure the fallback path preserves all these parameters. It implicitly does ("same constructor args as the post-hoc path already uses") but a builder might miss this.
+
+3. **Phase 2 is large** (~14 tests + LiveTracer class + run() integration). A builder will need to be disciplined. The plan gives enough detail that this is manageable, but it's worth noting this is a substantial single phase.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Comprehensive, well-structured plan that faithfully covers all spec requirements with precise integration points verified against actual code.
+CONFIDENCE: HIGH
+
+---
+
+KEY_ISSUES:
+- None critical.
+- Minor: Phase 2 Task 3 says LiveTracer starts "before launching strace" — clarify this means after `Popen` succeeds, or explicitly handle the "strace fails to launch" case where a LiveTracer is already running. The daemon flag covers it, but explicit cleanup would be cleaner.
+- Minor: Ensure fallback post-hoc parse in Phase 2 passes identical constructor args (especially `active_artifacts`, `include_log_writes`, `fail_after_events`) — plan implies this but doesn't spell it out.
