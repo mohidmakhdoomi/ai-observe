@@ -140,8 +140,16 @@ final wording must match shipped behavior.
        `error: BaseException | None`, `parser_failure: ParserFailure | None`,
        `thread: threading.Thread | None`.
      - `start()`: opens `.trace` via `safe_open_trace_read`, opens
-       `.jsonl` via `safe_append_jsonl_handle`, starts
-       `threading.Thread(target=self._run, daemon=True)`.
+       `.jsonl` via `safe_append_jsonl_handle`, then starts
+       `threading.Thread(target=self._run, daemon=True)`. Either open
+       can raise `ObserveError` or `OSError`. `start()` does **not**
+       catch — it propagates. The caller in `run()` wraps the
+       `LiveTracer.start()` call in a `try/except`: on any exception,
+       print a single `codex-observe: warning: live tracer failed to
+       start: ...; continuing with post-hoc-only` line to stderr,
+       discard the `LiveTracer` instance, and fall back to the
+       Spec 1 post-hoc-only path. Codex still runs; this never
+       blocks the wrapper from launching strace.
      - `_run()`:
        - Carry a string buffer `pending`.
        - Loop:
@@ -209,7 +217,16 @@ final wording must match shipped behavior.
        it via the `ParserFailure` branch above.
   4. **stderr message format**: all new warnings use the existing
      `print(f"codex-observe: ...", file=sys.stderr)` convention so
-     they sit alongside Spec 1 warnings cleanly.
+     they sit alongside Spec 1 warnings cleanly. In every branch
+     that flips the exit code to `1` under
+     `CODEV_OBSERVE_STRICT_PARSE=1` (live-parser error → fallback,
+     `ParserFailure` from live mode, join timeout, double-write
+     cascade), the wrapper **first** emits the existing Spec 1
+     `f"codex-observe: ...; original exit {codex_code}"` line that
+     names the original Codex exit code, mirroring the
+     `safe_write_jsonl(... partial_path ...)` branches today. This
+     preserves the current contract: a user reading stderr always
+     sees Codex's original code before the strict-mode override.
   5. **Thread teardown safety**: the `_run` `finally` block always
      closes both handles. The main thread only opens its own
      post-hoc-fallback writer after `tracer.join()` returns cleanly,
@@ -256,10 +273,23 @@ final wording must match shipped behavior.
     a fake strace that produces ≥2 mutating syscalls. Asserts
     `.jsonl.partial` has exactly 1 event, `.jsonl` is zero bytes,
     exit code is 0 in non-strict and 1 in strict mode.
-  - `test_live_parse_disabled_matches_post_hoc_only` — set
+  - `test_live_parse_disabled_no_thread_started` — set
     `CODEV_OBSERVE_LIVE_PARSE=0`, drive via `run()` with a fake
-    strace; assert no live thread started (probe via a hook or by
-    asserting `.jsonl` contents match a fresh post-hoc parse).
+    strace. Assertion is **structural**, not just content-based:
+    monkeypatch the `LiveTracer` constructor (or its `start`
+    method) on the module to record invocations into a list, and
+    assert the list stays empty. Also assert `.jsonl` final
+    contents match a fresh `parse_trace_file` of the same trace,
+    so the regression fence is double-sided (no live thread AND
+    output still correct).
+  - `test_live_start_open_failure_falls_back_to_post_hoc` —
+    monkeypatch `safe_open_trace_read` (or `safe_append_jsonl_handle`)
+    to raise `ObserveError`. Drive `run()` with a fake strace.
+    Assert: stderr contains the "live tracer failed to start"
+    warning, `.jsonl` final contents match a fresh post-hoc parse,
+    Codex exit code preserved in non-strict, exit=1 in strict mode
+    (and stderr names the original Codex exit code before the
+    strict override).
   - `test_empty_session_produces_empty_jsonl` — fake strace
     produces an empty trace; `.jsonl` exists and is zero bytes.
   - `test_poll_ms_env_validation` — calls `_live_poll_seconds` with
