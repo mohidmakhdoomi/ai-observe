@@ -57,7 +57,7 @@ Lines appear shortly after Codex performs mutating syscalls. When Codex
 exits, the wrapper finishes any remaining trace tail and the final `.jsonl`
 matches what the post-hoc code would have written.
 
-No new env knobs are exposed by default. Two internal/optional knobs:
+No new env knobs are exposed by default. Three internal/optional knobs:
 
 - `CODEV_OBSERVE_LIVE_PARSE=0`: opt out of live tailing; fall back to the
   Spec 1 post-hoc-only behavior. Default is on (live parsing). Provided so
@@ -66,6 +66,12 @@ No new env knobs are exposed by default. Two internal/optional knobs:
 - `CODEV_OBSERVE_LIVE_POLL_MS`: parser thread poll interval when the trace
   file shows no new bytes. Default `200` (ms). Lower bound `10`, upper
   bound `2000`. Out-of-range or unparseable values fall back to the default.
+- `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`: seconds the main thread will wait
+  for the parser thread to finish after strace exits. Default `30`.
+  Lower bound `0.1`, upper bound `600`. Out-of-range or unparseable
+  values fall back to the default. Primarily exists for tests; in
+  practice the parser thread should drain in well under a second after
+  strace exits because the trace file is local and bounded.
 
 `CODEV_OBSERVE_STRICT_PARSE=1` behavior is unchanged: a parser failure
 (live or post-hoc) still flips the exit code to 1 after the wrapper reports
@@ -122,8 +128,13 @@ Codex's original code on stderr.
 ### Writing JSONL incrementally
 
 - The parser thread owns the open file handle for `.jsonl`. It writes one
-  line per event with `fh.write(json.dumps(...) + "\n")` followed by
-  `fh.flush()` so consumers tailing the file see whole lines.
+  line per event using the **same canonical serialization** the post-hoc
+  writer uses today —
+  `json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"` —
+  followed by `fh.flush()` so consumers tailing the file see whole
+  lines. Both the live writer and the post-hoc writer must call a single
+  shared helper so the byte-equivalent claim is mechanically enforced,
+  not merely promised.
 - The file is pre-created during `prepare_logs` (existing Spec 1 step)
   with `O_WRONLY | O_CREAT | O_EXCL` and mode `0600`. Live mode reopens
   that same path with `O_WRONLY | O_APPEND | O_NOFOLLOW` (when available)
@@ -156,7 +167,7 @@ thread's buffer until a newline arrives.
 | Live parser raises `ParserFailure` (test hook) | Wrapper writes `.jsonl.partial` exactly as today, applies strict-mode rules. The pre-created `.jsonl` file is **truncated to zero bytes** (using the same `safe_write_jsonl` flow with an empty event list) so live-mode behavior matches the post-hoc-only contract: events live in `.jsonl.partial`, not in `.jsonl`. |
 | Strace exits abnormally | Same as today: codex_code reflects strace exit; parser drains remaining trace and writes final `.jsonl`. |
 | Wrapper interrupted (SIGINT/SIGTERM) | Same as today: signal forwarded to traced group; parser thread is told to stop tailing once strace exits; final drain still runs. |
-| `.jsonl` write fails mid-stream (disk full, permission flip) | Wrapper catches the error, treats it as a live-parser failure, and triggers the post-hoc fallback (which will also fail to write — surfacing the underlying error). |
+| `.jsonl` write fails mid-stream (disk full, permission flip) | The parser thread captures the exception, closes its handle, and exits. The main thread joins, sees the error, and triggers the post-hoc fallback (which calls `safe_write_jsonl`). If the post-hoc rewrite also fails, the wrapper falls through to the same path that Spec 1 uses for parse failure: write `.jsonl.partial` (which may itself fail to write — that secondary `OSError` is caught and the wrapper prints a stderr warning naming both errors), preserve Codex's exit code in non-strict mode, and flip to 1 in `CODEV_OBSERVE_STRICT_PARSE=1`. Net contract: exit code never silently masks Codex's status in non-strict mode, but the user is told on stderr which write failed and what the original Codex code was. |
 | `.trace` truncated/disappears mid-run | Parser tail reads return empty; thread waits for strace to exit; post-hoc re-parse will see the same (truncated) file. No special recovery. |
 
 ### Backpressure
@@ -168,16 +179,43 @@ unread bytes on disk, not as memory growth. Memory growth is bounded by
 the parser's existing per-PID state and the single carry-over line
 fragment.
 
-### Thread join with timeout
+### Thread lifecycle and join with timeout
 
-After strace exits, the main thread sets the stop flag on `LiveTracer`
-and calls `thread.join(timeout=...)`. The timeout is bounded
-(default 30 s; can be tuned via `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` for
-tests). If the thread fails to join within the timeout — a defensive
-case that should not occur in practice because the trace file is local
-and strace has exited — the wrapper treats it as a live-parser failure
-(stderr warning + post-hoc fallback) and abandons the thread. This
-prevents the wrapper from hanging.
+- The parser thread is created with `daemon=True` so a stuck thread can
+  never block process exit.
+- `LiveTracer` exposes a `threading.Event` stop flag. The thread checks
+  it once per poll iteration and on every read-loop boundary. When the
+  flag is set, the thread performs one final "drain to EOF" pass over
+  the trace file, then closes its `.jsonl` write handle, then exits.
+- Lifecycle on shutdown:
+  1. Main thread observes that strace has exited.
+  2. Main sets the stop flag.
+  3. Main calls `thread.join(timeout=CODEV_OBSERVE_LIVE_JOIN_TIMEOUT)`.
+  4. If the join succeeds and the thread reported no error, the live
+     `.jsonl` is the final output. **No post-hoc re-parse runs.**
+  5. If the join succeeds and the thread reported a non-`ParserFailure`
+     error, the wrapper calls a single fallback function that opens
+     `.jsonl` via `safe_write_jsonl` (which uses `O_WRONLY | O_CREAT |
+     O_TRUNC | O_NOFOLLOW`) and rewrites it from a fresh post-hoc parse
+     of the full `.trace`. Concurrent writes are impossible because the
+     thread has already closed its handle and exited.
+  6. If the join succeeds and the thread reported a `ParserFailure`,
+     the wrapper writes `.jsonl.partial` and truncates `.jsonl` to zero
+     bytes (via `safe_write_jsonl(jsonl_path, [], ...)`), then applies
+     strict-mode rules.
+  7. If the join **times out**, the thread is daemonized so the process
+     can still exit. The wrapper does **not** attempt a post-hoc rewrite
+     (that would race the still-running thread on the `.jsonl` fd).
+     Instead it logs a clear stderr warning ("live parser did not exit
+     within Ns; leaving partial .jsonl") and treats the run as a
+     parser-failure-equivalent for the purposes of strict mode: in
+     `CODEV_OBSERVE_STRICT_PARSE=1` the exit code becomes 1; otherwise
+     the Codex exit code is preserved. The `.jsonl.partial` file is
+     written empty so the contract that "either .jsonl or .jsonl.partial
+     reflects what we have" is preserved.
+
+This design avoids any scenario where two threads hold writable fds to
+`.jsonl` simultaneously.
 
 ### Why a thread, not a process or asyncio
 
@@ -278,10 +316,12 @@ prevents the wrapper from hanging.
    output as today (no live thread started).
 5. `CODEV_OBSERVE_TEST_FAIL_AFTER=N` still results in `.jsonl.partial`
    containing the first N events. The `.jsonl` file (pre-created by
-   `prepare_logs`) ends as a zero-byte file after the run, regardless of
-   whether live mode is on or how many events the live parser had
-   already streamed before the failure. Strict-mode flips exit code to
-   1 as today.
+   `prepare_logs`) ends as a zero-byte file after the run — even if
+   the live parser had already streamed events to it before raising
+   `ParserFailure`, the wrapper truncates it via `safe_write_jsonl`
+   with an empty event list. This is the single canonical contract for
+   parser-failure end state, regardless of whether live mode is on.
+   Strict-mode flips exit code to 1 as today.
 6. All 27 existing tests pass without modification.
 
 ### Functional (SHOULD)
@@ -326,8 +366,10 @@ A new test module `tests/test_live_trace.py` (stdlib-only) must cover:
   equal to a fresh post-hoc parse of the same trace, exit code
   unchanged in non-strict mode.
 - **`CODEV_OBSERVE_TEST_FAIL_AFTER` under live mode**: confirm
-  `.jsonl.partial` contains exactly N events and `.jsonl` is not
-  written, and that strict mode flips exit code as before.
+  `.jsonl.partial` contains exactly N events and `.jsonl` ends as a
+  zero-byte file (truncated by the wrapper even if the live thread had
+  streamed events into it), and that strict mode flips exit code as
+  before.
 - **`CODEV_OBSERVE_LIVE_PARSE=0`**: live thread is never started; final
   `.jsonl` matches a post-hoc-only run on the same trace.
 - **`CODEV_OBSERVE_LIVE_POLL_MS` validation**: out-of-range values
