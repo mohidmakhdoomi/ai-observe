@@ -163,9 +163,60 @@ class ViewerServerTests(unittest.TestCase):
         _append_events(self.path, [_make_event(path="/live", idx=9)])
         t1.join(timeout=5.0)
         t2.join(timeout=5.0)
+        for s in socks:
+            try:
+                s.close()
+            except OSError:
+                pass
         self.assertEqual(errors, [])
         for paths in (results[0], results[1]):
             self.assertEqual([f["path"] for f in paths], ["/r0", "/r1", "/live"])
+
+    def test_empty_jsonl_initially_emits_no_appends(self):
+        # Path exists, file is empty. /events connects: no append frames
+        # arrive before something is written, and the first append frame is
+        # the first event we write.
+        self.path.write_bytes(b"")
+        srv = self._server()
+        time.sleep(0.15)
+        sock, fh = _open_sse(srv.url + "events", timeout=3.0)
+        try:
+            # Write a single event after a beat. The first frame the SSE
+            # reader sees must be that event — never a stale backlog frame.
+            _append_events(self.path, [_make_event(path="/first", idx=0)])
+            frames = _read_sse_frames(fh, 1, timeout=3.0)
+            self.assertEqual([f["path"] for f in frames], ["/first"])
+        finally:
+            sock.close()
+
+    def test_shutdown_frame_sent_to_connected_client(self):
+        srv = self._server()
+        time.sleep(0.1)
+        sock, fh = _open_sse(srv.url + "events", timeout=3.0)
+        try:
+            # Stop the server; the connected client should receive a final
+            # `event: shutdown` frame before the socket closes.
+            stopper = threading.Thread(target=srv.stop)
+            # Avoid the addCleanup double-stop; just run our own.
+            stopper.start()
+
+            saw_shutdown = False
+            sock.settimeout(3.0)
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                line = fh.readline()
+                if not line:
+                    break
+                if line.strip() == b"event: shutdown":
+                    saw_shutdown = True
+                    break
+            stopper.join(timeout=5.0)
+            self.assertTrue(saw_shutdown)
+        finally:
+            sock.close()
+        # Override addCleanup's server.stop() since we already stopped it.
+        # Re-stopping a stopped server is a no-op for safety but explicitly
+        # noting here.
 
     def test_unknown_path_404(self):
         srv = self._server()
@@ -205,6 +256,91 @@ class CLITests(unittest.TestCase):
         help_text = parser.format_help()
         self.assertNotIn("--host", help_text)
         self.assertNotIn("--poll-ms", help_text)
+
+    def test_cli_calls_webbrowser_open_and_swallows_failure(self):
+        # Use an empty .jsonl so the server has nothing to do, then stop it
+        # immediately via SIGINT-like signal.
+        jsonl = Path(self.tmp.name) / "empty.jsonl"
+        jsonl.write_bytes(b"")
+
+        # Patch webbrowser.open to raise; the CLI must not propagate or print
+        # an error trace (spec: silent failure).
+        opened_with = []
+
+        def fake_open(url):
+            opened_with.append(url)
+            raise RuntimeError("simulated browser failure")
+
+        captured_stderr = []
+        real_stderr_write = sys.stderr.write
+
+        def capture(s):
+            captured_stderr.append(s)
+            return real_stderr_write(s)
+
+        # Run main in a thread so we can stop it via the stop event.
+        result = {}
+
+        def run():
+            try:
+                with mock.patch.object(cli.webbrowser, "open", side_effect=fake_open):
+                    with mock.patch.object(sys.stderr, "write", side_effect=capture):
+                        # Patch signal.signal so the test process doesn't
+                        # actually install signal handlers (would conflict
+                        # with unittest in some envs); replace the wait loop
+                        # by patching Event.wait to set after one call.
+                        original_event = threading.Event
+
+                        class OneShotEvent(original_event):
+                            def __init__(self):
+                                super().__init__()
+
+                            def wait(self, timeout=None):
+                                self.set()
+                                return True
+
+                        with mock.patch.object(cli.threading, "Event", OneShotEvent):
+                            with mock.patch.object(cli.signal, "signal", lambda *a, **k: None):
+                                result["rc"] = cli.main([str(jsonl)])
+            except Exception as exc:  # noqa: BLE001
+                result["error"] = exc
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(timeout=10.0)
+        self.assertNotIn("error", result, result)
+        self.assertEqual(result.get("rc"), 0)
+        self.assertEqual(len(opened_with), 1)
+        joined_stderr = "".join(captured_stderr)
+        self.assertNotIn("webbrowser.open failed", joined_stderr)
+        self.assertNotIn("Traceback", joined_stderr)
+
+    def test_cli_no_browser_skips_webbrowser_open(self):
+        jsonl = Path(self.tmp.name) / "empty2.jsonl"
+        jsonl.write_bytes(b"")
+
+        opened_with = []
+
+        def fake_open(url):
+            opened_with.append(url)
+
+        def run():
+            with mock.patch.object(cli.webbrowser, "open", side_effect=fake_open):
+                original_event = threading.Event
+
+                class OneShotEvent(original_event):
+                    def wait(self, timeout=None):
+                        self.set()
+                        return True
+
+                with mock.patch.object(cli.threading, "Event", OneShotEvent):
+                    with mock.patch.object(cli.signal, "signal", lambda *a, **k: None):
+                        cli.main([str(jsonl), "--no-browser"])
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(timeout=10.0)
+        self.assertEqual(opened_with, [])
 
 
 if __name__ == "__main__":

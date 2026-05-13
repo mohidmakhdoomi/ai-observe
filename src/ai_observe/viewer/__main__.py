@@ -58,8 +58,8 @@ def main(argv=None) -> int:
     if not args.no_browser:
         try:
             webbrowser.open(url)
-        except Exception as exc:  # noqa: BLE001 - best-effort
-            print(f"ai_observe.viewer: webbrowser.open failed: {exc!r}", file=sys.stderr)
+        except Exception:  # noqa: BLE001 - best-effort; spec says silent on failure
+            pass
 
     stop = threading.Event()
 

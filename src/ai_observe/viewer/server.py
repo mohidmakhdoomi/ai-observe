@@ -18,6 +18,7 @@ import http.server
 import json
 import socket
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -171,12 +172,19 @@ class ViewerServer:
             self._path, on_event=self._broadcaster.append, poll_interval=poll_interval
         )
         handler_cls = _build_handler(self._broadcaster)
+
+        # Set SO_REUSEADDR before bind to actually reduce TIME_WAIT pain when
+        # tests recycle ports rapidly. ThreadingHTTPServer's superclass binds
+        # in __init__, so we subclass to flip the flag before bind.
+        class _ReuseHTTPServer(http.server.ThreadingHTTPServer):
+            allow_reuse_address = True
+
         # ThreadingHTTPServer gives us one thread per request, which is what
         # SSE clients need.
-        self._httpd = http.server.ThreadingHTTPServer((_HOST, port), handler_cls)
-        # Reduce TIME_WAIT pain when tests recycle ports rapidly.
-        self._httpd.allow_reuse_address = True
+        self._httpd = _ReuseHTTPServer((_HOST, port), handler_cls)
         self._serve_thread: Optional[threading.Thread] = None
+        self._serving = threading.Event()
+        self._stopped = False
 
     @property
     def url(self) -> str:
@@ -189,15 +197,36 @@ class ViewerServer:
 
     def start(self) -> None:
         self._tailer.start()
+
         self._serve_thread = threading.Thread(
             target=self._httpd.serve_forever, name="ViewerServer", daemon=True
         )
         self._serve_thread.start()
+        # Block until the server is actually accepting connections. Without
+        # this, a fast stop() races the serve_forever selector setup and
+        # leaves a stray Exception-in-thread traceback on stderr.
+        host, port = self._httpd.server_address
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection((host, port), timeout=0.5):
+                    self._serving.set()
+                    break
+            except OSError:
+                time.sleep(0.02)
+        else:
+            raise RuntimeError("ViewerServer failed to start accepting connections")
 
     def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
         # Signal SSE clients to wind down first so their wait loops exit.
         self._broadcaster.shutdown()
-        self._httpd.shutdown()
+        try:
+            self._httpd.shutdown()
+        except Exception:  # noqa: BLE001 - defensive
+            pass
         try:
             self._httpd.server_close()
         except OSError:
