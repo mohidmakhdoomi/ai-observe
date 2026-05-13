@@ -1,0 +1,82 @@
+The files I just read appear to be the original Spec 1 code — no `LiveTracer`, no `feed_line`, no `dump_event`, no env-knob helpers. Let me check if I'm reading from the correct worktree.I see — the worktree's HEAD is at `dcfa7b5` which says "build-complete" for phase-2, but the files I read earlier seem to be from the main branch. Let me read from the worktree path directly.Good, now I can see the actual implementation. Let me read the test files from the worktree.Now let me run the tests to verify everything passes:All 52 tests pass (27 original + 8 phase-1 + 17 phase-2). Let me now deliver my review.
+
+---
+
+## Implementation Review: Phase 2 — LiveTracer thread and wrapper integration
+
+### 1. Spec Adherence ✅
+
+All spec success criteria are met:
+
+- **SC1 (incremental emission)**: `test_incremental_emission_visible_before_close` + `test_end_to_end_live_streaming_with_fake_strace` prove events land in `.jsonl` before strace exits.
+- **SC2 (empty session)**: `test_empty_session_produces_empty_jsonl` ✓
+- **SC3 (non-PF fallback)**: `test_live_parser_fallback_to_post_hoc` verifies stderr warning, post-hoc overwrite, and exit code preservation.
+- **SC4 (LIVE_PARSE=0)**: `test_live_parse_disabled_no_thread_started` — structural check that `LiveTracer` is never even constructed. Nice.
+- **SC5 (TEST_FAIL_AFTER)**: `test_test_fail_after_under_live_mode_writes_partial_truncates_jsonl` checks `.jsonl.partial` has exactly 1 event, `.jsonl` is zero bytes, and strict-mode flip.
+- **SC6 (27 existing tests)**: All pass unmodified.
+- **SC7–SC10 (boundary stitching, partial lines, symlink safety, join timeout)**: All have dedicated tests.
+
+### 2. Code Quality ✅
+
+**`LiveTracer` class** (lines 414–525): Clean, well-documented lifecycle. Key design decisions are solid:
+
+- `start()` opens both handles before spawning the thread, and properly cleans up if either open fails (lines 447–473). The double-`try` for trace_fh/jsonl_fh is correct.
+- `_run()` carry-buffer logic (`pending`) correctly splits on `\n`, keeps the trailing fragment, and flushes it on `stop_event` — matching post-hoc `parse_lines` behavior on files without trailing newlines.
+- `finally` block always closes both handles. Combined with the main thread only opening its fallback writer *after* `join()` returns, the spec's single-writer invariant is guaranteed.
+- `daemon=True` ensures a stuck thread never blocks process exit.
+- Catching `BaseException` (not just `Exception`) in `_run` is appropriate for a daemon thread — prevents `KeyboardInterrupt`/`SystemExit` from leaking.
+
+**`run()` integration** (lines 94–277): The branching logic faithfully implements the failure-mode table from the spec:
+
+| Branch | Code path | Tested by |
+|--------|-----------|-----------|
+| Clean exit | Lines 251 (no-op) | `test_incremental_emission`, E2E |
+| ParserFailure | Lines 188–205 | `test_test_fail_after_under_live_mode` |
+| Non-PF error | Lines 206–250 | `test_live_parser_fallback_to_post_hoc` |
+| Join timeout | Lines 182–187 | `test_join_timeout_warns_and_preserves_partial_jsonl` |
+| Start failure | Lines 116–122 | `test_live_start_open_failure_falls_back_to_post_hoc` |
+
+**Env-knob helpers** (`_clamped_float`, `_live_poll_seconds`, `_live_join_timeout`): The `_clamped_float` helper correctly handles NaN via `value != value`, which is a nice touch. Out-of-range and unparseable values fall back to defaults silently.
+
+### 3. Test Coverage ✅
+
+17 new tests in `test_live_trace.py` + 1 E2E in `test_codex_observe.py`. Coverage is thorough:
+
+- **Unit tests** (`LiveTracerUnitTests`): Drive `LiveTracer` directly against temp files — incremental emission, unfinished/resumed across poll boundary, partial trailing line (both buffered-then-completed and flushed-at-stop variants).
+- **Wrapper integration tests** (`LiveModeWrapperTests`): Use `_run_in_process` for monkeypatch-requiring scenarios (clever approach — avoids subprocess boundary) and `_run_wrapper` for subprocess-level tests.
+- **Error cascade tests**: `test_live_append_failure_falls_back_to_post_hoc` and `test_double_write_failure_cascade` exercise the multi-level fallback logic.
+
+The `_wait_until` helper with monotonic clock is a good pattern for avoiding timing flakiness.
+
+### 4. Error Handling ✅
+
+Every failure path prints a `codex-observe:` stderr message naming the error and the original Codex exit code before any strict-mode override. The cascading error handling in the `live_error` branch (lines 206–250) correctly handles:
+- Post-hoc parse succeeds → overwrite `.jsonl`
+- Post-hoc parse raises `ParserFailure` → write `.jsonl.partial`
+- Post-hoc parse raises other Exception → attempt `.jsonl.partial` with empty list, with inner exception guard
+
+### 5. Plan Alignment ✅
+
+All plan tasks for phase-2 are completed:
+- ✅ Env-knob parsing helpers (task 1)
+- ✅ `LiveTracer` class (task 2)
+- ✅ `run()` integration (task 3)
+- ✅ stderr message format follows existing convention (task 4)
+- ✅ Thread teardown safety (task 5)
+- ✅ All planned tests present
+
+### Minor Observations (non-blocking)
+
+1. **LiveTracer starts before strace**: The tracer opens `.trace` and begins polling before strace is launched (line 96 vs 162). This works fine — the tailer just reads empty until strace truncates and starts writing — but it means a few wasted poll cycles. Not a problem in practice.
+
+2. **`test_double_write_failure_cascade`** lets the `.jsonl.partial` write succeed. The spec scenario description says "also patching `safe_write_jsonl` to raise" for both. The current test exercises the outer cascade but not the innermost `except Exception as inner` path at line 247. Very minor gap — the code path exists and is straightforward.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 is complete — LiveTracer, wrapper integration, env knobs, and all failure/fallback paths are correctly implemented with thorough test coverage (52 tests, all passing).
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

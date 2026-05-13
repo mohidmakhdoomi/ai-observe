@@ -79,10 +79,14 @@ def parse_trace_file(
     return result
 
 
+def dump_event(event: dict[str, Any]) -> str:
+    return json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+
+
 def write_jsonl(path: str | os.PathLike[str], events: Iterable[dict[str, Any]]) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         for event in events:
-            fh.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
+            fh.write(dump_event(event))
 
 
 class TraceParser:
@@ -108,18 +112,31 @@ class TraceParser:
         self.unfinished: dict[tuple[int | None, str], tuple[str | None, str]] = {}
         self.events: list[dict[str, Any]] = []
         self.errors: list[str] = []
+        self._emitted: int = 0
+
+    def feed_line(self, raw_line: str) -> list[dict[str, Any]]:
+        """Feed one trace line. Returns events newly appended by this call.
+
+        Mirrors `parse_lines` semantics for a single line: blank lines are
+        skipped; `ParserFailure` propagates; other exceptions are captured
+        into `self.errors`.
+        """
+        line = raw_line.rstrip("\n")
+        if not line.strip():
+            return []
+        try:
+            self._parse_line(line)
+        except ParserFailure:
+            raise
+        except Exception as exc:  # safe false-negative
+            self.errors.append(f"skip line: {exc}: {line}")
+        new_events = self.events[self._emitted:]
+        self._emitted = len(self.events)
+        return new_events
 
     def parse_lines(self, lines: Iterable[str]) -> ParseResult:
         for raw_line in lines:
-            line = raw_line.rstrip("\n")
-            if not line.strip():
-                continue
-            try:
-                self._parse_line(line)
-            except ParserFailure:
-                raise
-            except Exception as exc:  # safe false-negative
-                self.errors.append(f"skip line: {exc}: {line}")
+            self.feed_line(raw_line)
         return ParseResult(self.events, self.errors)
 
     def _parse_line(self, line: str) -> None:

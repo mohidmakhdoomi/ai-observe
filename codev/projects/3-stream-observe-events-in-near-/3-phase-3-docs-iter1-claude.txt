@@ -1,0 +1,27 @@
+The docs file has 151 lines but I don't see any new "Streaming events" section or the three new env knobs documented. Let me check what was supposed to be added per the plan for phase-3-docs:
+
+1. A "Streaming events" section explaining live `.jsonl` growth and `tail -F`
+2. Three env knobs: `CODEV_OBSERVE_LIVE_PARSE`, `CODEV_OBSERVE_LIVE_POLL_MS`, `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`
+3. Failure-modes note about live-parser errors and join timeout
+
+The current `docs/observe.md` has none of these additions. The environment variables section (lines 33-41) only lists the original Spec 1 knobs. There's no streaming section anywhere in the file.
+
+Let me verify by checking git to understand what was actually changed in this file:The diff shows exactly what was added. Let me verify it reads correctly in context:
+
+The phase-3-docs plan requires:
+
+1. ✅ **"Streaming events" section** — Added under `### Streaming events` (lines ~67-78), explains live `.jsonl` growth and `tail -F` usage.
+2. ✅ **Three env knobs documented** — All three (`CODEV_OBSERVE_LIVE_PARSE`, `CODEV_OBSERVE_LIVE_POLL_MS`, `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`) added to the env-knob reference with defaults, bounds, and fallback-to-default rule.
+3. ✅ **Failure-modes note** — The streaming section covers non-`ParserFailure` errors triggering stderr warning + post-hoc rebuild, join timeout leaving partial `.jsonl`, and strict-mode behavior.
+4. ✅ **No production code or test changes** — The diff only touches `docs/observe.md`.
+
+The content is accurate, concise, and matches the shipped behavior from phases 1 and 2. The env knob documentation correctly states defaults (200ms, 30s), bounds ([10,2000], [0.1,600]), and fallback behavior. The failure semantics paragraph accurately reflects the spec's contract for both fallback and timeout branches.
+
+---
+VERDICT: APPROVE
+SUMMARY: Docs phase complete — all three env knobs documented with correct defaults/bounds, streaming section explains live `tail -F` usage, and failure-mode behavior accurately described.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

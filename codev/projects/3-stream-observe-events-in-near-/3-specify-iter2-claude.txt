@@ -1,0 +1,90 @@
+I'll review this spec by first checking the existing codebase to verify claims and assess feasibility.Now let me check the existing tests to verify the "27 existing tests" claim and understand the test patterns:Good — 14 + 13 = 27 tests, confirming the spec's claim. Now I have enough context for a thorough review.
+
+---
+
+## Specification Review: Spec 3 — Stream observe events in near real time
+
+### 1. Completeness
+
+**Strong points:**
+- Requirements are clearly stated with explicit goals and non-goals
+- Failure semantics table is comprehensive — covers 6 distinct failure modes
+- Success criteria are well-structured (MUST vs SHOULD) and testable
+- Acceptance criteria mapping ties each user-facing promise to a specific test scenario
+- Open questions are all resolved inline — no dangling ambiguity
+
+**Minor gaps:**
+- The spec mentions `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` for tests but doesn't list it alongside the other two env knobs in the "User experience" section. It should be documented there (even as "internal/test-only") for consistency.
+- No mention of what happens if the `.trace` file doesn't exist when the parser thread tries to open it (e.g., strace hasn't created it yet due to a race). The thread presumably needs a short retry/wait loop before the first read. The spec says "Open the trace file" but the file is created by strace, not by `prepare_logs` — actually, looking at the code, `exclusive_touch` creates `.trace` at line 322, so it exists but is empty. This is fine. Disregard.
+
+### 2. Technical Feasibility
+
+**Verified against codebase — all feasible:**
+
+- **`TraceParser` reuse**: The spec proposes feeding lines incrementally into a shared `TraceParser`. Looking at `parse_lines()` (line 112), it iterates an `Iterable[str]` and appends to `self.events`. A `feed_lines` method that does the same but returns newly-added events is trivially implementable. ✅
+- **`safe_write_jsonl` reuse for fallback**: The existing function (line 212) uses `O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW` — perfect for the overwrite-on-fallback case. ✅
+- **Thread safety**: The spec correctly notes the main thread is blocked in `proc.wait`, so there's no contention with the parser thread over shared state. The only shared state is the stop flag (set by main, read by thread) — a simple `threading.Event`. ✅
+- **`ParserFailure` propagation from thread**: The spec says "catch `ParserFailure` in the thread, re-raise it after join." This is clean — store the exception in a thread-accessible attribute, check it after `join()`. ✅
+- **Python stdlib only**: Everything described (threading, file I/O, os module) is stdlib. ✅
+
+**One technical nuance worth noting:**
+
+The spec says the live JSONL writer opens the pre-created `.jsonl` with `O_WRONLY | O_APPEND | O_NOFOLLOW`. But on `ParserFailure`, the spec says `.jsonl` should be "truncated to zero bytes" via `safe_write_jsonl` with an empty event list. Since `safe_write_jsonl` uses `O_TRUNC`, it will correctly zero the file. However, the live writer thread may still have the file open with `O_APPEND` — the thread needs to close its handle *before* the fallback truncation. The spec implies this (thread completes/errors → main handles fallback) but doesn't explicitly state the thread must close its `.jsonl` handle in all exit paths (clean exit, exception, `ParserFailure`). This should be clarified, though a builder would likely get it right since the thread's cleanup naturally closes the handle.
+
+### 3. Edge Cases and Error Handling
+
+**Well covered:**
+- Partial line buffering at read boundaries ✅
+- `<unfinished>`/`<resumed>` across poll intervals ✅  
+- Disk full / permission errors mid-stream ✅
+- Thread join timeout (defensive 30s bound) ✅
+- Empty sessions ✅
+- `CODEV_OBSERVE_TEST_FAIL_AFTER` under live mode ✅
+
+**One edge case not explicitly addressed:**
+- **Rapid successive events written by strace in a single `read()` call**: The spec says `read(64KB)` and split on newline. If strace flushes a large batch (say 100 lines at once), the parser thread processes them all in one loop iteration and writes 100 JSONL lines. This is fine behavior-wise but worth confirming the spec intends no event batching/buffering on the write side — every event gets its own `write()+flush()`. The spec does say this ("writes one line per event with `fh.write(...)` followed by `fh.flush()`") so this is covered. ✅
+
+### 4. Security Considerations
+
+- Reuses existing `verify_log_path_safe` / symlink rejection for the live writer. ✅
+- File mode `0600` preserved. ✅
+- `O_NOFOLLOW` on the JSONL open. ✅
+- No new attack surface (no sockets, no pipes, no network). ✅
+- The spec correctly notes that strace traces contain secrets and the existing warning is unchanged. ✅
+
+No security concerns.
+
+### 5. Testing Strategy
+
+**Excellent coverage design:**
+- 9 specific test scenarios covering incremental emission, boundary stitching, partial lines, fallback, test hooks, env knob validation, empty sessions, and full E2E integration
+- E2E test reuses existing `make_fake_tools` pattern — grounded in actual test infrastructure
+- Explicit requirement that all 27 existing tests pass unchanged
+
+**One suggestion:**
+- The "End-to-end wrapper integration" test scenario involves reading `.jsonl` mid-run "from a subprocess background thread." This is the most complex test and could be flaky if timing-dependent. The spec should note that the test should use polling with a bounded timeout rather than fixed sleeps, and define what "at least one event visible before strace exits" means concretely (e.g., poll the file size or line count with retries). This is a plan/implementation concern though, not a spec issue.
+
+### 6. Ambiguities
+
+**Minor:**
+- The spec says `CODEV_OBSERVE_LIVE_POLL_MS` has "Lower bound `10`, upper bound `2000`." It also says "Out-of-range or unparseable values fall back to the default." But the test scenario says testing with `0` and `9999` — `0` is below the lower bound and `9999` is above the upper bound, so this is consistent. However, the spec doesn't say whether `10` and `2000` themselves are valid (inclusive bounds) — a builder would assume inclusive, which is fine.
+- The spec says the live writer uses `O_APPEND` but the post-hoc `safe_write_jsonl` uses `O_TRUNC`. The spec should clarify that the live writer uses a *different* open helper (not `safe_write_jsonl` itself) that shares the same safety checks but uses `O_APPEND` instead of `O_TRUNC`. It does say "through a new helper that runs the same `verify_log_path_safe`/symlink rejection" — this is clear enough.
+
+---
+
+**Overall Assessment:**
+
+This is an exceptionally well-written specification. It demonstrates deep understanding of the existing codebase (verified — all references to existing code, test counts, and behavior are accurate). The failure semantics table and success criteria are production-grade. The approach section walks the line between spec and plan — it's more prescriptive than a typical spec — but given the threading and fallback complexity, this level of detail is appropriate and will prevent misimplementation.
+
+The only substantive feedback is that the thread's `.jsonl` file handle cleanup ordering should be explicitly stated (thread must close before fallback can truncate), but this is minor enough that a competent builder would handle it correctly.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, accurate spec with comprehensive failure handling, verified against actual codebase; ready for human review.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None critical.
+- Minor: Spec should explicitly state that the parser thread must close its `.jsonl` file handle before the main thread can invoke the post-hoc fallback (truncate). Currently implied but not stated.
+- Minor: `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` env knob is mentioned in the approach but not listed in the "User experience" env knobs section.

@@ -1,0 +1,95 @@
+Let me read the existing codebase to verify the spec's claims and assess feasibility.I've read both source files. Now let me check the existing test suite to verify the "27 existing tests" claim and understand test patterns.Good — 14 + 13 = 27. The test count claim checks out. Now let me check the `safe_write_jsonl` and `write_jsonl` serialization to verify the spec's byte-equivalence claim is feasible.I now have everything I need to provide a thorough review.
+
+---
+
+## Specification Review: Spec 3 — Stream observe events in near real time
+
+### 1. Completeness
+
+**Strong.** The spec is exceptionally detailed — arguably the most thorough spec I've seen for a feature of this scope. It covers:
+
+- ✅ Clear problem statement and goals
+- ✅ Non-goals explicitly listed (no FIFOs, no pipe mode, no enrichment)
+- ✅ User experience narrative
+- ✅ Env knob definitions with defaults, bounds, and validation behavior
+- ✅ Failure mode matrix (6 scenarios)
+- ✅ Thread lifecycle including the join-timeout edge case
+- ✅ Backpressure strategy
+- ✅ 12 test scenarios covering functional paths, edge cases, and security
+- ✅ Acceptance criteria mapping back to test scenarios
+
+### 2. Correctness — verified against code
+
+**Serialization parity.** The spec says both live and post-hoc must use `json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"`. I verified:
+- `trace_parser.py:85` (`write_jsonl`) uses exactly that format
+- `codex_observe.py:224` (`safe_write_jsonl`) uses the same format
+
+The spec's proposal for a shared helper is the right call — today these two are duplicated. Byte-equivalence is mechanically achievable.
+
+**`TraceParser` reuse for incremental feeding.** The spec proposes `feed_lines()` or similar. Looking at `parse_lines` (line 112-123), it iterates an `Iterable[str]` and appends to `self.events`. The parser is already stateful with `self.unfinished` and `self.states`, so incremental feeding is straightforward — the spec's approach of calling `_parse_line` line-by-line and checking `len(self.events)` for new events is correct. No reentrant/async concerns.
+
+**27 existing tests claim** — verified: 14 in `test_codex_observe.py` + 13 in `test_trace_parser.py` = 27. ✅
+
+**`exclusive_touch` in `prepare_logs`** — the spec correctly notes that `.jsonl` is pre-created with `O_EXCL` and the live writer reopens it with `O_APPEND`. This flow is consistent with the existing code (line 361-367).
+
+### 3. Technical Feasibility
+
+**Feasible, no blockers.** The approach is sound:
+
+- Threading over asyncio/multiprocessing is the right choice given the stdlib-only constraint and the synchronous `TraceParser` API.
+- Daemon thread + join timeout is a standard pattern.
+- File-based tailing with poll loop is simple and reliable.
+- The `TraceParser` is already designed for single-pass streaming — no rewrite needed, just a new entry point.
+
+### 4. Issues and Observations
+
+#### Minor Issues
+
+**A. Duplicate non-functional criteria numbering.** Success criteria 9 and 10 are used twice — once under "Functional (SHOULD)" and again under "Non-functional (SHOULD)". The functional #9 (symlink rejection) and #10 (join timeout) collide with non-functional #9 (sub-second latency) and #10 (memory overhead). This is a numbering error, not a substance issue, but a builder could mis-reference them.
+
+**B. ParserFailure + live `.jsonl` truncation timing.** The spec says when `ParserFailure` fires under live mode, the wrapper truncates `.jsonl` via `safe_write_jsonl(jsonl_path, [], ...)`. But the live thread may have already written N events to `.jsonl` before raising. The spec covers this (explicitly: "even if the live parser had already streamed events to it before raising ParserFailure, the wrapper truncates it"), but the test scenario should assert the `.jsonl` is zero bytes, not just "empty" — since `safe_write_jsonl` uses `O_TRUNC`, this should be fine. The spec does say "zero-byte file" — good.
+
+**C. The `safe_append_jsonl` helper is described loosely.** The spec says "Add a `safe_append_jsonl(path, observe_dir)` helper (or reuse `verify_log_path_safe` + an `O_WRONLY | O_APPEND | O_NOFOLLOW` open)." This leaves the builder to choose. Given that the spec's own test scenario ("Live append symlink-swap rejection") tests this helper directly, it should exist as a named function. Not a blocker — just a clarity note.
+
+**D. No mention of `write_jsonl` deduplication.** The spec says "Both the live writer and the post-hoc writer must call a single shared helper so the byte-equivalent claim is mechanically enforced." But currently there are *two* serialization sites: `write_jsonl` in `trace_parser.py:82-85` and `safe_write_jsonl` in `codex_observe.py:212-228`. The spec should clarify which one becomes the canonical serializer, or note that both should be refactored. The plan phase will likely sort this out, but a builder might miss it.
+
+**E. `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` — the "seconds" vs float ambiguity.** The spec says "seconds" with lower bound `0.1`. Is this a float env var? The test scenario uses `0.2`. This is fine but worth an explicit note that it's parsed as `float()`, consistent with how `CODEV_OBSERVE_SIGNAL_GRACE` is already used (line 126 in `codex_observe.py`: `float(env.get(...))`).
+
+#### Not Issues (Things the spec gets right)
+
+- **No post-hoc rewrite on join timeout** — correct, avoids racing the daemon thread's fd.
+- **Single writer to `.jsonl`** — eliminates atomicity concerns around `O_APPEND` and `PIPE_BUF`.
+- **Carry-over partial line** — matches `TraceParser.parse_lines` which iterates a file object (yields lines including the final one without `\n`).
+- **Backpressure via disk, not memory** — clean design.
+
+### 5. Security
+
+- ✅ `O_NOFOLLOW` on the append path — consistent with existing hardening.
+- ✅ Symlink-swap test scenario covers TOCTOU between `exclusive_touch` and live reopen.
+- ✅ Mode `0600` on log files preserved.
+- ✅ No new network or IPC surfaces.
+
+### 6. Testing Strategy
+
+**Comprehensive and well-designed.** The 12 test scenarios cover:
+- Happy path (incremental emission, empty session)
+- Parser edge cases (resume across boundary, partial line)
+- Failure modes (fallback, double-failure, write failure, join timeout)
+- Security (symlink swap)
+- Env knob validation
+- Integration (end-to-end with fake strace shim)
+
+One suggestion: the "End-to-end wrapper integration" test that uses a "background thread" to read `.jsonl` mid-run introduces a race. The spec might note that this test should use retry/polling (not a single-shot read) to confirm events are visible, to avoid flakiness.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally thorough spec with correct technical foundations; only cosmetic numbering collision and minor clarification gaps remain — none block implementation.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- Duplicate numbering: functional SHOULD criteria #9/#10 collide with non-functional SHOULD #9/#10 — renumber to avoid ambiguity when referencing from plan/tests.
+- `write_jsonl` vs `safe_write_jsonl` serialization dedup: spec says "single shared helper" but doesn't specify which of the two existing callsites becomes canonical. Builder should consolidate during plan phase.
+- End-to-end integration test's mid-run `.jsonl` read should use polling/retry to avoid race-condition flakiness (minor test robustness note).

@@ -1,0 +1,87 @@
+I'll review this spec by first checking the existing codebase to verify claims and assess feasibility.Now I have a thorough understanding of the codebase. Let me provide my review.
+
+---
+
+## Specification Review: Spec 3 — Stream observe events in near real time
+
+### Completeness
+
+**Excellent.** This is one of the most thorough specs I've reviewed. It covers:
+- The happy path (incremental JSONL emission)
+- Every failure mode in a structured table
+- Thread lifecycle with precise join semantics (7 enumerated states)
+- Backpressure model (no bounded queue — lag accumulates on disk)
+- Env knob validation with explicit bounds and fallback behavior
+- Compatibility matrix against every Spec 1 behavior
+
+The test scenarios are comprehensive and well-mapped to acceptance criteria.
+
+### Correctness
+
+**Verified against actual code.** Key checks:
+
+1. **"All 27 existing tests"** — Confirmed: 13 methods in `test_trace_parser.py` + 14 methods in `test_codex_observe.py` = 27. ✓
+
+2. **`exclusive_touch` uses `O_WRONLY | O_CREAT | O_EXCL`** — Confirmed at `codex_observe.py:362`. The spec's claim that `.jsonl` is pre-created this way is accurate. ✓
+
+3. **Shared serialization claim** — The spec correctly identifies that `write_jsonl` (trace_parser.py:82-85) and `safe_write_jsonl` (codex_observe.py:212-228) both inline `json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"` separately. Unifying into a shared helper is the right call for byte-equivalence. ✓
+
+4. **`TraceParser.events` is appendable and inspectable** — Confirmed at line 109: `self.events: list[dict[str, Any]] = []`. The proposed approach of tracking list length to detect new events after each `feed_lines` call is mechanically sound. ✓
+
+5. **`parse_lines` iterates an iterable and calls `_parse_line` per line** — Confirmed at lines 112-123. The proposed incremental entry point (`feed_lines`) is a natural extension. ✓
+
+6. **`ParserFailure` raised inside `_parse_line`** — Confirmed at line 162-163. The spec's concern about surfacing this correctly from the parser thread (vs. generic crash) is well-founded and properly addressed. ✓
+
+### Feasibility
+
+**High confidence this is implementable.** The approach is conservative:
+- Single thread sharing a `TraceParser` instance (no cross-process coordination)
+- Polling with `read()` on a growing file (well-understood pattern)
+- stdlib-only (threading, os-level file ops)
+- GIL irrelevance argument is correct: main thread blocks in `proc.wait`, not contending for CPU
+
+### Issues and Suggestions
+
+**1. Join-timeout + daemon thread: potential for truncated JSONL line (Minor)**
+
+When the join times out (lifecycle step 7), the daemon thread is still alive and potentially mid-write to `.jsonl`. When the process exits, the daemon thread is killed. Since writes are line-at-a-time with `flush()`, the window is tiny — but a consumer could see a partial final JSON line. The spec's note about "leaving partial .jsonl" acknowledges this, but a builder might want explicit guidance: should the consumer tolerate a truncated last line? Consider noting this as a documented limitation for `.jsonl` consumers.
+
+**2. `CODEV_OBSERVE_LIVE_PARSE` value semantics (Trivial)**
+
+The spec says `CODEV_OBSERVE_LIVE_PARSE=0` disables live mode. It doesn't explicitly state what values enable it — presumably anything other than `"0"` (including absence). This matches the project's pattern for `CODEV_OBSERVE_DISABLE`, `CODEV_OBSERVE_QUIET`, etc., so a builder should infer it, but an explicit note wouldn't hurt.
+
+**3. The `feed_lines` API shape is underspecified (Intentional)**
+
+The spec says "Add a generator-style entry point or a `feed_lines(iterable)`-like helper" — this leaves the exact API to the plan phase, which is appropriate for a spec. The key invariant (same `TraceParser` instance, same ordering, events accessible after each call) is clearly stated.
+
+**4. No mention of Spec 2 (Nice-to-know)**
+
+The spec numbering jumps from 1 to 3. If Spec 2 exists and touches `codex_observe.py` or `trace_parser.py`, there could be merge conflicts. Not a spec issue per se, but worth confirming no concurrent spec modifies the same files.
+
+### Security
+
+The spec preserves all Spec 1 hardening:
+- `verify_log_path_safe` / symlink rejection before opening `.jsonl` for append ✓
+- `O_NOFOLLOW` on the live write handle ✓
+- No new file paths exposed outside `observe_dir` ✓
+- No new IPC surfaces (no FIFOs, sockets, or pipes) ✓
+
+### Testing Strategy
+
+Strong. The proposed `test_live_trace.py` covers:
+- Unit-level (driving `LiveTracer` against temp files)
+- Integration-level (end-to-end with fake strace shim extending `make_fake_tools`)
+- Failure injection (monkeypatched crashes, `CODEV_OBSERVE_TEST_FAIL_AFTER`)
+- Env knob validation (bounds, non-numeric, fallback)
+
+The "no modification to existing tests" constraint is strict and appropriate.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally thorough spec with verified claims against actual codebase; minor cosmetic suggestions only.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None critical. Minor: daemon thread kill on join-timeout could leave a truncated final JSONL line — consider documenting this for consumers.

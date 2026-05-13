@@ -12,9 +12,11 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
+import time
 from typing import Callable
 
-from .trace_parser import ParserFailure, parse_trace_file
+from .trace_parser import ParserFailure, TraceParser, dump_event, parse_trace_file
 
 SESSION_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -83,6 +85,41 @@ def run(argv: list[str], env: dict[str, str]) -> int:
     interrupted: int | None = None
     forced_terminated = False
     old_handlers: dict[int, Callable | int | None] = {}
+    fail_after = env.get("CODEV_OBSERVE_TEST_FAIL_AFTER")
+    fail_after_n = int(fail_after) if fail_after else None
+    include_log_writes = env.get("CODEV_OBSERVE_INCLUDE_LOG_WRITES") == "1"
+    initial_cwd = str(Path(os.getcwd()).resolve())
+    active_artifacts = {str(Path(p).resolve()) for p in (logs.trace_path, logs.jsonl_path, logs.partial_path)}
+
+    live_parser: TraceParser | None = None
+    live_tracer: LiveTracer | None = None
+    if _live_enabled(env):
+        live_parser = TraceParser(
+            session_id=logs.session_id,
+            invocation_id=logs.session_id,
+            command=command,
+            initial_cwd=initial_cwd,
+            active_artifacts=active_artifacts,
+            include_log_writes=include_log_writes,
+            fail_after_events=fail_after_n,
+        )
+        candidate = LiveTracer(
+            logs.trace_path,
+            logs.jsonl_path,
+            logs.observe_dir,
+            live_parser,
+            _live_poll_seconds(env),
+        )
+        try:
+            candidate.start()
+            live_tracer = candidate
+        except Exception as exc:
+            print(
+                f"codex-observe: warning: live tracer failed to start: {exc}; continuing with post-hoc-only",
+                file=sys.stderr,
+            )
+            live_parser = None
+            live_tracer = None
 
     def _forward(signum: int) -> None:
         if proc and proc.poll() is None:
@@ -139,28 +176,102 @@ def run(argv: list[str], env: dict[str, str]) -> int:
         print("codex-observe: strace failed; ptrace may be denied by sandbox/seccomp/Yama", file=sys.stderr)
 
     parse_failed = False
-    try:
-        fail_after = env.get("CODEV_OBSERVE_TEST_FAIL_AFTER")
-        result = parse_trace_file(
-            logs.trace_path,
-            None,
-            session_id=logs.session_id,
-            invocation_id=logs.session_id,
-            command=command,
-            initial_cwd=os.getcwd(),
-            active_artifacts=[logs.trace_path, logs.jsonl_path, logs.partial_path],
-            include_log_writes=env.get("CODEV_OBSERVE_INCLUDE_LOG_WRITES") == "1",
-            fail_after_events=int(fail_after) if fail_after else None,
-        )
-        safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
-    except ParserFailure as exc:
-        parse_failed = True
-        safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
-        print(f"codex-observe: parser failed; wrote {logs.partial_path}; original exit {codex_code}", file=sys.stderr)
-    except Exception as exc:  # safe wrapper behavior
-        parse_failed = True
-        safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
-        print(f"codex-observe: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}", file=sys.stderr)
+    if live_tracer is not None:
+        live_tracer.request_stop()
+        timed_out, live_error, live_pf = live_tracer.join(_live_join_timeout(env))
+        if timed_out:
+            parse_failed = True
+            print(
+                f"codex-observe: live parser did not exit within join timeout; leaving partial .jsonl; original exit {codex_code}",
+                file=sys.stderr,
+            )
+        elif live_pf is not None:
+            parse_failed = True
+            try:
+                safe_write_jsonl(logs.partial_path, live_pf.events, logs.observe_dir)
+            except Exception as exc:
+                print(
+                    f"codex-observe: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {exc}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"codex-observe: parser failed; wrote {logs.partial_path}; original exit {codex_code}",
+                    file=sys.stderr,
+                )
+            try:
+                safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
+            except Exception:
+                pass
+        elif live_error is not None:
+            parse_failed = True
+            print(
+                f"codex-observe: warning: live parser raised {type(live_error).__name__}: {live_error}; falling back to post-hoc rebuild; original exit {codex_code}",
+                file=sys.stderr,
+            )
+            try:
+                result = parse_trace_file(
+                    logs.trace_path,
+                    None,
+                    session_id=logs.session_id,
+                    invocation_id=logs.session_id,
+                    command=command,
+                    initial_cwd=initial_cwd,
+                    active_artifacts=active_artifacts,
+                    include_log_writes=include_log_writes,
+                    fail_after_events=fail_after_n,
+                )
+                safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
+            except ParserFailure as exc:
+                parse_failed = True
+                try:
+                    safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
+                except Exception as inner:
+                    print(
+                        f"codex-observe: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {inner}",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"codex-observe: parser failed; wrote {logs.partial_path}; original exit {codex_code}",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                parse_failed = True
+                try:
+                    safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
+                    print(
+                        f"codex-observe: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}",
+                        file=sys.stderr,
+                    )
+                except Exception as inner:
+                    print(
+                        f"codex-observe: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {exc}; secondary: {inner}",
+                        file=sys.stderr,
+                    )
+        # Clean live exit: `.jsonl` already has the final stream; nothing else to do.
+    else:
+        try:
+            result = parse_trace_file(
+                logs.trace_path,
+                None,
+                session_id=logs.session_id,
+                invocation_id=logs.session_id,
+                command=command,
+                initial_cwd=initial_cwd,
+                active_artifacts=active_artifacts,
+                include_log_writes=include_log_writes,
+                fail_after_events=fail_after_n,
+            )
+            safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
+        except ParserFailure as exc:
+            parse_failed = True
+            safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
+            print(f"codex-observe: parser failed; wrote {logs.partial_path}; original exit {codex_code}", file=sys.stderr)
+        except Exception as exc:  # safe wrapper behavior
+            parse_failed = True
+            safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
+            print(f"codex-observe: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}", file=sys.stderr)
 
     if parse_failed and env.get("CODEV_OBSERVE_STRICT_PARSE") == "1":
         return 1
@@ -219,13 +330,201 @@ def safe_write_jsonl(path: Path, events, observe_dir: Path) -> None:
     except OSError as exc:
         raise ObserveError(f"cannot safely write log path {path}: {exc}", 1) from exc
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        import json
+        from .trace_parser import dump_event
         for event in events:
-            fh.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
+            fh.write(dump_event(event))
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
+
+
+def safe_append_jsonl_handle(path: Path, observe_dir: Path):
+    """Open a path-hardened append handle on `path`.
+
+    Verifies path safety, then opens with O_WRONLY | O_APPEND | O_NOFOLLOW
+    (when available). Returns a text-mode file object. Raises `ObserveError`
+    on any failure. Caller is responsible for closing the handle.
+    """
+    verify_log_path_safe(path, observe_dir)
+    flags = os.O_WRONLY | os.O_APPEND
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise ObserveError(f"cannot safely append log path {path}: {exc}", 1) from exc
+    try:
+        return os.fdopen(fd, "a", encoding="utf-8")
+    except OSError as exc:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise ObserveError(f"cannot wrap append handle for {path}: {exc}", 1) from exc
+
+
+def safe_open_trace_read(path: Path, observe_dir: Path):
+    """Open a path-hardened read handle on the `.trace` file.
+
+    Verifies path safety, then opens with O_RDONLY | O_NOFOLLOW (when
+    available). Returns a text-mode file object with `errors="replace"`
+    so partial multi-byte sequences at read boundaries are tolerated.
+    Raises `ObserveError` on any failure. Caller closes the handle.
+    """
+    verify_log_path_safe(path, observe_dir)
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ObserveError(f"cannot safely open trace for read {path}: {exc}", 1) from exc
+    try:
+        return os.fdopen(fd, "r", encoding="utf-8", errors="replace")
+    except OSError as exc:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise ObserveError(f"cannot wrap read handle for {path}: {exc}", 1) from exc
+
+def _live_enabled(env: dict[str, str]) -> bool:
+    return env.get("CODEV_OBSERVE_LIVE_PARSE") != "0"
+
+
+def _clamped_float(raw: str | None, *, lo: float, hi: float, default: float) -> float:
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if value != value or value < lo or value > hi:  # NaN or out-of-range
+        return default
+    return value
+
+
+def _live_poll_seconds(env: dict[str, str]) -> float:
+    ms = _clamped_float(env.get("CODEV_OBSERVE_LIVE_POLL_MS"), lo=10.0, hi=2000.0, default=200.0)
+    return ms / 1000.0
+
+
+def _live_join_timeout(env: dict[str, str]) -> float:
+    return _clamped_float(env.get("CODEV_OBSERVE_LIVE_JOIN_TIMEOUT"), lo=0.1, hi=600.0, default=30.0)
+
+
+class LiveTracer:
+    """Tail the strace `.trace` file and append events to `.jsonl` as they arrive.
+
+    Lifecycle:
+      - `start()` opens both files (raises if either open fails) and spawns
+        a daemon thread that runs `_run()`.
+      - The main thread calls `request_stop()` once strace exits, then
+        `join(timeout)` to wait for the tailer to drain.
+      - The thread captures any exceptions into `self.error` (or
+        `self.parser_failure` for `ParserFailure`) so the main thread can
+        decide how to recover.
+    """
+
+    def __init__(
+        self,
+        trace_path: Path,
+        jsonl_path: Path,
+        observe_dir: Path,
+        parser: TraceParser,
+        poll_seconds: float,
+    ) -> None:
+        self.trace_path = trace_path
+        self.jsonl_path = jsonl_path
+        self.observe_dir = observe_dir
+        self.parser = parser
+        self.poll_seconds = poll_seconds
+        self.stop_event = threading.Event()
+        self.error: BaseException | None = None
+        self.parser_failure: ParserFailure | None = None
+        self.thread: threading.Thread | None = None
+        self._trace_fh = None
+        self._jsonl_fh = None
+
+    def start(self) -> None:
+        trace_fh = safe_open_trace_read(self.trace_path, self.observe_dir)
+        try:
+            jsonl_fh = safe_append_jsonl_handle(self.jsonl_path, self.observe_dir)
+        except BaseException:
+            try:
+                trace_fh.close()
+            except OSError:
+                pass
+            raise
+        self._trace_fh = trace_fh
+        self._jsonl_fh = jsonl_fh
+        try:
+            self.thread = threading.Thread(target=self._run, daemon=True)
+            self.thread.start()
+        except BaseException:
+            try:
+                trace_fh.close()
+            except OSError:
+                pass
+            try:
+                jsonl_fh.close()
+            except OSError:
+                pass
+            self._trace_fh = None
+            self._jsonl_fh = None
+            raise
+
+    def request_stop(self) -> None:
+        self.stop_event.set()
+
+    def join(self, timeout: float) -> tuple[bool, BaseException | None, ParserFailure | None]:
+        if self.thread is None:
+            return False, self.error, self.parser_failure
+        self.thread.join(timeout=timeout)
+        timed_out = self.thread.is_alive()
+        return timed_out, self.error, self.parser_failure
+
+    def _emit(self, events) -> None:
+        if not events:
+            return
+        for event in events:
+            self._jsonl_fh.write(dump_event(event))
+        self._jsonl_fh.flush()
+
+    def _run(self) -> None:
+        pending = ""
+        try:
+            while True:
+                chunk = self._trace_fh.read(64 * 1024)
+                if chunk:
+                    pending += chunk
+                    if "\n" in pending:
+                        lines = pending.split("\n")
+                        pending = lines[-1]
+                        for line in lines[:-1]:
+                            self._emit(self.parser.feed_line(line))
+                    continue
+                if self.stop_event.is_set():
+                    if pending:
+                        self._emit(self.parser.feed_line(pending))
+                        pending = ""
+                    break
+                time.sleep(self.poll_seconds)
+        except ParserFailure as exc:
+            self.parser_failure = exc
+        except BaseException as exc:
+            self.error = exc
+        finally:
+            try:
+                if self._trace_fh is not None:
+                    self._trace_fh.close()
+            except OSError:
+                pass
+            try:
+                if self._jsonl_fh is not None:
+                    self._jsonl_fh.close()
+            except OSError:
+                pass
+
 
 def resolve_real_codex(env: dict[str, str], wrapper_argv0: Path) -> Path:
     wrapper_real = safe_resolve(wrapper_argv0)

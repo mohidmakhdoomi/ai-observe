@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ai_observe.trace_parser import ParserFailure, parse_trace_file
+from ai_observe.trace_parser import ParserFailure, TraceParser, dump_event, parse_trace_file
 
 
 class TraceParserTests(unittest.TestCase):
@@ -149,6 +149,72 @@ class TraceParserTests(unittest.TestCase):
 """, artifacts=["/tmp/work/.codev/observe/session.trace"])
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["path"], "/tmp/work/.codev/observe/other")
+
+    def test_dump_event_matches_writer_output(self):
+        events = self.parse('123 1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n')
+        self.assertEqual(len(events), 1)
+        expected = json.dumps(events[0], sort_keys=True, separators=(",", ":")) + "\n"
+        self.assertEqual(dump_event(events[0]), expected)
+
+    def _new_parser(self, cwd="/tmp/work"):
+        return TraceParser(
+            session_id="s1",
+            invocation_id="s1",
+            command=["/real/codex"],
+            initial_cwd=cwd,
+            active_artifacts=set(),
+            include_log_writes=False,
+        )
+
+    def test_feed_line_emits_one_event(self):
+        parser = self._new_parser()
+        new = parser.feed_line('123 1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n')
+        self.assertEqual(len(new), 1)
+        self.assertEqual(new[0]["operation"], "create")
+        self.assertEqual(new[0]["path"], "/tmp/work/x")
+
+    def test_feed_line_skips_blank_and_partial(self):
+        parser = self._new_parser()
+        self.assertEqual(parser.feed_line("\n"), [])
+        self.assertEqual(parser.feed_line("   \n"), [])
+        # Unfinished line stashes; no event yet.
+        self.assertEqual(
+            parser.feed_line('123 1714932000.000001 openat(AT_FDCWD, "u.txt", O_WRONLY|O_CREAT|O_EXCL <unfinished ...>\n'),
+            [],
+        )
+        # Resumed line lands one stitched event.
+        new = parser.feed_line('123 1714932000.000002 <... openat resumed> , 0600) = 3</tmp/work/u.txt>\n')
+        self.assertEqual(len(new), 1)
+        self.assertEqual(new[0]["operation"], "create")
+        self.assertEqual(new[0]["path"], "/tmp/work/u.txt")
+
+    def test_feed_line_propagates_parser_failure(self):
+        parser = TraceParser(
+            session_id="s1",
+            invocation_id="s1",
+            command=[],
+            initial_cwd="/tmp/work",
+            active_artifacts=set(),
+            include_log_writes=False,
+            fail_after_events=1,
+        )
+        with self.assertRaises(ParserFailure):
+            parser.feed_line('123 1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n')
+
+    def test_feed_line_equivalent_to_parse_lines(self):
+        text = (
+            '123 1714932000.000001 openat(AT_FDCWD, "n", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</tmp/work/n>\n'
+            '123 1714932000.000002 write(3</tmp/work/n>, "x", 1) = 1\n'
+            '123 1714932000.000003 unlink("n") = 0\n'
+        )
+        a = self._new_parser()
+        a.parse_lines(text.splitlines(keepends=True))
+        b = self._new_parser()
+        collected = []
+        for line in text.splitlines(keepends=True):
+            collected.extend(b.feed_line(line))
+        self.assertEqual(a.events, b.events)
+        self.assertEqual(collected, b.events)
 
     def test_parser_failure_carries_partial_events(self):
         with tempfile.TemporaryDirectory() as td:

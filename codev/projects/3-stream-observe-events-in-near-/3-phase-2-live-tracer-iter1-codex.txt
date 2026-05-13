@@ -1,0 +1,10 @@
+I’m reviewing the phase-2 implementation by reading the actual plan/spec/code/tests from disk, then I’ll verify behavior against the scoped phase deliverables.I’ve read the implementation and tests. Next I’m running the test suite to verify phase-2 behavior instead of reviewing from code alone.The first test run was blocked by the sandbox lacking `/tmp`/`/var/tmp`. I’m rerunning with a writable temp directory inside the workspace so I can assess the implementation itself.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Live tracing is largely implemented, but the strict-mode fallback behavior is wrong and the phase-2 test coverage misses a key required branch.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- `src/ai_observe/codex_observe.py:206-223` rebuilds `.jsonl` after a non-`ParserFailure` live-parser crash, but it never marks that run as parse-failed. Because the strict-mode override only happens at `src/ai_observe/codex_observe.py:275-276`, `CODEV_OBSERVE_STRICT_PARSE=1` will incorrectly return the original Codex exit code instead of `1` after a live-parser thread error. That violates the spec/plan requirement for the live-parser fallback branch.
+- The required “live parse disabled → no LiveTracer started” assertion is not actually being tested. `tests/test_live_trace.py:204-210` runs the wrapper in a subprocess, while `tests/test_live_trace.py:242-263` monkeypatches `codex_observe.LiveTracer` only in the parent process. That patch never reaches the child, so `test_live_parse_disabled_no_thread_started` does not verify the structural behavior the plan called for.
+- Related coverage gap: `tests/test_live_trace.py:305-331` exercises the live-parser-fallback branch only in non-strict mode, so the broken strict-mode path above is currently untested.

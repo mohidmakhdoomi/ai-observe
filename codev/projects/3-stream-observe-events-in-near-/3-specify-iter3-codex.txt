@@ -1,0 +1,9 @@
+Using local files to verify the spec against the actual wrapper/parser implementation and tests.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong, technically feasible spec, but a few high-risk failure/security paths are not pinned down tightly enough in the acceptance criteria and tests.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` is specified with distinct artifact and exit-code behavior, but it is not called out in the “What changes in code” section and there is no explicit acceptance criterion or test scenario for the timeout path. Add a dedicated requirement/test for “parser thread never exits before join timeout” so builders don’t miss this branch.
+- The spec adds a new security-sensitive append path for live `.jsonl` writes, but the test plan does not require verification that the append-open helper preserves Spec 1’s symlink/path-escape protections. Add a test analogous to the existing `safe_write_jsonl` symlink-swap test for the live append reopen path.
+- The `.jsonl` write-failure cascade is described in detail (`live append fails` → `post-hoc rewrite fails` → optional `.jsonl.partial` write failure), but none of that behavior is anchored by acceptance criteria or tests. Either reduce that branch to a simpler contract or add concrete assertions for stderr, exit code, and artifact end-state so implementation is unambiguous.

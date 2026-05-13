@@ -1,0 +1,21 @@
+Strong spec overall. I verified the repo context before reviewing: the spec file exists, the relevant implementation lives in `src/ai_observe/codex_observe.py` and `src/ai_observe/trace_parser.py`, and there are currently 27 existing tests total (`14` in `tests/test_codex_observe.py`, `13` in `tests/test_trace_parser.py`), so the compatibility target is grounded.
+
+Quick assessment by area:
+
+- **Clarity/completeness:** Mostly strong. Scope is tight, success criteria are testable, and the fallback/thread lifecycle is described in enough detail for a builder.
+- **Technical feasibility:** Feasible with the current code shape. `TraceParser` already supports incremental state internally, and `codex_observe.py` already owns process lifecycle, safe log creation, strict-mode semantics, and post-hoc write behavior.
+- **Edge cases:** Better than average. The spec explicitly covers `<unfinished>/<resumed>`, trailing partial lines, thread hangs, disk-write failures, and test-hook behavior.
+- **Security:** Good on `.jsonl` append hardening; that requirement matches the existing `safe_write_jsonl` philosophy. The one place I’d tighten is the `.trace` reopen/read path, which is newly important in live mode.
+- **Testing:** Comprehensive and realistic. The proposed new module plus the end-to-end fake-strace integration should give high confidence.
+
+The main issues I see are not blockers to the design, but they should be clarified so implementation and review stay aligned.
+
+---
+VERDICT: COMMENT
+SUMMARY: Well-scoped and implementable spec with strong testing coverage, but it should clarify timeout-partial semantics and explicitly decide whether live `.trace` reopening inherits the same path-safety guarantees as `.jsonl`.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The timeout branch is slightly self-contradictory: it says the wrapper writes an **empty** `.jsonl.partial` so “either `.jsonl` or `.jsonl.partial` reflects what we have,” but an empty partial file does not reflect the observed partial state. Clarify whether the empty partial is just a sentinel artifact, or whether the contract should instead say that `.jsonl` may remain partially written and `.jsonl.partial` is only a timeout marker.
+- The spec hardens live reopen of `.jsonl` with `O_NOFOLLOW`/path verification, but it does not explicitly say whether the new live reopen/read of `.trace` should get equivalent no-follow/path-safety checks. Since live mode introduces another reopen of a log path during execution, this should be an explicit decision rather than implicit carryover.
+- Minor clarity issue: the success-criteria numbering repeats `9`/`10` in the non-functional section. Not substantive, but worth cleaning up so plan/test references stay unambiguous.
