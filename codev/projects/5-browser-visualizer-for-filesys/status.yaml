@@ -1,26 +1,16 @@
 id: '5'
 title: browser-visualizer-for-filesys
 protocol: spir
-phase: implement
-plan_phases:
-  - id: phase-1-server
-    status: in_progress
-  - id: phase-2-ui-core
-    status: pending
-  - id: phase-3-ui-views
-    status: pending
-  - id: phase-4-docs
-    status: pending
-current_plan_phase: phase-1-server
+phase: plan
+plan_phases: []
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
     requested_at: '2026-05-13T19:15:18.788Z'
     approved_at: '2026-05-13T19:16:32.764Z'
   plan-approval:
-    status: approved
-    requested_at: '2026-05-13T21:15:38.227Z'
-    approved_at: '2026-05-13T21:16:48.043Z'
+    status: pending
   pr:
     status: pending
   verify-approval:
@@ -29,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-13T19:05:09.186Z'
-updated_at: '2026-05-13T21:16:56.436Z'
+updated_at: '2026-05-13T21:20:28.924Z'
