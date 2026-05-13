@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ai_observe viewer</title>
+<style>
+  body { font-family: monospace; margin: 1rem; }
+  pre { max-height: 80vh; overflow: auto; background: #f4f4f4; padding: 0.5rem; }
+</style>
+</head>
+<body>
+<h1>ai_observe viewer</h1>
+<p id="status">connecting&hellip;</p>
+<pre id="log"></pre>
+<script>
+(function () {
+  var statusEl = document.getElementById("status");
+  var logEl = document.getElementById("log");
+  var count = 0;
+  var es = new EventSource("/events");
+  es.addEventListener("append", function (ev) {
+    count += 1;
+    statusEl.textContent = "live (" + count + " events)";
+    var pre = document.createElement("div");
+    pre.textContent = ev.data;
+    logEl.appendChild(pre);
+  });
+  es.addEventListener("shutdown", function () {
+    statusEl.textContent = "server shutdown";
+    es.close();
+  });
+  es.onerror = function () {
+    statusEl.textContent = "disconnected";
+  };
+})();
+</script>
+</body>
+</html>
