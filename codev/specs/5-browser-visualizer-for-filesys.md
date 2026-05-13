@@ -98,8 +98,19 @@ A single page with two linked panels:
 - **Right panel — Indented tree/table**: each row is a path (file or
   directory). Columns: `Path` (indented by depth), `Bytes written`,
   `Events`, `Last touched`. Directories show subtree totals; files show
-  their own. Click a column header to sort; click a row to expand or
-  collapse a directory, and to highlight the corresponding rectangle.
+  their own. Click a row to expand or collapse a directory (for
+  directory rows), and to highlight the corresponding rectangle.
+
+  **Sort semantics (precise, so it is testable)**: sorting is
+  *sibling-local* — clicking a column header re-orders rows *within
+  each parent* by that column, but never lifts a row out of its
+  hierarchical position. The tree remains a tree; you do not get a
+  flat global sort that would scramble parent/child relationships.
+  Sort direction toggles on repeated header clicks (asc/desc). The
+  default sort is `Bytes written` descending. Expand/collapse state
+  is preserved across sort changes and across metric-toggle changes.
+  The currently-selected row is preserved across both as well; if its
+  sort position changes, the table scrolls to keep it visible.
 - **Top bar**:
   - Metric toggle: `Bytes` | `Events` | `Recent` (recency-weighted).
   - "Show noise" toggle (off by default): when off, paths matching the
@@ -156,17 +167,64 @@ see how many events are hidden.
 
 ### Rename handling
 
-A `rename` event carries `old_path` and `new_path` and no `path`. The
-viewer attributes the event to **both** entries: the `old_path` entry's
-`last_touched` and event count are updated, and the `new_path` entry
-inherits any prior byte total of `old_path` (i.e., we treat rename as a
-move of accumulated bytes). The `new_path` entry's event count and
-`last_touched` are also updated. This keeps the treemap stable when an
-atomic-save pattern (write tmp → rename over target) is used, which is
-extremely common.
+A `rename` event in the observer schema carries `old_path`, `new_path`,
+**and** `path` — the trace parser sets `path == new_path` for
+`rename`/`renameat`/`renameat2` (see `src/ai_observe/trace_parser.py`).
+The viewer must therefore not use "`path is None`" as a rename
+detector; it must dispatch on `operation == "rename"`.
+
+On a rename event with old `A` and new `B`, the viewer mutates its
+per-path aggregation as follows. Let `S(A)` be the accumulated state
+for path `A` (bytes, events, recency-decay accumulator, last_touched):
+
+- **Bytes**: `bytes(B) += bytes(A)` (move). `bytes(A) := 0`.
+- **Events**: `events(B) += events(A) + 1`. `events(A) := 0`. The
+  `+1` charges the rename event itself to the destination, *not* the
+  source, so the destination's count reflects the full "this is the
+  active path now" reality. The source's prior count is folded in so
+  no events are lost from totals if the viewer is later asked about
+  the subtree as a whole.
+- **Recent**: the destination inherits the source's recency
+  accumulator (same exponential decay state), then adds one fresh
+  contribution for the rename event itself.
+- **last_touched**: `last_touched(B) = max(last_touched(A),
+  last_touched(B), rename_event.timestamp)`. The source's
+  `last_touched` is no longer relevant because the source path is
+  tombstoned (see below).
+- **Tombstone**: `A` is marked tombstoned. Tombstoned paths are hidden
+  from both panels — even when "Show noise" is on — to avoid showing
+  ghost rectangles for paths that no longer exist on disk. (If the
+  user later sees fresh events for `A` — e.g., something recreates the
+  file — the tombstone is cleared and `A` becomes a fresh entry with
+  zero accumulators.)
+- **Collision**: if `B` already has accumulated state when the rename
+  arrives, the migration is additive — `B`'s prior bytes/events/recent
+  remain, and `A`'s are added on top, per the rules above. Collisions
+  are expected for atomic-save patterns where the same final path is
+  rewritten repeatedly.
+
+This keeps the treemap stable under the dominant atomic-save pattern
+(write tmp → rename over target) and avoids both double-counting and
+orphan rectangles.
 
 ### Aggregation lifecycle
 
+- The tailer must **buffer partial trailing lines**: if a poll reads
+  bytes that do not end in `\n`, the trailing fragment is held until
+  the next poll that completes it with a newline. Only fully
+  newline-terminated lines are parsed as JSON. A fragment that never
+  completes (e.g., the producer crashed mid-line) is reported once on
+  stderr when the viewer is told to shut down, but is otherwise
+  silently held — it is **not** treated as a malformed line and does
+  **not** trigger the malformed-line warning. This mirrors the
+  contract Spec 3 relies on for its own live parser, which appends
+  line-at-a-time after `json.dumps()` + `\n`.
+- The tailer must handle **file rotation/deletion** the same way it
+  handles truncation: if the path disappears or its inode changes, the
+  tailer reopens from offset 0 once the path is readable again,
+  emitting a stderr warning. The observer never rotates its `.jsonl`,
+  so this is defensive; we mention it because the viewer reads files
+  outside its own control.
 - Aggregation state lives in the **browser**, not on the server. The
   server is a thin tailer: it parses JSONL lines and forwards minimal
   event records over SSE. This keeps the server stateless across page
@@ -313,6 +371,13 @@ HTML file with the treemap baked in.
   - Does not include `raw_syscall` in the page — the JSONL has it, but
     showing it in tooltips would leak content excerpts. The tooltip
     shows path + counts + timestamp only.
+  - Does not put path content, query strings derived from paths, or
+    any other JSONL field into the browser tab's title, `document.URL`
+    query string, or window history. The title is a fixed string
+    (e.g., `ai_observe viewer`); navigation does not change the URL
+    based on selection. This prevents sensitive paths from leaking via
+    shell-integrated terminals that watch window titles, browser
+    history sync, or screen-recording tools that capture titles.
 
 ### Compatibility
 
@@ -337,6 +402,28 @@ HTML file with the treemap baked in.
 These are budget targets, not hard SLAs; they exist so the plan can
 choose a treemap library and update strategy that doesn't visibly
 regress them.
+
+## Consultation log
+
+### Iteration 1 (codex + claude; gemini skipped per project preference)
+
+- **Codex — REQUEST_CHANGES**: rename semantics underdefined across
+  all metrics; live tailer must explicitly buffer partial trailing
+  lines; reference JSONL fixture is not in the repo; sortable
+  tree/table UX model unclear; sensitive paths must not appear in
+  title or URL.
+- **Claude — REQUEST_CHANGES**: factual error — rename events *do*
+  carry `path` (set to `new_path`) per `trace_parser.py`; minor gaps
+  on entry-point packaging (`__main__.py`, deferred to plan) and
+  file-deletion edge case.
+
+Updates made: rewrote "Rename handling" section to specify per-metric
+migration, tombstoning, and collision behavior; added partial-line
+buffering and file-rotation rules to "Aggregation lifecycle"; tightened
+the right-panel sort semantics to sibling-local sort with preserved
+expand/collapse; added an explicit no-title-leak / no-URL-leak rule to
+the security section; and called out that the reference JSONL is
+git-ignored so the plan must supply a committed synthetic fixture.
 
 ## Open questions
 
@@ -421,9 +508,18 @@ regress them.
   approach the wrapper itself uses; the viewer's tailer is structurally
   similar (poll on EOF, reopen on truncation, handle partial last
   line) but reads JSONL instead of strace output.
-- Sample trace: `.codev/observe/20260513T165110Z-16975-8f23.jsonl`
+- Sample trace at `.codev/observe/20260513T165110Z-16975-8f23.jsonl`
   (~8818 events; ~99% under `/home/user/.codex/`, which is why the
-  exclude list matters).
+  exclude list matters). **This file is git-ignored
+  (`.gitignore`: `.codev/observe/`) because real traces may contain
+  secrets, so it is not a committed fixture.** The plan must commit a
+  small synthetic fixture (a few dozen events, hand-crafted to cover
+  create / modify / delete / rename / chmod / metadata and at least
+  one rename collision) under `tests/fixtures/` to make success
+  criteria reproducible in CI. Performance-flavored criteria (e.g.,
+  "render 8800 events in ≤5 s") are measured locally against the
+  developer's own real trace, not in CI, and are budget targets — not
+  CI assertions.
 
 ## Approval
 
