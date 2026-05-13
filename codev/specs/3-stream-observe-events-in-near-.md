@@ -107,6 +107,14 @@ Codex's original code on stderr.
 
 ### Tailing the trace file
 
+- Before opening the `.trace` file for reading, the live tailer calls
+  the same `verify_log_path_safe(trace_path, observe_dir)` helper used
+  for `.jsonl` (verifies parent is the resolved observe dir and rejects
+  symlinked targets). The read-side open uses
+  `os.open(trace_path, O_RDONLY | O_NOFOLLOW)` (when available) for
+  parity with the existing `safe_write_jsonl` path-hardening. This
+  closes a window where an attacker could swap the pre-created
+  `.trace` for a symlink between `prepare_logs` and the live reopen.
 - Open the trace file with `open(path, "r", encoding="utf-8",
   errors="replace")` so partial multi-byte sequences at the read boundary
   are tolerated rather than fatal. (Strace writes ASCII path bytes and
@@ -205,14 +213,14 @@ fragment.
      strict-mode rules.
   7. If the join **times out**, the thread is daemonized so the process
      can still exit. The wrapper does **not** attempt a post-hoc rewrite
-     (that would race the still-running thread on the `.jsonl` fd).
-     Instead it logs a clear stderr warning ("live parser did not exit
-     within Ns; leaving partial .jsonl") and treats the run as a
-     parser-failure-equivalent for the purposes of strict mode: in
-     `CODEV_OBSERVE_STRICT_PARSE=1` the exit code becomes 1; otherwise
-     the Codex exit code is preserved. The `.jsonl.partial` file is
-     written empty so the contract that "either .jsonl or .jsonl.partial
-     reflects what we have" is preserved.
+     (that would race the still-running thread on the `.jsonl` fd) and
+     does **not** write a `.jsonl.partial` (an empty marker would
+     mislead consumers). Instead it logs a clear stderr warning ("live
+     parser did not exit within Ns; leaving partial .jsonl") and treats
+     the run as a parser-failure-equivalent for the purposes of strict
+     mode: in `CODEV_OBSERVE_STRICT_PARSE=1` the exit code becomes 1;
+     otherwise the Codex exit code is preserved. `.jsonl` is left in
+     whatever partial state the live thread had reached.
 
 This design avoids any scenario where two threads hold writable fds to
 `.jsonl` simultaneously.
@@ -255,6 +263,9 @@ This design avoids any scenario where two threads hold writable fds to
     `verify_log_path_safe` + an `O_WRONLY | O_APPEND | O_NOFOLLOW`
     open) for the live writer, so the live path inherits the
     symlink/path-escape protections that `safe_write_jsonl` provides.
+  - Apply the same `verify_log_path_safe` check and `O_NOFOLLOW` open
+    to the live tailer's read-side reopen of `.trace`, so both new log
+    handles introduced by live mode are path-hardened.
 
 ### Compatibility with Spec 1 behaviors that must not regress
 
@@ -354,15 +365,20 @@ This design avoids any scenario where two threads hold writable fds to
       printing the original Codex exit code to stderr.
     The wrapper does not call the post-hoc rewrite in this branch
     (because the abandoned thread may still hold the `.jsonl` fd).
+    The `.jsonl` file is **left in whatever partial state the live
+    thread had reached** — it is not truncated. `.jsonl.partial` is
+    **not** written in this branch (an empty `.partial` would only
+    confuse consumers about whether real events were lost). The stderr
+    warning is the sole signal that the run was truncated by timeout.
 
 ### Non-functional (SHOULD)
 
-9. Under normal interactive load (handful of mutations per second), an
-   event observed by strace is visible in `.jsonl` within
-   `CODEV_OBSERVE_LIVE_POLL_MS` + parser cost (target: < 1 second with
-   default 200 ms poll). Not asserted in tests; documented as design
-   intent.
-10. Memory overhead of live mode is dominated by the existing parser's
+11. Under normal interactive load (handful of mutations per second), an
+    event observed by strace is visible in `.jsonl` within
+    `CODEV_OBSERVE_LIVE_POLL_MS` + parser cost (target: < 1 second with
+    default 200 ms poll). Not asserted in tests; documented as design
+    intent.
+12. Memory overhead of live mode is dominated by the existing parser's
     per-PID state. The live tailer's own buffers are O(largest single
     syscall line), which strace's `-s 4096` caps at a few KB.
 
