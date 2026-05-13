@@ -248,6 +248,13 @@ This design avoids any scenario where two threads hold writable fds to
   - Honor `CODEV_OBSERVE_LIVE_PARSE=0` to skip live tailing entirely
     (today's behavior).
   - Honor `CODEV_OBSERVE_LIVE_POLL_MS` for the poll interval.
+  - Honor `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` for the join deadline after
+    strace exits, with default 30 s and validation per the env-knob
+    section above.
+  - Add a `safe_append_jsonl(path, observe_dir)` helper (or reuse
+    `verify_log_path_safe` + an `O_WRONLY | O_APPEND | O_NOFOLLOW`
+    open) for the live writer, so the live path inherits the
+    symlink/path-escape protections that `safe_write_jsonl` provides.
 
 ### Compatibility with Spec 1 behaviors that must not regress
 
@@ -332,6 +339,21 @@ This design avoids any scenario where two threads hold writable fds to
 8. A partial trailing line (no newline yet) is buffered, not parsed.
    It's parsed once its newline arrives, or skipped safely at EOF if the
    newline never lands.
+9. **Live append uses the same path-safety protections as
+   `safe_write_jsonl`.** Reopening `.jsonl` for append fails (raises
+   `ObserveError`) if the path becomes a symlink between
+   `prepare_logs`'s exclusive creation and the live reopen — same
+   contract as the existing `safe_write_jsonl_rejects_symlink_swap`
+   test.
+10. **Parser-thread hang is bounded.** If the parser thread does not
+    exit within `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` after strace exits,
+    the wrapper prints a stderr warning naming the timeout, leaves the
+    partially written `.jsonl` in place, and proceeds:
+    - In non-strict mode, exits with Codex's exit code.
+    - In `CODEV_OBSERVE_STRICT_PARSE=1`, exits with 1 after first
+      printing the original Codex exit code to stderr.
+    The wrapper does not call the post-hoc rewrite in this branch
+    (because the abandoned thread may still hold the `.jsonl` fd).
 
 ### Non-functional (SHOULD)
 
@@ -375,6 +397,31 @@ A new test module `tests/test_live_trace.py` (stdlib-only) must cover:
 - **`CODEV_OBSERVE_LIVE_POLL_MS` validation**: out-of-range values
   (`0`, `9999`) and non-numeric values (`abc`) fall back to the default
   (200 ms) without raising.
+- **Live append symlink-swap rejection**: parallel to the existing
+  `test_safe_write_jsonl_rejects_symlink_swap`. Drive the live-append
+  helper directly: pre-create `.jsonl`, then replace it with a
+  symlink to an attacker-controlled path, then call the helper.
+  Confirm it raises `ObserveError` and writes no bytes to the symlink
+  target.
+- **Parser-thread join timeout**: monkeypatch `LiveTracer` so its
+  thread loops indefinitely ignoring the stop flag (or uses a
+  test-injected stall). Run the wrapper with
+  `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT=0.2`. Confirm: wrapper exits within
+  a few seconds, stderr contains the timeout warning, exit code
+  matches Codex's in non-strict mode and is 1 in strict mode, and the
+  post-hoc rewrite did NOT run (assert no second copy of trace events
+  was appended).
+- **Live append write failure → fallback rewrite**: monkeypatch the
+  live-append helper to raise `OSError("ENOSPC")` after the first
+  write. Confirm: parser thread exits cleanly with the captured
+  error, wrapper invokes post-hoc rewrite via `safe_write_jsonl`,
+  final `.jsonl` matches a fresh post-hoc parse on the same trace,
+  stderr names the live-append failure, Codex exit code preserved
+  in non-strict mode.
+- **Live append + post-hoc rewrite both fail**: extend the previous
+  test by also patching `safe_write_jsonl` to raise. Confirm: wrapper
+  writes (or attempts) `.jsonl.partial`, stderr names both failures,
+  non-strict exit code = Codex exit code, strict mode exit code = 1.
 - **Empty session**: no mutating syscalls; `.jsonl` exists and is empty.
 - **End-to-end wrapper integration**: a fake `strace` shim (extending
   the existing `make_fake_tools` pattern in `tests/test_codex_observe.py`)
