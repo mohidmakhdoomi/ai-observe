@@ -25,6 +25,22 @@ gates:
     status: pending
 iteration: 1
 build_complete: true
-history: []
+history:
+  - iteration: 1
+    plan_phase: phase-1-helpers
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-gemini.txt
+      - model: codex
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-claude.txt
 started_at: '2026-05-13T01:11:05.630Z'
-updated_at: '2026-05-13T05:26:31.999Z'
+updated_at: '2026-05-13T05:28:50.527Z'
