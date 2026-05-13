@@ -161,13 +161,22 @@ no aggregation dependency. Each phase commits a runnable artifact.
     All paths are synthetic (no real user paths) per spec privacy
     posture.
 - **Dependencies**: None.
+- **Status**: **already implemented** in this worktree (committed in
+  `[Spec 5][Phase: server]`); `tests/test_viewer_tailer.py` and
+  `tests/test_viewer_server.py` pass. The bullets below are the
+  acceptance contract that the existing code is verified against.
+  Subsequent phases must not break any of them.
 - **Success criteria**:
   - `python -m ai_observe.viewer tests/fixtures/viewer/basic.jsonl
     --no-browser` starts, prints a `http://127.0.0.1:<port>/` URL on
-    stderr, accepts a curl `/events` connection, and emits an SSE
+    stderr, accepts a `/events` connection, and emits an SSE
     `event: append` frame per valid JSONL line.
-  - Attempting to bind a non-loopback host via `--host 0.0.0.0` exits
-    with a clear error (no fallback).
+  - The CLI exposes **no** `--host` flag; argparse rejects `--host`
+    with a standard "unrecognized arguments" error. (There is no
+    "non-loopback bind path to test" because the bind is hardcoded
+    to `127.0.0.1`.) The `assert_loopback` helper in
+    `server.py` exists for programmatic callers and is covered by a
+    unit test; it is not wired into the CLI.
   - Tailer tests pass: append, partial line buffered until newline,
     truncation reopens, inode change reopens, malformed line is
     skipped with a single stderr warning, `schema_version: 2` line is
@@ -209,6 +218,22 @@ no aggregation dependency. Each phase commits a runnable artifact.
   JSONL tailer`.
 
 ### Phase 2: Browser aggregation core, metrics, exclude filter (`phase-2-ui-core`)
+
+**JS verification strategy (clarification responding to codex
+feedback)**: the Python oracle + golden snapshots stay as the
+canonical CI test, because adding Node to CI conflicts with the
+project's "no extra CI deps" stance (Spec 1/3 precedent). To stop
+this from being a paper guarantee, Phase 2 *also* adds an opt-in
+parity check that runs the real `aggregator.js` under `node`
+**iff** `node` is on `PATH` (using `shutil.which`) — otherwise the
+check is `unittest.skip`-ped. The test pipes the same fixture into
+both implementations and `assertEqual`s the resulting snapshot JSON.
+In dev environments that have Node installed (most do), CI-like
+parity is enforced; in stripped-down CI environments, the test is
+skipped but does not fail. This is the smallest credible
+strengthening of the parity story; it does not change the
+"stdlib-only runtime" property of the viewer itself.
+
 
 - **Objective**: Implement the browser-side data model end-to-end with
   no rendering UI yet. A small headless test harness exercises the
@@ -325,7 +350,11 @@ no aggregation dependency. Each phase commits a runnable artifact.
     renderer. Sibling-local sort (spec contract). Expand/collapse
     state held in a `Set<path>`. Preserves selection across sort and
     metric toggle. Renders rows incrementally with `documentFragment`
-    to keep update batches cheap.
+    to keep update batches cheap. **Column set** (made explicit per
+    claude feedback): `Path` (indented), `Bytes written`, `Events`,
+    `Last touched`. `Last touched` is rendered as a relative time
+    (`2s ago`, `3m ago`) computed from the latest ingested
+    `timestamp` so values do not depend on wall clock.
   - `src/ai_observe/viewer/static/style.css` — minimal layout: 50/50
     split, top bar, neutral palette by file extension (a small fixed
     map for the most common extensions, fallback gray).
@@ -333,7 +362,16 @@ no aggregation dependency. Each phase commits a runnable artifact.
     aggregator snapshot into both renderers every 250 ms (coalesced
     rAF), wire toggle controls, wire selection (clicking either
     panel updates a shared `selectedPath` state and both renderers
-    re-highlight). When sort changes or metric toggles and the
+    re-highlight; **hovering** a rectangle or row also sets a
+    `hoveredPath` state that highlights the linked element in the
+    other panel — distinct from `selectedPath` so a click sticks
+    and a hover transient). **Live indicator state machine
+    (explicit per codex feedback)**: `index.js` keeps
+    `lastAppendAtMs = performance.now()` updated on every `append`
+    SSE frame; a 500 ms timer flips the badge to green when
+    `now - lastAppendAtMs < 2000` and gray otherwise. The badge
+    also turns red on `event: shutdown` from the server. Asserted
+    via a small DOM-state oracle in the smoke test. When sort changes or metric toggles and the
     selected row's position moves, the table calls
     `row.scrollIntoView({block: "nearest"})` — preserving "keep the
     selected row visible across sort changes" from the spec.
@@ -497,6 +535,30 @@ no aggregation dependency. Each phase commits a runnable artifact.
   - Performance budget check on the ~8800-event reference trace.
 
 ## Consultation log
+
+### Iteration 3 (codex + claude; gemini skipped per project preference) — post-drill-down review
+
+- **Codex — REQUEST_CHANGES**: JS testing parity weak without
+  actually running JS; Phase 1 written as "create" when files
+  already exist; stale `--host 0.0.0.0` success criterion;
+  hover-linked highlighting and 2-second live-indicator state
+  machine not explicitly decomposed.
+- **Claude — APPROVE** with minor notes: column list for the
+  table should be explicit; `--host 0.0.0.0` criterion is stale;
+  flagged an implementation-level type-inconsistency
+  (`self._buf = ""` vs `b""` in `tailer.py`) that is **fixed in
+  this iteration** outside the plan (commit accompanying this plan
+  revision).
+
+Updates made: marked Phase 1 as "already implemented; success
+criteria are the acceptance contract for later phases not to
+regress"; removed the stale `--host 0.0.0.0` criterion and
+explicitly stated the CLI has no `--host` flag; added the opt-in
+real-JS parity check under Node-if-available to strengthen the JS
+verification story without adding a hard CI dep; spelled out the
+column set for the right-panel table; spelled out the
+hover-linked highlighting contract and the 2-second live-indicator
+state machine with red-on-shutdown.
 
 ### Iteration 2 (codex + claude; gemini skipped per project preference) — drill-down delta
 

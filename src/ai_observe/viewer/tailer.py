@@ -80,7 +80,7 @@ class JsonlTailer:
             self._warn(
                 f"ai_observe.viewer: discarding {len(self._buf)} bytes of incomplete trailing line on shutdown"
             )
-            self._buf = ""
+            self._buf = b""
 
     # ----- internals -----
 
@@ -102,7 +102,7 @@ class JsonlTailer:
                 self._warn(f"ai_observe.viewer: source {self._path} disappeared; will reopen if it reappears")
                 self._inode = None
                 self._offset = 0
-                self._buf = ""
+                self._buf = b""
             return
 
         # Detect inode change (rotation / replacement) or truncation.
