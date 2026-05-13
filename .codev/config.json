@@ -1,7 +1,7 @@
 {
   "shell": {
     "architect": "claude --dangerously-skip-permissions",
-    "builder": "opencode run",
+    "builder": "claude --dangerously-skip-permissions --effort medium",
     "shell": "bash"
   },
   "porch": {
