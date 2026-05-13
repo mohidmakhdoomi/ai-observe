@@ -4,6 +4,10 @@
 codev/.update-hashes.json
 .builders/
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Dependencies
 node_modules/
 
