@@ -210,8 +210,12 @@ class Aggregator:
                 dst.op_counts["rename"] = dst.op_counts.get("rename", 0) + 1
                 dst.add_recency_at(ts_ms, 1.0)
                 dst.update_last_touched(ts_ms)
-        elif new:
-            entry = self._entry(new)
+        else:
+            # Partial rename resolution is possible when one side is relative
+            # to an unresolved directory fd. Preserve the event on whichever
+            # path is known instead of dropping it.
+            known = new or old
+            entry = self._entry(known)
             entry.bump_event("rename")
             entry.update_last_touched(ts_ms)
             entry.add_recency_at(ts_ms, 1.0)

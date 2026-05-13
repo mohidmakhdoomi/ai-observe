@@ -183,6 +183,24 @@ class RenameChainTests(unittest.TestCase):
         self.assertNotIn("/p/tmp.x", all_paths)
 
 
+class PartialRenameResolutionTests(unittest.TestCase):
+    def setUp(self):
+        self.agg = Aggregator()
+        for ev in _load_jsonl(FIXTURES / "partial_rename.jsonl"):
+            self.agg.ingest(ev)
+        self.snap = self.agg.snapshot()
+
+    def test_known_old_or_new_path_retains_rename_event(self):
+        old_only = _find_node(self.snap["tree"], "/known/old-only.txt")
+        new_only = _find_node(self.snap["tree"], "/known/new-only.txt")
+        self.assertIsNotNone(old_only)
+        self.assertIsNotNone(new_only)
+        self.assertEqual(old_only["events"], 1)
+        self.assertEqual(new_only["events"], 1)
+        self.assertEqual(old_only["last_touched_ms"], 1778666400000.0)
+        self.assertEqual(new_only["last_touched_ms"], 1778666401000.0)
+
+
 class RecencyTests(unittest.TestCase):
     def test_decay_after_one_halflife_halves_contribution(self):
         agg = Aggregator()
@@ -283,6 +301,14 @@ class JsParityTests(unittest.TestCase):
             agg.ingest(ev)
         py = self._normalize(agg.snapshot())
         js = self._normalize(self._js_snapshot(FIXTURES / "rename_chain.jsonl"))
+        self._compare(py, js)
+
+    def test_parity_partial_rename(self):
+        agg = Aggregator()
+        for ev in _load_jsonl(FIXTURES / "partial_rename.jsonl"):
+            agg.ingest(ev)
+        py = self._normalize(agg.snapshot())
+        js = self._normalize(self._js_snapshot(FIXTURES / "partial_rename.jsonl"))
         self._compare(py, js)
 
 

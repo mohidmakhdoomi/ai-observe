@@ -125,8 +125,12 @@
           addRecencyAt(dst, tsMs, 1);
           updateLastTouched(dst, tsMs);
         }
-      } else if (newP) {
-        const entry = entryFor(newP);
+      } else {
+        // Partial rename resolution is possible when strace reports one side
+        // relative to an unresolved directory fd. If we only know one side,
+        // retain the event on that known path instead of dropping it.
+        const knownP = newP || oldP;
+        const entry = entryFor(knownP);
         bumpEvent(entry, "rename");
         updateLastTouched(entry, tsMs);
         addRecencyAt(entry, tsMs, 1);

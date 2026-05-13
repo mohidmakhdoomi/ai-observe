@@ -140,3 +140,23 @@ class ViewerTreemapJsParityTests(unittest.TestCase):
         proc = subprocess.run([self.node, "-e", driver], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(json.loads(proc.stdout), layout_treemap(tree, 100, 50))
+
+
+    def test_real_js_tooltip_formats_last_touched_human_readably(self):
+        import json, subprocess
+        driver = """
+        const t=require('./src/ai_observe/viewer/static/treemap.js');
+        const out={
+          formatted:t.formatLastTouched(Date.UTC(2026,4,13,10,0,1)),
+          never:t.formatLastTouched(0),
+          tooltip:t.tooltipFor({path:'/a.txt',bytes:7,events:2,last_touched_ms:Date.UTC(2026,4,13,10,0,1)})
+        };
+        process.stdout.write(JSON.stringify(out));
+        """
+        proc = subprocess.run([self.node, "-e", driver], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertEqual(out["formatted"], "2026-05-13 10:00:01 UTC")
+        self.assertEqual(out["never"], "never")
+        self.assertIn("Last touched: 2026-05-13 10:00:01 UTC", out["tooltip"])
+        self.assertNotIn("Last touched: 1778666401000", out["tooltip"])

@@ -68,6 +68,15 @@
     for(const c of (node.children||[])){ const f=findNode(c,path); if(f) return f; }
     return null;
   }
+  function formatLastTouched(ms){
+    if(typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "never";
+    const d = new Date(ms);
+    if(Number.isNaN(d.getTime())) return "never";
+    return d.toISOString().replace("T", " ").replace(".000Z", "Z").replace("Z", " UTC");
+  }
+  function tooltipFor(r){
+    return r.path+"\nBytes: "+r.bytes+"\nEvents: "+r.events+"\nLast touched: "+formatLastTouched(r.last_touched_ms);
+  }
   function renderTreemap(el, opts){
     const rootNode = opts.rootNode, state = opts.state, metric = state.metric;
     const w = Math.max(1, el.clientWidth || 800), h = Math.max(1, el.clientHeight || 500);
@@ -78,13 +87,13 @@
       const d=document.createElement("button"); d.type="button"; d.className="tile"+(r.isDir?" dir":" file");
       if(r.path===state.selectedPath) d.className += " selected"; if(r.path===state.hoveredPath) d.className += " hovered";
       d.style.left=r.x+"px"; d.style.top=r.y+"px"; d.style.width=Math.max(0,r.w)+"px"; d.style.height=Math.max(0,r.h)+"px"; d.style.backgroundColor=r.color;
-      d.title = r.path+"\nBytes: "+r.bytes+"\nEvents: "+r.events+"\nLast touched: "+(r.last_touched_ms||0);
+      d.title = tooltipFor(r);
       const label=document.createElement("span"); label.textContent=r.name||r.path; d.appendChild(label);
       d.addEventListener("mouseenter",()=>opts.onHover(r.path)); d.addEventListener("mouseleave",()=>opts.onHover(null));
       d.addEventListener("click",()=>{ if(r.isDir) opts.onDrill(r.path); else opts.onSelect(r.path); });
       el.appendChild(d);
     }
   }
-  const api={layoutTreemap:layoutTreemap, findNode:findNode, renderTreemap:renderTreemap};
+  const api={layoutTreemap:layoutTreemap, findNode:findNode, renderTreemap:renderTreemap, formatLastTouched:formatLastTouched, tooltipFor:tooltipFor};
   if(typeof module!=="undefined"&&module.exports) module.exports=api; else root.AiObserveTreemap=api;
 })(typeof self!=="undefined"?self:this);
