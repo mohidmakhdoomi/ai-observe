@@ -5,6 +5,9 @@
     "shell": "bash"
   },
   "porch": {
+    "consultation": {
+      "models": ["codex"]
+    },
     "checks": {
       "build": { "skip": true },
       "tests": { "command": "python3 -m unittest discover -s tests" }
