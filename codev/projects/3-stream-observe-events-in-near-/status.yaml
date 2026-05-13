@@ -1,7 +1,7 @@
 id: '3'
 title: stream-observe-events-in-near-
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -16,7 +16,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-13T01:11:05.630Z'
-updated_at: '2026-05-13T03:07:55.567Z'
+updated_at: '2026-05-13T03:09:34.190Z'
