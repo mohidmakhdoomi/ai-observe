@@ -1,7 +1,7 @@
 {
   "shell": {
-    "architect": "codex",
-    "builder": "codex --config model_reasoning_effort=medium",
+    "architect": "claude --dangerously-skip-permissions --effort xhigh",
+    "builder": "codex --config model_reasoning_effort=high",
     "shell": "bash"
   },
   "porch": {
