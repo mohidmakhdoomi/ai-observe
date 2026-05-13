@@ -1,7 +1,7 @@
 id: '3'
 title: stream-observe-events-in-near-
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase-1-helpers
     status: complete
@@ -26,58 +26,10 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
-history:
-  - iteration: 1
-    plan_phase: phase-1-helpers
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-gemini.txt
-      - model: codex
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-1-helpers-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase-2-live-tracer
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-2-live-tracer-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase-3-docs
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-gemini.txt
-      - model: codex
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-claude.txt
+build_complete: false
+history: []
 started_at: '2026-05-13T01:11:05.630Z'
-updated_at: '2026-05-13T16:21:59.415Z'
+updated_at: '2026-05-13T16:22:03.455Z'
 pr_history:
   - phase: review
     pr_number: 4
