@@ -1,15 +1,15 @@
 id: '3'
 title: stream-observe-events-in-near-
 protocol: spir
-phase: implement
+phase: review
 plan_phases:
   - id: phase-1-helpers
     status: complete
   - id: phase-2-live-tracer
     status: complete
   - id: phase-3-docs
-    status: in_progress
-current_plan_phase: phase-3-docs
+    status: complete
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
@@ -24,7 +24,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-helpers
@@ -75,4 +75,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-claude.txt
 started_at: '2026-05-13T01:11:05.630Z'
-updated_at: '2026-05-13T05:41:08.784Z'
+updated_at: '2026-05-13T05:41:09.742Z'
