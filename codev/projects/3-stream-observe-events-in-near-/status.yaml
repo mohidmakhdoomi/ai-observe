@@ -21,6 +21,7 @@ gates:
     approved_at: '2026-05-13T05:18:46.708Z'
   pr:
     status: pending
+    requested_at: '2026-05-13T05:50:11.427Z'
   verify-approval:
     status: pending
 iteration: 1
@@ -75,7 +76,7 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-3/codev/projects/3-stream-observe-events-in-near-/3-phase-3-docs-iter1-claude.txt
 started_at: '2026-05-13T01:11:05.630Z'
-updated_at: '2026-05-13T05:45:41.988Z'
+updated_at: '2026-05-13T05:50:11.427Z'
 pr_history:
   - phase: review
     pr_number: 4
