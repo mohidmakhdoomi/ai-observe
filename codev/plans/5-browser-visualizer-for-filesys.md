@@ -307,17 +307,20 @@ no aggregation dependency. Each phase commits a runnable artifact.
 - **Objective**: Replace the `<pre>` with the real two-panel UI: a
   squarified treemap on the left, an indented sortable tree/table on
   the right, with linked selection. Add the top-bar metric toggle,
-  "Show noise" toggle, and live indicator + counters. This is the
-  user-facing phase.
+  "Show noise" toggle, live indicator + counters, and the
+  WinDirStat-style **click-to-drill-down** interaction on the
+  treemap. This is the user-facing phase.
 - **Files (create / modify)**:
   - `src/ai_observe/viewer/static/treemap.js` — hand-rolled
     squarified-treemap layout (~150 LOC), pure function from
-    `{node, width, height}` to a list of `{path, x, y, w, h, color}`
-    rectangles. Hand-rolled rather than vendored, because (a) no
-    network fetch / no build step, (b) the algorithm is small and
-    well-documented, and (c) it keeps the page bundle under 50 KB.
-    The risk is layout-quality bugs; mitigated by a small
-    deterministic unit test on canonical inputs.
+    `{node, width, height}` to a list of `{path, x, y, w, h, color,
+    isDir}` rectangles. The layout function takes a *root node*
+    (subtree) as input — drill-down is implemented by passing a
+    different root, not by mutating layout state. Hand-rolled rather
+    than vendored, because (a) no network fetch / no build step,
+    (b) the algorithm is small and well-documented, and (c) it keeps
+    the page bundle under 50 KB. The risk is layout-quality bugs;
+    mitigated by a small deterministic unit test on canonical inputs.
   - `src/ai_observe/viewer/static/table.js` — indented tree/table
     renderer. Sibling-local sort (spec contract). Expand/collapse
     state held in a `Set<path>`. Preserves selection across sort and
@@ -334,12 +337,51 @@ no aggregation dependency. Each phase commits a runnable artifact.
     selected row's position moves, the table calls
     `row.scrollIntoView({block: "nearest"})` — preserving "keep the
     selected row visible across sort changes" from the spec.
-    **Out of v1 (called out explicitly)**: treemap zoom /
-    drill-down. The treemap is non-interactive beyond hover and
-    click-to-select; rectangles are not clickable into a sub-view.
-    The spec's success criterion that mentions "treemap zooms" is
-    interpreted as "the layout is responsive to window resize," not
-    as a drill-down feature. Documented in `docs/viewer.md`.
+    **Click-to-drill-down (WinDirStat-style, REQUIRED in v1)**:
+
+    The page maintains a `currentRoot: string` state (default
+    `"/"` — i.e., the synthetic root of the tree). The treemap is
+    always laid out from `currentRoot` down, *not* from the global
+    root, when `currentRoot != "/"`. The table mirrors the same
+    scope: when drilled down, the table shows only the subtree of
+    `currentRoot`. Interactions:
+
+    - **Click a directory rectangle**: sets `currentRoot` to that
+      directory's path; both panels re-render scoped to the new
+      root. Clicking a *file* rectangle selects the file (existing
+      linked-selection behavior) but does not drill.
+    - **"Up" control**: a button in the top bar (`▲ Up`) sets
+      `currentRoot` to the parent of the current root; disabled when
+      `currentRoot == "/"`.
+    - **Breadcrumb**: a `/`-separated breadcrumb (`/  ›  home  ›
+      user  ›  code`) appears in the top bar; each segment is a
+      clickable link that jumps `currentRoot` to that ancestor. The
+      leftmost segment (`/`) always resets to the global root.
+    - **State preservation across drill changes**: the table's
+      `expanded: Set<path>` is preserved verbatim; rows whose paths
+      become out-of-scope simply aren't rendered, but their expanded
+      state survives a later drill-up. `selectedPath` is preserved
+      if still in scope, otherwise cleared. Metric toggle, sort
+      column/direction, and "Show noise" all survive drill changes
+      unchanged. Drill changes do not reset the aggregator (which is
+      global to the whole session); they only change *what slice* of
+      it is rendered.
+    - **Empty subtree**: if `currentRoot` points at a leaf or a
+      subtree with no in-scope paths under the current "Show noise"
+      setting, the treemap shows an empty panel and a short message
+      (`No paths under <currentRoot>`); the up control and
+      breadcrumb remain functional. No crash, no NaN layout.
+    - **No URL leakage**: drill state is **not** reflected in
+      `document.URL` or `document.title` — both stay fixed, per the
+      spec's privacy posture. Drill state is in-memory only; a page
+      reload returns to `currentRoot = "/"`.
+
+    Selection on the *table* side: clicking a directory row in the
+    table still expands/collapses that row (existing behavior).
+    Drill-down is a treemap-side interaction; the table doesn't
+    drill on click. This avoids two competing meanings for a single
+    table click and matches WinDirStat's own model (the directory
+    pane is for browsing; the treemap pane is for zooming).
   - `src/ai_observe/viewer/static/index.html` — modify: real DOM
     skeleton (top bar with three toggle buttons + "Show noise"
     checkbox + live badge + event counter; `<div id="treemap">` and
@@ -347,8 +389,15 @@ no aggregation dependency. Each phase commits a runnable artifact.
   - `tests/test_viewer_treemap.py` — unit test on the squarified
     treemap function: feed canonical inputs (one rectangle; two
     equal; the classic Bruls et al. example) and assert layout
-    output exactly. Pure-Python oracle again, kept in lockstep with
-    the JS via parity tests.
+    output exactly. Also covers drill-down: layout with `root="/p"`
+    on a tree containing both `/p/x` and `/q/y` produces only
+    rectangles under `/p`. Pure-Python oracle again, kept in
+    lockstep with the JS via parity tests.
+  - `tests/test_viewer_breadcrumb.py` — unit test on the breadcrumb
+    derivation: `breadcrumbSegments("/a/b/c")` returns the segment
+    list `[("/", "/"), ("a", "/a"), ("b", "/a/b"), ("c", "/a/b/c")]`
+    and the "Up" target of `/a/b/c` is `/a/b`; "Up" target of `/` is
+    `null` (control disabled). Pure-Python oracle parity.
   - `tests/test_viewer_smoke_e2e.py` — end-to-end smoke test using
     Python's `http.client`: start server, GET `/`, parse the HTML to
     confirm it references all expected static assets, GET each
@@ -362,6 +411,20 @@ no aggregation dependency. Each phase commits a runnable artifact.
     the tooltip with path/bytes/events/timestamp (no `raw_syscall`
     in the DOM, asserted via grep test), and clicking either panel
     selects the corresponding path in the other.
+  - **Drill-down**: clicking a directory rectangle re-scopes the
+    treemap and table to that subtree; the breadcrumb updates;
+    clicking an ancestor segment in the breadcrumb returns to that
+    level; the "▲ Up" control walks one level toward `/`; reaching
+    `/` disables the Up control. Clicking a *file* rectangle does
+    not drill. Verified by a layout-oracle test that asserts the
+    rectangle list produced from a drilled root contains only paths
+    under that root and that breadcrumb segments are derived
+    correctly from any input path.
+  - **Drill state preservation**: under all three metric toggles,
+    sort changes, and "Show noise" toggles, drilling down and back
+    up returns to a layout equivalent to the original (deterministic
+    given the same aggregator state). Asserted via oracle
+    snapshot.
   - All three metric toggles visibly redistribute the treemap on a
     real trace; snapshot oracles confirm the underlying data
     redistribute on the synthetic fixture.
@@ -434,6 +497,28 @@ no aggregation dependency. Each phase commits a runnable artifact.
   - Performance budget check on the ~8800-event reference trace.
 
 ## Consultation log
+
+### Iteration 2 (codex + claude; gemini skipped per project preference) — drill-down delta
+
+Plan was rolled back after Iteration 1 because the architect
+clarified that **WinDirStat-style click-to-drill-down on the treemap
+is required for v1**. The spec is unchanged ("treemap zooms" is now
+read as the drill-down requirement).
+
+Plan revisions in this iteration are scoped to Phase 3:
+
+- Treemap layout function now takes a root node, enabling subtree
+  layout.
+- Added `currentRoot` page state, click-on-directory-rectangle
+  semantics, an "▲ Up" control, and a clickable breadcrumb.
+- Documented state preservation rules (expanded set, selection,
+  sort, metric, noise toggle all survive drill changes).
+- Documented empty-subtree behavior and no-URL/no-title leakage.
+- Added drill-aware unit tests (treemap scoped layout, breadcrumb
+  derivation) and amended Phase 3 success criteria.
+
+Phase 1 (server) and Phase 2 (aggregation) are unaffected; in-flight
+Phase 1 code remains committed and tests still pass.
 
 ### Iteration 1 (codex + claude; gemini skipped per project preference)
 
