@@ -1,0 +1,90 @@
+from html.parser import HTMLParser
+from pathlib import Path
+import json
+import sys
+import tempfile
+import time
+import unittest
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from ai_observe.viewer.server import ViewerServer  # noqa: E402
+
+
+class AssetParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.scripts = []
+        self.styles = []
+        self.title = ""
+        self._in_title = False
+
+    def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag == "script" and d.get("src"):
+            self.scripts.append(d["src"])
+        if tag == "link" and d.get("rel") == "stylesheet" and d.get("href"):
+            self.styles.append(d["href"])
+        if tag == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+
+
+class ViewerSmokeE2ETests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "events.jsonl"
+        self.path.write_text(json.dumps({
+            "schema_version": 1,
+            "timestamp": "2026-05-13T10:00:00.000000Z",
+            "operation": "modify",
+            "path": "/work/a.py",
+            "old_path": None,
+            "new_path": None,
+            "result": 5,
+        }) + "\n")
+        self.srv = ViewerServer(self.path, port=0, poll_interval=0.05)
+        self.srv.start()
+        self.addCleanup(self.srv.stop)
+        time.sleep(0.1)
+
+    def get(self, rel):
+        with urllib.request.urlopen(self.srv.url + rel.lstrip("/"), timeout=3.0) as resp:
+            return resp.read().decode("utf-8")
+
+    def test_page_references_expected_assets_and_lints(self):
+        html = self.get("/")
+        parser = AssetParser()
+        parser.feed(html)
+        self.assertEqual(parser.title, "ai_observe viewer")
+        self.assertEqual(parser.styles, ["/static/style.css"])
+        self.assertEqual(parser.scripts, [
+            "/static/aggregator.js",
+            "/static/treemap.js",
+            "/static/table.js",
+            "/static/index.js",
+        ])
+        all_text = html
+        for asset in parser.styles + parser.scripts:
+            body = self.get(asset)
+            all_text += "\n" + body
+            self.assertGreater(len(body), 20)
+        for forbidden in ("innerHTML", "document.write", "eval(", "raw_syscall", "document.title"):
+            self.assertNotIn(forbidden, all_text)
+        static_dir = ROOT / "src" / "ai_observe" / "viewer" / "static"
+        total = sum(p.stat().st_size for p in static_dir.iterdir() if p.is_file())
+        self.assertLess(total, 50_000)
+
+
+if __name__ == "__main__":
+    unittest.main()

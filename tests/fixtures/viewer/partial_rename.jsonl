@@ -1,0 +1,2 @@
+{"schema_version":1,"timestamp":"2026-05-13T10:00:00.000000Z","session_id":"pr","invocation_id":"pr","pid":1,"process":{"pid":1,"ppid":0,"comm":null},"operation":"rename","path":null,"old_path":"/known/old-only.txt","new_path":null,"command":["codex"],"raw_syscall":"renameat","result":0}
+{"schema_version":1,"timestamp":"2026-05-13T10:00:01.000000Z","session_id":"pr","invocation_id":"pr","pid":1,"process":{"pid":1,"ppid":0,"comm":null},"operation":"rename","path":null,"old_path":null,"new_path":"/known/new-only.txt","command":["codex"],"raw_syscall":"renameat","result":0}

@@ -75,6 +75,8 @@ tail -F .codev/observe/<session-id>.jsonl
 
 Latency is approximately the value of `CODEV_OBSERVE_LIVE_POLL_MS` (default 200 ms) plus parser cost — under normal load, sub-second. The raw `.trace` is still the durable record on disk. Set `CODEV_OBSERVE_LIVE_PARSE=0` to disable streaming and fall back to the original post-hoc parse.
 
+For a browser treemap/table view of the same JSONL stream, see [Browser viewer for observer JSONL](viewer.md).
+
 On any non-`ParserFailure` error from the live tailer, the wrapper prints a stderr warning, rebuilds `.jsonl` from the full `.trace` after Codex exits, and preserves Codex's exit code (unless `CODEV_OBSERVE_STRICT_PARSE=1`, in which case the wrapper exits `1` after first printing the original Codex exit code). If the tailer thread fails to exit within `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT`, the wrapper leaves `.jsonl` in its partial state, prints a timeout warning, and applies the same strict-mode rule; no `.jsonl.partial` is written in that branch.
 
 On parser failure:
