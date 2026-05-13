@@ -3,16 +3,29 @@
 <head>
 <meta charset="utf-8">
 <title>ai_observe viewer</title>
-<style>
-  body { font-family: monospace; margin: 1rem; }
-  pre { max-height: 80vh; overflow: auto; background: #f4f4f4; padding: 0.5rem; }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<h1>ai_observe viewer</h1>
-<p id="status">connecting&hellip;</p>
-<pre id="log"></pre>
+<header class="topbar">
+  <h1>ai_observe viewer</h1>
+  <button id="up-button" type="button">▲ Up</button>
+  <nav id="breadcrumb" class="crumb" aria-label="Breadcrumb"></nav>
+  <div id="metric-controls" role="group" aria-label="Metric">
+    <button type="button" data-metric="bytes" class="active">Bytes</button>
+    <button type="button" data-metric="events">Events</button>
+    <button type="button" data-metric="recent">Recent</button>
+  </div>
+  <label><input id="show-noise" type="checkbox"> Show noise</label>
+  <span id="live-badge" class="badge gray">idle</span>
+  <span id="counts">0 events, 0 filtered</span>
+</header>
+<main class="main">
+  <section class="panel"><div id="treemap" class="treemap" aria-label="Treemap"></div></section>
+  <section id="table" class="panel" aria-label="Tree table"></section>
+</main>
 <script src="/static/aggregator.js"></script>
+<script src="/static/treemap.js"></script>
+<script src="/static/table.js"></script>
 <script src="/static/index.js"></script>
 </body>
 </html>

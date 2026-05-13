@@ -140,7 +140,6 @@
 
       if (eventIsNoise(event)) {
         state.filteredEventCount += 1;
-        return;
       }
 
       const op = event.operation;
@@ -183,6 +182,7 @@
 
       for (const [path, entry] of state.paths.entries()) {
         if (entry.tombstoned) continue;
+        if (!includeNoise && isNoise(path)) continue;
         if (!path.startsWith("/")) continue;
         const parts = path.split("/").filter((p) => p !== "");
         let cur = { children: rootChildren, files: rootFiles, full: "" };

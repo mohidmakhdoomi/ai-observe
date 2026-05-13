@@ -1,0 +1,59 @@
+{
+  "filtered_event_count": 0,
+  "include_noise": false,
+  "latest_ts_ms": 1778666401400.0,
+  "metric": "recent",
+  "total_event_count": 15,
+  "tree": {
+    "bytes": 899,
+    "children": [
+      {
+        "bytes": 899,
+        "children": [
+          {
+            "bytes": 150,
+            "children": [],
+            "events": 4,
+            "isDir": false,
+            "last_touched_ms": 1778666401000.0,
+            "name": "a.txt",
+            "path": "/work/a.txt",
+            "recent": 3.9506730587562076
+          },
+          {
+            "bytes": 299,
+            "children": [],
+            "events": 7,
+            "isDir": false,
+            "last_touched_ms": 1778666401400.0,
+            "name": "b.txt",
+            "path": "/work/b.txt",
+            "recent": 6.95288159185173
+          },
+          {
+            "bytes": 450,
+            "children": [],
+            "events": 4,
+            "isDir": false,
+            "last_touched_ms": 1778666401100.0,
+            "name": "c.txt",
+            "path": "/work/c.txt",
+            "recent": 3.9752449445545204
+          }
+        ],
+        "events": 15,
+        "isDir": true,
+        "last_touched_ms": 1778666401400.0,
+        "name": "work",
+        "path": "/work",
+        "recent": 14.878799595162459
+      }
+    ],
+    "events": 15,
+    "isDir": true,
+    "last_touched_ms": 1778666401400.0,
+    "name": "/",
+    "path": "/",
+    "recent": 14.878799595162459
+  }
+}

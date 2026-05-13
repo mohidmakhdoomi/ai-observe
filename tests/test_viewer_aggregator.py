@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))  # tests/_aggregator_oracle is here
+sys.path.insert(0, str(ROOT / "tests"))  # tests/_aggregator_oracle.py is here
 sys.path.insert(0, str(ROOT / "src"))
 
 from _aggregator_oracle import (  # noqa: E402
@@ -89,6 +89,22 @@ class NoiseFilterTests(unittest.TestCase):
         self.assertFalse(event_is_noise({"path": None, "old_path": None, "new_path": None}))
 
 
+class SnapshotGoldenTests(unittest.TestCase):
+    def _snapshot_for(self, fixture_name, metric):
+        agg = Aggregator()
+        for ev in _load_jsonl(FIXTURES / f"{fixture_name}.jsonl"):
+            agg.ingest(ev)
+        return agg.snapshot(metric=metric, include_noise=False)
+
+    def test_committed_golden_snapshots_match_fixtures(self):
+        for fixture_name in ("basic", "rename_chain"):
+            for metric in ("bytes", "events", "recent"):
+                with self.subTest(fixture=fixture_name, metric=metric):
+                    expected_path = FIXTURES / "golden" / f"{fixture_name}_{metric}.json"
+                    expected = json.loads(expected_path.read_text(encoding="utf-8"))
+                    self.assertEqual(self._snapshot_for(fixture_name, metric), expected)
+
+
 class BasicAggregationTests(unittest.TestCase):
     def setUp(self):
         self.agg = Aggregator()
@@ -124,6 +140,25 @@ class BasicAggregationTests(unittest.TestCase):
         self.assertIsNotNone(work)
         # /work bytes = a.txt(150) + b.txt(299) + c.txt(450) = 899
         self.assertEqual(work["bytes"], 899)
+
+
+class SnapshotNoiseToggleTests(unittest.TestCase):
+    def setUp(self):
+        self.agg = Aggregator()
+        for ev in _load_jsonl(FIXTURES / "noise.jsonl"):
+            self.agg.ingest(ev)
+
+    def test_include_noise_toggles_paths_without_replay(self):
+        filtered = self.agg.snapshot(include_noise=False)
+        noisy = self.agg.snapshot(include_noise=True)
+        self.assertEqual(filtered["total_event_count"], 4)
+        self.assertEqual(filtered["filtered_event_count"], 2)
+        self.assertIsNone(_find_node(filtered["tree"], "/home/user/.codex/tmp/noise.txt"))
+        self.assertIsNotNone(_find_node(noisy["tree"], "/home/user/.codex/tmp/noise.txt"))
+        self.assertEqual(_find_node(noisy["tree"], "/home/user/.codex/tmp/noise.txt")["bytes"], 77)
+        # Mixed-path events are not counted as filtered and remain visible in
+        # the filtered snapshot because at least one path is non-noise.
+        self.assertIsNotNone(_find_node(filtered["tree"], "/work/from-noise.txt"))
 
 
 class RenameChainTests(unittest.TestCase):

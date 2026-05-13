@@ -1,0 +1,39 @@
+{
+  "filtered_event_count": 0,
+  "include_noise": false,
+  "latest_ts_ms": 1778666400500.0,
+  "metric": "events",
+  "total_event_count": 6,
+  "tree": {
+    "bytes": 140,
+    "children": [
+      {
+        "bytes": 140,
+        "children": [
+          {
+            "bytes": 140,
+            "children": [],
+            "events": 6,
+            "isDir": false,
+            "last_touched_ms": 1778666400500.0,
+            "name": "final",
+            "path": "/p/final",
+            "recent": 5.982707964013699
+          }
+        ],
+        "events": 6,
+        "isDir": true,
+        "last_touched_ms": 1778666400500.0,
+        "name": "p",
+        "path": "/p",
+        "recent": 5.982707964013699
+      }
+    ],
+    "events": 6,
+    "isDir": true,
+    "last_touched_ms": 1778666400500.0,
+    "name": "/",
+    "path": "/",
+    "recent": 5.982707964013699
+  }
+}

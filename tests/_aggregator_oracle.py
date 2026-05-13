@@ -138,10 +138,10 @@ class Aggregator:
         if ts_ms > self.latest_ts_ms:
             self.latest_ts_ms = ts_ms
 
-        # Event-level noise filter (spec rule).
+        # Event-level noise accounting (spec rule). Noise events are still
+        # retained so the UI can reveal them later when include_noise=True.
         if event_is_noise(event):
             self.filtered_event_count += 1
-            return
 
         op = event["operation"]
         if op == "rename":
@@ -223,19 +223,17 @@ class Aggregator:
 
         Tree nodes carry `{path, name, isDir, bytes, events, recent,
         last_touched_ms, children}`. Tombstoned entries are excluded.
-        `include_noise` controls noise filtering at *snapshot time* — but
-        the event-level filter has already been applied at ingest time
-        when `include_noise=False`. Because the aggregator currently
-        drops noise events at ingest, snapshot's `include_noise` is
-        currently a label; behavior is determined at ingest. (Two
-        aggregator instances are needed to compare with/without noise;
-        documented.)
+        `include_noise` controls noise filtering at *snapshot time* so the
+        same aggregation state can back both the default filtered view and
+        the "Show noise" view without reconnecting or replaying events.
         """
         now_ms = self.latest_ts_ms or 0.0
         # Build the tree.
         root = {"path": "/", "name": "/", "isDir": True, "children": {}, "_files": []}
         for path, entry in self.paths.items():
             if entry.tombstoned:
+                continue
+            if not include_noise and is_noise(path):
                 continue
             if not path.startswith("/"):
                 continue
