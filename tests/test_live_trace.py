@@ -336,6 +336,59 @@ class LiveModeWrapperTests(unittest.TestCase):
                 events = [json.loads(line) for line in jsonl.splitlines()]
                 self.assertEqual([e["path"] for e in events], ["/tmp/work/a.txt", "/tmp/work/b.txt"])
 
+    def test_live_error_then_post_hoc_parser_failure_truncates_jsonl(self):
+        trace = self._trace_text()
+        real_feed = TraceParser.feed_line
+        state = {"calls": 0}
+
+        def patched_feed(self, line):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("synthetic live-parser failure")
+            return real_feed(self, line)
+
+        for strict, expected_rc in [("0", 0), ("1", 1)]:
+            state["calls"] = 0
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                _install_fake_strace(root, trace)
+                real = _install_real(root)
+                env = _wrapper_env(root, {
+                    "CODEV_OBSERVE_REAL_CODEX": str(real),
+                    "CODEV_OBSERVE_SESSION_ID": f"epf{strict}",
+                    "CODEV_OBSERVE_STRICT_PARSE": strict,
+                    "CODEV_OBSERVE_TEST_FAIL_AFTER": "1",
+                })
+                TraceParser.feed_line = patched_feed
+                try:
+                    rc, stderr = self._run_in_process(env)
+                finally:
+                    TraceParser.feed_line = real_feed
+                self.assertEqual(rc, expected_rc, stderr)
+                self.assertIn("live parser raised RuntimeError", stderr)
+                self.assertIn("parser failed", stderr)
+                self.assertEqual((root / "obs" / f"epf{strict}.jsonl").stat().st_size, 0)
+                partial = (root / "obs" / f"epf{strict}.jsonl.partial").read_text(encoding="utf-8")
+                partial_events = [json.loads(line) for line in partial.splitlines()]
+                self.assertEqual(len(partial_events), 1)
+
+    def test_invalid_fail_after_env_does_not_raise(self):
+        trace = self._trace_text()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _install_fake_strace(root, trace)
+            real = _install_real(root)
+            env = _wrapper_env(root, {
+                "CODEV_OBSERVE_REAL_CODEX": str(real),
+                "CODEV_OBSERVE_SESSION_ID": "badfa",
+                "CODEV_OBSERVE_TEST_FAIL_AFTER": "not-a-number",
+            })
+            rc, stderr = self._run_in_process(env)
+            self.assertEqual(rc, 0, stderr)
+            self.assertNotIn("ValueError", stderr)
+            events = [json.loads(line) for line in (root / "obs" / "badfa.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([e["path"] for e in events], ["/tmp/work/a.txt", "/tmp/work/b.txt"])
+
     def test_live_start_open_failure_falls_back_to_post_hoc(self):
         trace = self._trace_text()
         real_open = codex_observe.safe_open_trace_read

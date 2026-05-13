@@ -86,7 +86,10 @@ def run(argv: list[str], env: dict[str, str]) -> int:
     forced_terminated = False
     old_handlers: dict[int, Callable | int | None] = {}
     fail_after = env.get("CODEV_OBSERVE_TEST_FAIL_AFTER")
-    fail_after_n = int(fail_after) if fail_after else None
+    try:
+        fail_after_n = int(fail_after) if fail_after else None
+    except ValueError:
+        fail_after_n = None
     include_log_writes = env.get("CODEV_OBSERVE_INCLUDE_LOG_WRITES") == "1"
     initial_cwd = str(Path(os.getcwd()).resolve())
     active_artifacts = {str(Path(p).resolve()) for p in (logs.trace_path, logs.jsonl_path, logs.partial_path)}
@@ -236,6 +239,10 @@ def run(argv: list[str], env: dict[str, str]) -> int:
                         f"codex-observe: parser failed; wrote {logs.partial_path}; original exit {codex_code}",
                         file=sys.stderr,
                     )
+                try:
+                    safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
+                except Exception:
+                    pass
             except Exception as exc:
                 parse_failed = True
                 try:
@@ -249,6 +256,10 @@ def run(argv: list[str], env: dict[str, str]) -> int:
                         f"codex-observe: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {exc}; secondary: {inner}",
                         file=sys.stderr,
                     )
+                try:
+                    safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
+                except Exception:
+                    pass
         # Clean live exit: `.jsonl` already has the final stream; nothing else to do.
     else:
         try:
