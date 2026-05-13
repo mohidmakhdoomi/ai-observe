@@ -54,22 +54,93 @@ no aggregation dependency. Each phase commits a runnable artifact.
 - **Files (create)**:
   - `src/ai_observe/viewer/__init__.py` — empty package marker.
   - `src/ai_observe/viewer/__main__.py` — `python -m ai_observe.viewer
-    <jsonl>` CLI: argparse for positional path, `--port`, `--host`
-    (rejected unless equal to `127.0.0.1`; the flag exists only for
-    explicit confirmation, with `127.0.0.1` as the default and only
-    accepted value), `--no-browser`, `--poll-ms` (hidden, default 250).
+    <jsonl>` CLI. Argparse accepts exactly: positional `path`,
+    `--port` (default 0 → OS-chosen), and `--no-browser`. There is
+    **no** `--host` flag (binding is hardcoded to `127.0.0.1`, per
+    spec) and **no** `--poll-ms` flag (poll interval is not
+    user-tunable in v1, per spec; tests instantiate `JsonlTailer`
+    directly with a constructor argument instead). The CLI validates
+    that `path` exists and is a regular file (not a directory, not a
+    FIFO, not a symlink to a directory) and exits non-zero with a
+    clear stderr message otherwise. If `--no-browser` is absent the
+    CLI calls `webbrowser.open(url)` inside a `try/except` that
+    silently swallows any exception — the printed URL is the only
+    contract; the auto-open is best-effort.
+
+    **Repo execution story**: the existing test harness puts
+    `src/` on `sys.path` explicitly (see `tests/test_*.py` and
+    `bin/codex`). There is no packaging metadata in this repo. The
+    plan therefore makes `python -m ai_observe.viewer` work by the
+    same mechanism: users invoke it as
+    `PYTHONPATH=src python -m ai_observe.viewer <jsonl>`, and the
+    new `docs/viewer.md` documents that prefix. We do not add
+    `pyproject.toml` in this spec — that's a separate maintenance
+    task. Tests use the same `sys.path` hack as the rest of the
+    suite.
   - `src/ai_observe/viewer/server.py` — `ViewerServer` wrapping
     `http.server.ThreadingHTTPServer` bound to `127.0.0.1` only;
     routes: `GET /` (HTML), `GET /static/...` (vendored JS/CSS),
     `GET /events` (SSE). Single-process, multi-thread (one thread per
-    open SSE client).
+    open SSE client). Per-client replay/live handoff is the
+    explicit responsibility of this module — see below.
+
+    **`/events` replay + live handoff (the design Codex/Claude
+    flagged as under-specified)**: there is one shared
+    `JsonlTailer` per server instance, started at process start. It
+    appends each parsed event to a single in-memory list `events`
+    under a `threading.Lock`; on each append it sets a
+    `threading.Condition`. Each SSE client handler thread does:
+
+    1. On connection, snapshot `n = len(events)` under the lock and
+       send all events `[0:n]` as `event: append` SSE frames in
+       order. (This is the "replay from offset 0" the spec
+       requires; the snapshot point pins the watermark so we do
+       not miss or duplicate events that arrive during replay.)
+    2. After replay, loop: under the lock, wait on the condition
+       until `len(events) > n`, then send the slice
+       `events[n:len(events)]` and update `n`. Exits the loop on
+       client disconnect (caught when the SSE write fails with
+       `BrokenPipeError` / `ConnectionResetError`) or on shutdown
+       (the server sets a `shutdown_event` that the wait checks).
+
+    Memory growth is bounded by session size; v1 envelope is ~10⁴
+    events so this is fine. Documented as a known v1 envelope in
+    `docs/viewer.md`. The `events` list is the broadcaster's
+    *only* mutable cross-thread state; locking it cleanly is the
+    main thread-safety requirement and is unit-tested with two
+    concurrent SSE clients consuming an in-flight fixture.
+
+    **SSE payload shape (pinned, security-sensitive)**: each
+    `append` frame's `data:` is a JSON object containing exactly
+    the fields:
+    `{ "timestamp": "<ISO8601>", "operation": "<op>",
+       "path": "<abs|null>", "old_path": "<abs|null>",
+       "new_path": "<abs|null>", "result": <int|null> }`.
+    Notably **excluded**: `raw_syscall`, `command`, `pid`,
+    `process`, `session_id`, `invocation_id`, `schema_version`.
+    Those fields exist on the JSONL but the page must not see
+    them per the spec's security posture. A unit test asserts the
+    SSE payload's keys exactly match this whitelist for every
+    event produced from a fixture containing all operation types.
   - `src/ai_observe/viewer/tailer.py` — `JsonlTailer` class. Opens the
     path read-only, tracks `(inode, offset)`, polls on a fixed
-    interval, buffers partial trailing lines, handles truncation and
-    inode-changed (reopen from 0 with stderr warning), skips
-    malformed-JSON lines and `schema_version != 1` lines with stderr
-    warnings. Exposes an iterator-style API; the server adapter pumps
-    it onto each connected SSE client's queue.
+    interval (constructor argument, default 250 ms), buffers partial
+    trailing lines, handles truncation and inode-changed (reopen
+    from 0 with stderr warning), skips malformed-JSON lines and
+    `schema_version != 1` lines with stderr warnings. Empty-file
+    startup is explicitly supported: opening a zero-byte file is
+    not an error; the tailer simply sits at offset 0 and waits.
+
+    **Partial-trailing-line behavior (anti-pattern call-out)**:
+    the existing `LiveTracer` in `src/ai_observe/codex_observe.py`
+    flushes any pending fragment on stop. **This module must not.**
+    A JSONL fragment without a final `\n` is held until either a
+    newline arrives or the tailer is asked to shut down; on
+    shutdown only, if a fragment is still pending, the tailer
+    emits exactly one stderr warning naming the byte length of the
+    held fragment. The fragment is never parsed as JSON. This
+    matches the spec contract for live JSONL readers and is
+    unit-tested.
   - `src/ai_observe/viewer/static/index.html` — minimal placeholder:
     just connects to `/events` and `console.log`s each event, plus
     appends raw event JSON to a `<pre>` so a human can sanity-check.
@@ -108,10 +179,32 @@ no aggregation dependency. Each phase commits a runnable artifact.
   - Ctrl-C (SIGINT) on the running server exits cleanly: no
     traceback, file handles closed, SSE clients receive a final
     `event: shutdown` frame so they stop reconnecting.
-- **Test approach**: `pytest` unit + integration tests as above; no
-  browser yet. The integration test reads SSE frames as raw text from
-  `urllib`, splitting on `\n\n` and parsing `data: <json>` lines —
-  this also validates the SSE framing itself.
+- **Test approach**: **`unittest.TestCase` style** to match the
+  existing test modules (`tests/test_trace_parser.py`,
+  `tests/test_live_trace.py`, `tests/test_codex_observe.py` —
+  all use `unittest`, end with `unittest.main()`, and there is no
+  pytest config in the repo). Tests run with the same
+  `sys.path.insert(0, "src")` prelude used elsewhere. The
+  integration test reads SSE frames as raw text from `urllib`,
+  splitting on `\n\n` and parsing `data: <json>` lines — this also
+  validates the SSE framing itself. The CLI test mocks
+  `webbrowser.open` via `unittest.mock.patch` so tests do not
+  spawn a browser; explicit assertion that it is called with the
+  printed URL, and that an exception from it does not crash the
+  CLI.
+
+  Additional named tests this phase must include (called out
+  because Codex flagged them as floating):
+  - empty existing `.jsonl` (zero bytes) — server starts, page
+    serves, `/events` connects, no append frames until lines are
+    written;
+  - nonexistent path — CLI exits non-zero with a clear message;
+  - directory path — CLI exits non-zero with a clear message;
+  - shutdown with a held incomplete fragment — exactly one stderr
+    warning observed, no parse error, no exception;
+  - two concurrent SSE clients on the same server — both receive
+    the full replay independently and both receive new appended
+    events in order with no gaps or duplicates.
 - **Commit**: `[Spec 5][Phase: server] feat: SSE viewer server and
   JSONL tailer`.
 
@@ -150,7 +243,16 @@ no aggregation dependency. Each phase commits a runnable artifact.
       `last_touched`. Tombstoned paths are excluded.
     - Exclude filter is a separate pure function `isNoise(path)` with
       the spec's pattern list compiled to regexes once at module load.
-      Snapshot honors `includeNoise`.
+      Snapshot honors `includeNoise`. **Event-level rule**: an event
+      is counted as "noise" — and therefore excluded from
+      aggregation when `includeNoise=false`, and counted into
+      `filteredEventCount` — iff *every* non-null path on the event
+      (`path`, `old_path`, `new_path`) matches the exclude list.
+      An event touching at least one non-noise path is ingested in
+      full. This matches the spec's "exclude iff *all* of its
+      non-null paths match" rule, which Codex flagged as
+      under-tested. A dedicated unit test feeds a mixed-path
+      rename and asserts the counters.
   - `src/ai_observe/viewer/static/index.js` — bootstraps `EventSource`,
     pipes each `append` event into the aggregator, exposes the
     aggregator on `window.viewer` for testability, and (for this
@@ -228,7 +330,16 @@ no aggregation dependency. Each phase commits a runnable artifact.
     aggregator snapshot into both renderers every 250 ms (coalesced
     rAF), wire toggle controls, wire selection (clicking either
     panel updates a shared `selectedPath` state and both renderers
-    re-highlight).
+    re-highlight). When sort changes or metric toggles and the
+    selected row's position moves, the table calls
+    `row.scrollIntoView({block: "nearest"})` — preserving "keep the
+    selected row visible across sort changes" from the spec.
+    **Out of v1 (called out explicitly)**: treemap zoom /
+    drill-down. The treemap is non-interactive beyond hover and
+    click-to-select; rectangles are not clickable into a sub-view.
+    The spec's success criterion that mentions "treemap zooms" is
+    interpreted as "the layout is responsive to window resize," not
+    as a drill-down feature. Documented in `docs/viewer.md`.
   - `src/ai_observe/viewer/static/index.html` — modify: real DOM
     skeleton (top bar with three toggle buttons + "Show noise"
     checkbox + live badge + event counter; `<div id="treemap">` and
@@ -309,7 +420,7 @@ no aggregation dependency. Each phase commits a runnable artifact.
 
 ## Test strategy summary
 
-- **CI tests** (all pure-Python, stdlib + pytest):
+- **CI tests** (all pure-Python, stdlib + `unittest`):
   - `test_viewer_tailer.py` — JSONL tailer behavior.
   - `test_viewer_server.py` — server + SSE end to end.
   - `test_viewer_aggregator.py` — parity vs. JS aggregator via
@@ -321,6 +432,39 @@ no aggregation dependency. Each phase commits a runnable artifact.
 - **Local-only checks** (developer-run, not CI):
   - Manual walkthrough on a real `.jsonl` trace (Phase 4).
   - Performance budget check on the ~8800-event reference trace.
+
+## Consultation log
+
+### Iteration 1 (codex + claude; gemini skipped per project preference)
+
+- **Codex — REQUEST_CHANGES**: spec mismatches (`--host`,
+  `--poll-ms`); `/events` replay+live handoff under-specified; SSE
+  payload shape not pinned (risk of leaking sensitive fields);
+  no repo-local execution story given the lack of packaging;
+  several spec behaviors floating (empty-file startup, invalid
+  input rejection, shutdown-only partial-fragment warning,
+  event-level filtered-count semantics); risk of cargo-culting
+  `LiveTracer`'s flush-on-stop behavior.
+- **Claude — COMMENT**: pytest vs. `unittest.TestCase` mismatch
+  with project convention; SSE replay-from-start mechanism not
+  described in Phase 1; `--host` accepting exactly one value is
+  confusing; `--poll-ms` contradicts spec; `webbrowser.open()`
+  fallback path not described; thread safety of SSE broadcaster
+  unmentioned.
+
+Updates made: dropped `--host` and `--poll-ms` from the CLI; spelled
+out the `/events` per-client replay-then-live design with explicit
+lock + condition + watermark semantics; pinned the SSE payload to a
+whitelist of six fields and added a key-exact unit test; documented
+that execution uses `PYTHONPATH=src` like the rest of the repo
+(no packaging change in scope); switched the test framework to
+`unittest.TestCase` to match existing test modules; added named tests
+for empty file, missing path, directory path, shutdown-with-fragment,
+and two-concurrent-SSE-clients; called out the `LiveTracer`
+flush-on-stop pattern as an anti-pattern for this module; pinned the
+event-level rule for `filteredEventCount`; added explicit
+`scrollIntoView` requirement; explicitly excluded treemap
+zoom/drill-down from v1.
 
 ## Risk Assessment
 
