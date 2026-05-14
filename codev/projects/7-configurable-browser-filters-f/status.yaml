@@ -1,7 +1,7 @@
 id: '7'
 title: configurable-browser-filters-f
 protocol: spir
-phase: implement
+phase: review
 plan_phases:
   - id: phase-1-filter-core
     status: complete
@@ -12,8 +12,8 @@ plan_phases:
   - id: phase-4-item-actions
     status: complete
   - id: phase-5-docs-smoke
-    status: in_progress
-current_plan_phase: phase-5-docs-smoke
+    status: complete
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
@@ -28,7 +28,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-4-item-actions
@@ -43,4 +43,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-7/codev/projects/7-configurable-browser-filters-f/7-phase-4-item-actions-iter1-claude.txt
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T17:52:25.525Z'
+updated_at: '2026-05-14T23:47:59.085Z'
