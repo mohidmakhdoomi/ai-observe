@@ -238,6 +238,62 @@ class CLITests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
+    def _run_cli_one_shot(self, args):
+        captured_stderr = []
+        real_stderr_write = sys.stderr.write
+
+        def capture(s):
+            captured_stderr.append(s)
+            return real_stderr_write(s)
+
+        original_event = threading.Event
+
+        class OneShotEvent(original_event):
+            def wait(self, timeout=None):
+                self.set()
+                return True
+
+        with mock.patch.object(sys.stderr, "write", side_effect=capture):
+            with mock.patch.object(cli.threading, "Event", OneShotEvent):
+                with mock.patch.object(cli.signal, "signal", lambda *a, **k: None):
+                    rc = cli.main(args)
+        return rc, "".join(captured_stderr)
+
+    def test_default_port_constant_is_stable_7878(self):
+        self.assertEqual(cli.DEFAULT_PORT, 7878)
+        parser = cli._build_parser()
+        args = parser.parse_args([str(Path(self.tmp.name) / "x.jsonl")])
+        self.assertIsNone(args.port)
+
+    def test_default_port_collision_falls_back_to_ephemeral(self):
+        jsonl = Path(self.tmp.name) / "fallback.jsonl"
+        jsonl.write_bytes(b"")
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        self.addCleanup(sock.close)
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        occupied = sock.getsockname()[1]
+
+        with mock.patch.object(cli, "DEFAULT_PORT", occupied):
+            rc, stderr = self._run_cli_one_shot([str(jsonl), "--no-browser"])
+        self.assertEqual(rc, 0)
+        self.assertIn("http://127.0.0.1:", stderr)
+        self.assertNotIn(f":{occupied}/", stderr)
+
+    def test_explicit_port_collision_does_not_fall_back(self):
+        jsonl = Path(self.tmp.name) / "explicit.jsonl"
+        jsonl.write_bytes(b"")
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        self.addCleanup(sock.close)
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        occupied = sock.getsockname()[1]
+
+        with self.assertRaises(OSError):
+            cli.main([str(jsonl), "--port", str(occupied), "--no-browser"])
+
     def test_missing_path_exits(self):
         bad = Path(self.tmp.name) / "missing.jsonl"
         with self.assertRaises(SystemExit) as ctx:
