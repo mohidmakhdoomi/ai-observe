@@ -73,7 +73,8 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
    - The viewer default port changes to **7878**.
    - If `7878` is unavailable, the viewer falls back to an ephemeral port.
    - Persisted filters are used only when the stable default port (`7878`) is bound. This avoids cross-port/localStorage-origin surprises and ensures the default viewer URL has stable storage.
-   - If the user explicitly passes a port, that port is used according to existing CLI semantics; persistence is only guaranteed for the stable default port.
+   - If the user explicitly passes a port, that port is used according to existing CLI semantics.
+   - The browser MUST read from and write to filter `localStorage` only on the stable default origin `http://127.0.0.1:7878`. On fallback or custom-port origins, filters remain session-only in memory and the page should start from factory defaults.
 
 5. **Add to filters from items**
    - Right-clicking a treemap tile or table row offers filter actions.
@@ -112,6 +113,7 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 
 ### Filter matching
 
+- The active filter list is the single source of truth for matching. Filters are not server-side and do not permanently discard events.
 - MUST treat patterns as absolute-path anchored globs.
 - MUST compile filter patterns in the browser without using `eval` or dynamic code execution.
 - MUST match whole paths, not substrings.
@@ -124,6 +126,7 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 - MUST reject or clearly flag invalid patterns that are not absolute path anchored.
 - SHOULD preserve the user's textual glob patterns exactly, apart from safe trimming if implemented.
 - SHOULD avoid duplicate exact patterns where practical, or make duplicates harmless.
+- Exact-path patterns match only the literal full path. For a synthesized directory node such as `/work/build`, an exact `/work/build` filter does not match descendants such as `/work/build/out.log`; users must choose `/work/build/**` for subtree filtering.
 
 ### Defaults and reset
 
@@ -141,8 +144,9 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 
 ### Persistence
 
-- MUST store the global filter list in `localStorage` when running on the stable default viewer origin.
-- MUST load persisted filters on page load when available and valid.
+- MUST store the global filter list in `localStorage` only when running on the stable default viewer origin `http://127.0.0.1:7878`.
+- MUST load persisted filters on page load only on `http://127.0.0.1:7878` when available and valid.
+- MUST avoid reading or writing filter `localStorage` on fallback ephemeral ports or explicit custom ports; those origins use in-memory session filters initialized to factory defaults.
 - MUST fall back to factory defaults if persisted data is missing, malformed, or unusable.
 - MUST not require server persistence or JSONL modifications.
 - SHOULD tolerate `localStorage` exceptions, such as private browsing or storage quota failures, by keeping filters in memory for the current page session.
@@ -151,7 +155,8 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 
 - MUST rename user-facing "Noise" language to "Filters".
 - MUST replace `Show noise` with wording that reflects the new model, for example `Show filtered`.
-- MUST keep top-bar event counts understandable, e.g. total events and filtered event count.
+- `Show filtered` means: when unchecked, snapshots/rendering hide non-tombstoned paths matching the active filters; when checked, those paths are included again. It never reveals tombstoned rename sources.
+- MUST keep top-bar event counts understandable, e.g. total events and filtered event count for the current active filter list.
 
 ### Filter editor UI
 
@@ -166,9 +171,12 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 ### Context actions
 
 - MUST provide right-click/context-menu actions on treemap and table items.
-- MUST offer exact-path and subtree (`/path/**`) patterns for right-click on a single item.
+- MUST offer exact-path and subtree (`/path/**`) patterns for right-click on a single item. For directory items, exact path means only the directory path itself; subtree means the directory and all descendants.
+- For file items, the subtree option MUST be omitted or explicitly labeled as the selected path subtree (`/file/**`); v1 SHOULD omit subtree for files to avoid a confusing no-op.
 - MUST show an editable preview before committing right-click patterns.
 - MUST provide multi-select support for table/treemap items sufficient to add multiple exact paths to filters.
+- Multi-select interaction MUST at least support Ctrl/Cmd-click toggling on table rows and treemap tiles. The table SHOULD additionally support Shift-click range selection over visible rows. Selected paths SHOULD persist across re-renders while still present in the current snapshot and SHOULD be pruned when no longer present.
+- The multi-select add action MAY be a top-bar button, context-menu item, or both, but it must be discoverable when at least two items are selected.
 - MUST show all multi-select patterns before committing.
 - MUST not create subtree patterns from multi-select in v1.
 - SHOULD make no-op additions safe if a selected pattern already exists.
@@ -177,7 +185,9 @@ The hardcoded defaults become factory filter patterns rather than a permanent un
 
 - MUST retain all sanitized events received by the browser in arrival order.
 - MUST replay the full event buffer after filter changes rather than reconnecting to `/events`.
-- MUST continue to ingest live SSE events after filter changes.
+- During replay, the active filter list is applied when each event is ingested so `filtered_event_count` is recomputed for the current filters. Events are still retained in the external flat buffer and can be replayed again if filters change.
+- Snapshot/render filtering uses the same active filter list plus the `Show filtered` flag: unchecked hides matching paths; checked includes matching non-tombstoned paths.
+- MUST continue to ingest live SSE events after filter changes. If live events arrive while a replay is in progress, they MUST be appended to the event buffer and included exactly once in the final post-replay aggregate.
 - MUST keep filtered-event counting consistent with the current all-paths-match rule, extended to user filters.
 - MUST keep tombstoned paths hidden regardless of `Show filtered` or custom filters.
 - MUST keep metric semantics (`bytes`, `events`, `recent`, `last_touched_ms`) unchanged except for which paths/events are filtered from snapshots/counts.
@@ -208,7 +218,7 @@ A reasonable top-bar shape is:
 
 A reasonable editor can be a modal/dialog, popover, or inline panel. The exact visual treatment is an implementation choice, but it must support the required operations and validation feedback.
 
-A right-click flow should not immediately mutate filters without confirmation; it should present editable pattern text first. For a directory `/work/build`, the subtree proposal is `/work/build/**`. For a file `/work/build/out.log`, the exact proposal is `/work/build/out.log`; if a subtree option is offered for files, it should be clearly based on the selected path as specified (`/path/**`) or parent subtree only if the implementation deliberately labels it that way.
+A right-click flow should not immediately mutate filters without confirmation; it should present editable pattern text first. For a directory `/work/build`, the exact proposal is `/work/build` and the subtree proposal is `/work/build/**`. The exact proposal matches only the literal directory path; the subtree proposal hides descendants too. For a file `/work/build/out.log`, the exact proposal is `/work/build/out.log`; v1 should omit the subtree option for files unless the UI explicitly labels it as `/work/build/out.log/**`.
 
 ## Examples
 
@@ -237,9 +247,9 @@ A rename from `/tmp/build-output` to `/home/alice/project/output` is not counted
 - Starting the viewer with no saved filter state shows factory filters and hides the same default paths as before.
 - Users can add, edit, remove, and reset filters from the top bar.
 - Removing a default filter can reveal that path class when `Show filtered` is enabled or when the filter no longer applies in the default hidden view.
-- Custom filters persist across page reloads on `http://127.0.0.1:7878/`.
+- Custom filters persist across page reloads on `http://127.0.0.1:7878/` and do not persist/read stale custom-port state on fallback or explicit custom ports.
 - If port `7878` is occupied and no explicit `--port` is provided, the viewer still starts on an ephemeral loopback port.
-- Filter changes re-render from retained events without reconnecting to `/events`.
+- Filter changes re-render from retained events without reconnecting to `/events`, and `Show filtered` reveals matching non-tombstoned paths without changing the active filter list.
 - Right-click exact/subtree add flows work for treemap and table items with editable preview.
 - Multi-select exact-path add flow previews all patterns before commit.
 - Tombstoned rename sources remain hidden regardless of filter settings.
@@ -253,9 +263,10 @@ A rename from `/tmp/build-output` to `/home/alice/project/output` is not counted
 - Event-level filter tests for all-noisy/all-filtered events, mixed rename paths, and no-path events.
 - Snapshot tests confirming tombstones win over filters.
 - Browser/static JS tests for editor state operations and localStorage fallback/malformed data.
-- Table/treemap interaction tests for context-menu preview and multi-select exact path generation.
-- Server/CLI tests for default port `7878`, collision fallback to ephemeral, explicit `--port`, and loopback-only binding.
+- Table/treemap interaction tests for context-menu preview, directory exact-vs-subtree behavior, and multi-select exact path generation.
+- Server/CLI tests for default port `7878`, collision fallback to ephemeral, explicit `--port`, loopback-only binding, and stable-port-only persistence detection.
 - Documentation update checks for user-facing "Filters" terminology.
+- Replay equivalence tests: after a filter change, replaying the retained buffer should produce the same aggregate as constructing a fresh aggregator with the same active filters and ingesting the same events once.
 
 ## Risks and mitigations
 
