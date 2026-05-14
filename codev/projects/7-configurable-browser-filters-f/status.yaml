@@ -4,16 +4,16 @@ protocol: spir
 phase: implement
 plan_phases:
   - id: phase-1-filter-core
-    status: in_progress
+    status: complete
   - id: phase-2-replay-persistence-port
-    status: pending
+    status: in_progress
   - id: phase-3-filter-editor
     status: pending
   - id: phase-4-item-actions
     status: pending
   - id: phase-5-docs-smoke
     status: pending
-current_plan_phase: phase-1-filter-core
+current_plan_phase: phase-2-replay-persistence-port
 gates:
   spec-approval:
     status: approved
@@ -28,7 +28,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T13:45:04.155Z'
+updated_at: '2026-05-14T13:48:46.863Z'
