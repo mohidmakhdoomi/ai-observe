@@ -29,6 +29,18 @@ gates:
     status: pending
 iteration: 1
 build_complete: true
-history: []
+history:
+  - iteration: 1
+    plan_phase: phase-4-item-actions
+    build_output: ''
+    reviews:
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-7/codev/projects/7-configurable-browser-filters-f/7-phase-4-item-actions-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-7/codev/projects/7-configurable-browser-filters-f/7-phase-4-item-actions-iter1-claude.txt
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T17:43:33.079Z'
+updated_at: '2026-05-14T17:50:22.408Z'
