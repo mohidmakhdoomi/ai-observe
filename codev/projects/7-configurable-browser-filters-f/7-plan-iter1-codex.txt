@@ -1,0 +1,10 @@
+Using filesystem to verify the plan against the actual viewer/test layout.---
+VERDICT: COMMENT
+SUMMARY: Plan is well-aligned with the spec and phased sensibly, but Phase 2 should describe the replay/live-event concurrency approach more concretely.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- Phase 2 identifies replay ordering risk, but the implementation approach is still a bit underspecified: builders should be told whether replay swaps in a fresh aggregator, queues live arrivals during rebuild, or uses a generation/append cursor scheme to guarantee exactly-once inclusion.
+- The plan relies on `tests/test_viewer_breadcrumb.py` “or a new `tests/test_viewer_index_js.py`”; a dedicated runtime-helper test file would likely be clearer, since `test_viewer_breadcrumb.py` already mixes concerns.
+- Consider explicitly calling out empty-string/whitespace pattern handling in validation tests, since the spec allows safe trimming but requires invalid non-absolute patterns to be rejected clearly.
