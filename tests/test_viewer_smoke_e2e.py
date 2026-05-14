@@ -75,6 +75,11 @@ class ViewerSmokeE2ETests(unittest.TestCase):
             "/static/index.js",
         ])
         all_text = html
+        self.assertIn("Filters (0)", html)
+        self.assertIn("Add selected to Filters", html)
+        self.assertIn("Show filtered", html)
+        self.assertIn("Reset to defaults", html)
+        self.assertNotIn("Show noise", html)
         for asset in parser.styles + parser.scripts:
             body = self.get(asset)
             all_text += "\n" + body
@@ -84,6 +89,21 @@ class ViewerSmokeE2ETests(unittest.TestCase):
         static_dir = ROOT / "src" / "ai_observe" / "viewer" / "static"
         total = sum(p.stat().st_size for p in static_dir.iterdir() if p.is_file())
         self.assertLess(total, 50_000)
+
+    def test_viewer_docs_describe_filters_and_port_behavior(self):
+        docs = (ROOT / "docs" / "viewer.md").read_text()
+        for expected in (
+            "tries `127.0.0.1:7878`",
+            "falls back to an OS-chosen ephemeral loopback port",
+            "`Show filtered` reveals matching non-tombstoned paths",
+            "http://127.0.0.1:7878",
+            "Right-click a table row or treemap tile",
+            "Add N selected to Filters",
+            "memory linear in event count",
+        ):
+            self.assertIn(expected, docs)
+        for old_wording in ("Show noise", "Default noise filter"):
+            self.assertNotIn(old_wording, docs)
 
 
 if __name__ == "__main__":

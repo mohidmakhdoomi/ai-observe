@@ -77,6 +77,9 @@
   function tooltipFor(r){
     return r.path+"\nBytes: "+r.bytes+"\nEvents: "+r.events+"\nLast touched: "+formatLastTouched(r.last_touched_ms);
   }
+  function actionMetadataForRect(r){
+    return {path:r.path, name:r.name||r.path, isDir:!!r.isDir};
+  }
   function renderTreemap(el, opts){
     const rootNode = opts.rootNode, state = opts.state, metric = state.metric;
     const w = Math.max(1, el.clientWidth || 800), h = Math.max(1, el.clientHeight || 500);
@@ -85,15 +88,17 @@
     if(!rects.length){ const msg=document.createElement("div"); msg.className="empty"; msg.textContent="No paths under "+state.currentRoot; el.appendChild(msg); return; }
     for(const r of rects){
       const d=document.createElement("button"); d.type="button"; d.className="tile"+(r.isDir?" dir":" file");
-      if(r.path===state.selectedPath) d.className += " selected"; if(r.path===state.hoveredPath) d.className += " hovered";
+      const multiSelected = state.selectedPaths && state.selectedPaths.has && state.selectedPaths.has(r.path);
+      if(r.path===state.selectedPath || multiSelected) d.className += " selected"; if(r.path===state.hoveredPath) d.className += " hovered";
       d.style.left=r.x+"px"; d.style.top=r.y+"px"; d.style.width=Math.max(0,r.w)+"px"; d.style.height=Math.max(0,r.h)+"px"; d.style.backgroundColor=r.color;
       d.title = tooltipFor(r);
       const label=document.createElement("span"); label.textContent=r.name||r.path; d.appendChild(label);
       d.addEventListener("mouseenter",()=>opts.onHover(r.path)); d.addEventListener("mouseleave",()=>opts.onHover(null));
-      d.addEventListener("click",()=>{ if(r.isDir) opts.onDrill(r.path); else opts.onSelect(r.path); });
+      d.addEventListener("contextmenu",ev=>{ if(opts.onContext){ ev.preventDefault(); opts.onContext(actionMetadataForRect(r), ev); } });
+      d.addEventListener("click",ev=>{ if((ev.ctrlKey||ev.metaKey) && opts.onMultiSelect){ opts.onMultiSelect(r.path,{ctrlKey:ev.ctrlKey,metaKey:ev.metaKey,shiftKey:ev.shiftKey}); return; } if(r.isDir) opts.onDrill(r.path); else opts.onSelect(r.path); });
       el.appendChild(d);
     }
   }
-  const api={layoutTreemap:layoutTreemap, findNode:findNode, renderTreemap:renderTreemap, formatLastTouched:formatLastTouched, tooltipFor:tooltipFor};
+  const api={layoutTreemap:layoutTreemap, findNode:findNode, renderTreemap:renderTreemap, formatLastTouched:formatLastTouched, tooltipFor:tooltipFor, actionMetadataForRect:actionMetadataForRect};
   if(typeof module!=="undefined"&&module.exports) module.exports=api; else root.AiObserveTreemap=api;
 })(typeof self!=="undefined"?self:this);

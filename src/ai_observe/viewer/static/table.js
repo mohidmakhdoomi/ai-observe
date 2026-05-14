@@ -15,6 +15,17 @@
     });
     return arr;
   }
+  function flattenVisibleRows(rootNode, state){
+    const rows=[];
+    function row(n, depth){
+      rows.push({node:n, path:n.path, depth:depth, isDir:!!n.isDir});
+      if(n.isDir && state.expanded && state.expanded.has(n.path)){
+        for(const c of sortedChildren(n,state.sort)) row(c, depth+1);
+      }
+    }
+    if(rootNode){ for(const c of sortedChildren(rootNode,state.sort)) row(c,0); }
+    return rows;
+  }
   function renderTable(el, opts){
     const rootNode=opts.rootNode, state=opts.state, latest=opts.latestTsMs||0;
     while(el.firstChild) el.removeChild(el.firstChild);
@@ -24,19 +35,23 @@
     for(const h of heads){ const th=document.createElement("th"); const b=document.createElement("button"); b.type="button"; b.textContent=h[1]+(state.sort.column===h[0]?(state.sort.dir==="asc"?" ▲":" ▼"):""); b.addEventListener("click",()=>opts.onSort(h[0])); th.appendChild(b); hr.appendChild(th); }
     thead.appendChild(hr); table.appendChild(thead);
     const tbody=document.createElement("tbody"); table.appendChild(tbody); el.appendChild(table);
+    const visibleRows=flattenVisibleRows(rootNode,state);
+    const visiblePaths=visibleRows.map(r=>r.path);
     function row(n, depth){
-      const tr=document.createElement("tr"); tr.dataset.path=n.path; tr.className=(n.isDir?"dir":"file")+(n.path===state.selectedPath?" selected":"")+(n.path===state.hoveredPath?" hovered":"");
+      const multiSelected = state.selectedPaths && state.selectedPaths.has && state.selectedPaths.has(n.path);
+      const tr=document.createElement("tr"); tr.dataset.path=n.path; tr.className=(n.isDir?"dir":"file")+((n.path===state.selectedPath||multiSelected)?" selected":"")+(n.path===state.hoveredPath?" hovered":"");
       const pathTd=document.createElement("td"); pathTd.style.paddingLeft=(depth*18+6)+"px";
       const btn=document.createElement("button"); btn.type="button"; btn.className="row-path"; btn.textContent=(n.isDir?(state.expanded.has(n.path)?"▾ ":"▸ "):"  ")+(n.name||n.path);
-      btn.addEventListener("click",()=>{ opts.onSelect(n.path); if(n.isDir) opts.onToggle(n.path); }); pathTd.appendChild(btn); tr.appendChild(pathTd);
+      pathTd.appendChild(btn); tr.appendChild(pathTd);
       for(const text of [String(n.bytes||0), String(n.events||0), relativeTime(n.last_touched_ms, latest)]){ const td=document.createElement("td"); td.textContent=text; tr.appendChild(td); }
+      tr.addEventListener("click",ev=>{ if((ev.ctrlKey||ev.metaKey||ev.shiftKey) && opts.onMultiSelect){ opts.onMultiSelect(n.path,{ctrlKey:ev.ctrlKey,metaKey:ev.metaKey,shiftKey:ev.shiftKey,visiblePaths:visiblePaths}); return; } opts.onSelect(n.path); if(n.isDir) opts.onToggle(n.path); });
+      tr.addEventListener("contextmenu",ev=>{ if(opts.onContext){ ev.preventDefault(); opts.onContext({path:n.path,name:n.name||n.path,isDir:!!n.isDir}, ev); } });
       tr.addEventListener("mouseenter",()=>opts.onHover(n.path)); tr.addEventListener("mouseleave",()=>opts.onHover(null)); tbody.appendChild(tr);
-      if(n.isDir && state.expanded.has(n.path)){ for(const c of sortedChildren(n,state.sort)) row(c, depth+1); }
     }
-    if(rootNode){ for(const c of sortedChildren(rootNode,state.sort)) row(c,0); }
+    for(const r of visibleRows) row(r.node,r.depth);
     const sel = state.selectedPath && tbody.querySelector('[data-path="'+(window.CSS&&CSS.escape?CSS.escape(state.selectedPath):state.selectedPath.replace(/"/g,'\\"'))+'"]');
     if(sel && state.scrollSelected) sel.scrollIntoView({block:"nearest"});
   }
-  const api={renderTable:renderTable, sortedChildren:sortedChildren, relativeTime:relativeTime};
+  const api={renderTable:renderTable, sortedChildren:sortedChildren, flattenVisibleRows:flattenVisibleRows, relativeTime:relativeTime};
   if(typeof module!=="undefined"&&module.exports) module.exports=api; else root.AiObserveTable=api;
 })(typeof self!=="undefined"?self:this);

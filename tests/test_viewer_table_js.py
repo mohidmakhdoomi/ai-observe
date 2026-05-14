@@ -35,6 +35,30 @@ class ViewerTableJsTests(unittest.TestCase):
         self.assertEqual(data["kids"], ["/a/y", "/a/z"])
         self.assertEqual(data["rel"], "1m ago")
 
+    def test_real_js_flattens_visible_rows_for_shift_selection(self):
+        tree = {"children": [
+            {"path":"/b", "name":"b", "isDir":False, "bytes":5, "events":10, "recent":1, "last_touched_ms":1000, "children":[]},
+            {"path":"/a", "name":"a", "isDir":True, "bytes":9, "events":1, "recent":2, "last_touched_ms":4000, "children":[
+                {"path":"/a/z", "name":"z", "isDir":False, "bytes":1, "events":1, "recent":1, "last_touched_ms":3000, "children":[]},
+                {"path":"/a/y", "name":"y", "isDir":False, "bytes":3, "events":2, "recent":1, "last_touched_ms":2000, "children":[]},
+            ]},
+        ]}
+        driver = """
+        const tbl=require('./src/ai_observe/viewer/static/table.js');
+        const tree=%s;
+        const state={sort:{column:'path',dir:'asc'}, expanded:new Set(['/a'])};
+        const rows=tbl.flattenVisibleRows(tree,state).map(r=>({path:r.path,depth:r.depth,isDir:r.isDir}));
+        process.stdout.write(JSON.stringify(rows));
+        """ % json.dumps(tree)
+        proc = subprocess.run([self.node, "-e", driver], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), [
+            {"path": "/a", "depth": 0, "isDir": True},
+            {"path": "/a/y", "depth": 1, "isDir": False},
+            {"path": "/a/z", "depth": 1, "isDir": False},
+            {"path": "/b", "depth": 0, "isDir": False},
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

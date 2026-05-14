@@ -103,6 +103,72 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         self.assertIn("/work/a.txt", out["hiddenPaths"])
         self.assertIn("/secret/a.txt", out["shownPaths"])
 
+    def test_filter_editor_helpers_validate_dedupe_and_reset(self):
+        script = r"""
+        const h = require('./src/ai_observe/viewer/static/index.js');
+        const start = ['/tmp/**', '/work/build/**'];
+        const added = h.addFilterPattern(start, '/tmp/**');
+        const edited = h.updateFilterPatternAt(start, 1, ' /work/out/** ');
+        const invalid = h.updateFilterPatternAt(start, 0, 'relative/**');
+        const removed = h.removeFilterPatternAt(start, 0);
+        const reset = h.resetFilterPatterns();
+        process.stdout.write(JSON.stringify({
+          summary: h.filterEditorSummary(start),
+          added,
+          edited,
+          invalid,
+          removed,
+          reset
+        }));
+        """
+        out = self._run_node(script)
+        self.assertEqual(out["summary"], "Filters (2)")
+        self.assertTrue(out["added"]["ok"])
+        self.assertEqual(out["added"]["patterns"], ["/tmp/**", "/work/build/**"])
+        self.assertTrue(out["edited"]["ok"])
+        self.assertEqual(out["edited"]["patterns"], ["/tmp/**", "/work/out/**"])
+        self.assertFalse(out["invalid"]["ok"])
+        self.assertEqual(out["removed"]["patterns"], ["/work/build/**"])
+        self.assertIn("/home/*/.codex/**", out["reset"]["patterns"])
+
+    def test_item_action_helpers_build_preview_patterns_and_prune_selection(self):
+        script = r"""
+        const h = require('./src/ai_observe/viewer/static/index.js');
+        const tree = {path:'/', children:[
+          {path:'/work', isDir:true, children:[
+            {path:'/work/a.log', isDir:false, children:[]},
+            {path:'/work/b.log', isDir:false, children:[]}
+          ]},
+          {path:'/tmp', isDir:true, children:[]}
+        ]};
+        process.stdout.write(JSON.stringify({
+          dir: h.filterPatternProposals({path:'/work', isDir:true}),
+          file: h.filterPatternProposals({path:'/work/a.log', isDir:false}),
+          exact: h.exactPatternsForSelection(['/work/a.log','/work/a.log','/work/b.log']),
+          pruned: h.pruneSelectedPaths(['/work/a.log','/missing'], tree),
+          toggled: h.togglePathSelection(['/work/a.log'], '/work/a.log'),
+          range: h.selectVisibleRange(['/work/a.log'], '/work/a.log', '/tmp', ['/work/a.log','/work/b.log','/tmp']),
+          offState: h.updateMultiSelectionState({selectedPaths:['/work/a.log'], selectedPath:'/work/a.log', selectionAnchorPath:'/work/a.log'}, '/work/a.log', {}),
+          onState: h.updateMultiSelectionState({selectedPaths:[], selectedPath:null, selectionAnchorPath:null}, '/work/a.log', {}),
+          rangeState: h.updateMultiSelectionState({selectedPaths:['/work/a.log'], selectedPath:'/work/a.log', selectionAnchorPath:'/work/a.log'}, '/tmp', {shiftKey:true, visiblePaths:['/work/a.log','/work/b.log','/tmp']})
+        }));
+        """
+        out = self._run_node(script)
+        self.assertEqual(
+            [p["pattern"] for p in out["dir"]],
+            ["/work", "/work/**"],
+        )
+        self.assertEqual([p["pattern"] for p in out["file"]], ["/work/a.log"])
+        self.assertEqual(out["exact"], ["/work/a.log", "/work/b.log"])
+        self.assertEqual(out["pruned"], ["/work/a.log"])
+        self.assertEqual(out["toggled"], [])
+        self.assertEqual(out["range"], ["/work/a.log", "/work/b.log", "/tmp"])
+        self.assertEqual(out["offState"]["selectedPaths"], [])
+        self.assertIsNone(out["offState"]["selectedPath"])
+        self.assertEqual(out["onState"]["selectedPath"], "/work/a.log")
+        self.assertEqual(out["rangeState"]["selectedPaths"], ["/work/a.log", "/work/b.log", "/tmp"])
+        self.assertEqual(out["rangeState"]["selectedPath"], "/tmp")
+
 
 if __name__ == "__main__":
     unittest.main()
