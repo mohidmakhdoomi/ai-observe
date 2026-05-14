@@ -17,37 +17,109 @@ from typing import Iterable, List, Optional
 RECENCY_HALF_LIFE_MS = 60_000.0
 
 
-# Exclude patterns (glob-ish, converted to regex). Aligned with the spec's
-# "Path filtering" section: codex tmp, common caches, /tmp, /proc, /sys,
-# /dev, /run.
-_NOISE_REGEXES = [
-    re.compile(p)
-    for p in (
-        r"^/home/[^/]+/\.codex(/|$)",
-        r"^/home/[^/]+/\.cache(/|$)",
-        r"^/tmp(/|$)",
-        r"^/var/tmp(/|$)",
-        r"^/proc(/|$)",
-        r"^/sys(/|$)",
-        r"^/dev(/|$)",
-        r"^/run(/|$)",
-    )
-]
+FACTORY_FILTER_PATTERNS = (
+    "/home/*/.codex/**",
+    "/home/*/.cache/**",
+    "/tmp/**",
+    "/var/tmp/**",
+    "/proc/**",
+    "/sys/**",
+    "/dev/**",
+    "/run/**",
+)
 
 
-def is_noise(path: Optional[str]) -> bool:
+def validate_filter_pattern(pattern) -> tuple[bool, str, str | None]:
+    if not isinstance(pattern, str):
+        return False, pattern, "filter pattern must be a string"
+    trimmed = pattern.strip()
+    if trimmed == "":
+        return False, trimmed, "filter pattern must not be empty"
+    if not trimmed.startswith("/"):
+        return False, trimmed, "filter pattern must start with /"
+    return True, trimmed, None
+
+
+def _compile_segment_glob(segment: str) -> str:
+    out = []
+    for ch in segment:
+        if ch == "*":
+            out.append(r"[^/]*")
+        elif ch == "?":
+            out.append(r"[^/]")
+        else:
+            out.append(re.escape(ch))
+    return "".join(out)
+
+
+def glob_to_regex_source(pattern: str) -> str:
+    if pattern == "/":
+        return r"^/$"
+    segments = pattern[1:].split("/")
+    out = "^"
+    for i, seg in enumerate(segments):
+        last = i == len(segments) - 1
+        if seg == "**":
+            if last:
+                # `/tmp/**` matches `/tmp`, `/tmp/a`, and `/tmp/a/b`.
+                out += r"/.*" if out == "^" else r"(?:/.*)?"
+            else:
+                # `/a/**/b` matches `/a/b`, `/a/x/b`, and `/a/x/y/b`.
+                out += r"(?:/[^/]+)*"
+        else:
+            out += "/" + _compile_segment_glob(seg)
+    return out + "$"
+
+
+def compile_filter_pattern(pattern: str) -> re.Pattern:
+    ok, normalized, error = validate_filter_pattern(pattern)
+    if not ok:
+        raise ValueError(error)
+    return re.compile(glob_to_regex_source(normalized))
+
+
+def _normalized_filter_patterns(patterns: Optional[Iterable[str]] = None) -> list[str]:
+    source = FACTORY_FILTER_PATTERNS if patterns is None else patterns
+    normalized = []
+    for pattern in source:
+        ok, value, error = validate_filter_pattern(pattern)
+        if not ok:
+            raise ValueError(error)
+        normalized.append(value)
+    return normalized
+
+
+def compile_filter_patterns(patterns: Optional[Iterable[str]] = None) -> list[re.Pattern]:
+    return [compile_filter_pattern(p) for p in _normalized_filter_patterns(patterns)]
+
+
+_DEFAULT_FILTER_REGEXES = compile_filter_patterns(FACTORY_FILTER_PATTERNS)
+
+
+def is_filtered_path(path: Optional[str], regexes: Optional[Iterable[re.Pattern]] = None) -> bool:
     if not path:
         return False
-    return any(rx.match(path) for rx in _NOISE_REGEXES)
+    compiled = _DEFAULT_FILTER_REGEXES if regexes is None else regexes
+    return any(rx.match(path) for rx in compiled)
 
 
-def event_is_noise(event: dict) -> bool:
-    """An event is noise iff every non-null path on it matches the
-    exclude list."""
+def event_matches_filters(event: dict, regexes: Optional[Iterable[re.Pattern]] = None) -> bool:
+    """An event is filtered iff every non-null path on it matches the
+    active filter list."""
     paths = [p for p in (event.get("path"), event.get("old_path"), event.get("new_path")) if p]
     if not paths:
         return False
-    return all(is_noise(p) for p in paths)
+    return all(is_filtered_path(p, regexes) for p in paths)
+
+
+def is_noise(path: Optional[str]) -> bool:
+    # Backward-compatible alias for the factory filter list.
+    return is_filtered_path(path)
+
+
+def event_is_noise(event: dict) -> bool:
+    # Backward-compatible alias for the factory filter list.
+    return event_matches_filters(event)
 
 
 def _parse_ts_ms(ts: str) -> float:
@@ -113,7 +185,9 @@ class Aggregator:
     metric definitions, and exclude-filter rules.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, filter_patterns: Optional[Iterable[str]] = None) -> None:
+        self.filter_patterns = _normalized_filter_patterns(filter_patterns)
+        self._filter_regexes = compile_filter_patterns(self.filter_patterns)
         self.paths: dict = {}
         self.filtered_event_count = 0
         self.total_event_count = 0
@@ -138,9 +212,9 @@ class Aggregator:
         if ts_ms > self.latest_ts_ms:
             self.latest_ts_ms = ts_ms
 
-        # Event-level noise accounting (spec rule). Noise events are still
-        # retained so the UI can reveal them later when include_noise=True.
-        if event_is_noise(event):
+        # Event-level filter accounting (spec rule). Filtered events are
+        # still retained so the UI can reveal them later when include_noise=True.
+        if event_matches_filters(event, self._filter_regexes):
             self.filtered_event_count += 1
 
         op = event["operation"]
@@ -222,22 +296,23 @@ class Aggregator:
 
     # ----- snapshots -----
 
-    def snapshot(self, *, metric: str = "bytes", include_noise: bool = False) -> dict:
+    def snapshot(self, *, metric: str = "bytes", include_noise: bool = False, include_filtered: bool = False) -> dict:
         """Return a top-down hierarchical snapshot keyed by path.
 
         Tree nodes carry `{path, name, isDir, bytes, events, recent,
         last_touched_ms, children}`. Tombstoned entries are excluded.
-        `include_noise` controls noise filtering at *snapshot time* so the
-        same aggregation state can back both the default filtered view and
-        the "Show noise" view without reconnecting or replaying events.
+        `include_noise`/`include_filtered` controls filter application at
+        snapshot time so the same aggregation state can back both hidden and
+        visible filtered views.
         """
+        include_filter_matches = include_noise or include_filtered
         now_ms = self.latest_ts_ms or 0.0
         # Build the tree.
         root = {"path": "/", "name": "/", "isDir": True, "children": {}, "_files": []}
         for path, entry in self.paths.items():
             if entry.tombstoned:
                 continue
-            if not include_noise and is_noise(path):
+            if not include_filter_matches and is_filtered_path(path, self._filter_regexes):
                 continue
             if not path.startswith("/"):
                 continue
@@ -300,7 +375,7 @@ class Aggregator:
         tree = _finalize(root)
         return {
             "metric": metric,
-            "include_noise": include_noise,
+            "include_noise": include_filter_matches,
             "tree": tree,
             "filtered_event_count": self.filtered_event_count,
             "total_event_count": self.total_event_count,

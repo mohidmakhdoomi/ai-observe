@@ -2,39 +2,133 @@
 //
 // Canonical implementation. The Python mirror in tests/_aggregator_oracle.py
 // is the test oracle; semantics must stay in lock-step. See the spec's
-// "Metric definitions" and "Rename handling" sections, and the plan's
-// Phase 2 block, for the contracts implemented here.
+// metric, rename, and filter sections for the contracts implemented here.
 
 "use strict";
 
 (function (root) {
   const RECENCY_HALF_LIFE_MS = 60000;
 
-  const NOISE_PATTERNS = [
-    /^\/home\/[^/]+\/\.codex(\/|$)/,
-    /^\/home\/[^/]+\/\.cache(\/|$)/,
-    /^\/tmp(\/|$)/,
-    /^\/var\/tmp(\/|$)/,
-    /^\/proc(\/|$)/,
-    /^\/sys(\/|$)/,
-    /^\/dev(\/|$)/,
-    /^\/run(\/|$)/,
-  ];
+  const FACTORY_FILTER_PATTERNS = Object.freeze([
+    "/home/*/.codex/**",
+    "/home/*/.cache/**",
+    "/tmp/**",
+    "/var/tmp/**",
+    "/proc/**",
+    "/sys/**",
+    "/dev/**",
+    "/run/**",
+  ]);
 
-  function isNoise(path) {
-    if (!path) return false;
-    for (const rx of NOISE_PATTERNS) {
-      if (rx.test(path)) return true;
-    }
-    return false;
+  function validationError(message, pattern) {
+    return { ok: false, pattern: pattern, error: message };
   }
 
-  function eventIsNoise(event) {
+  function validateFilterPattern(pattern) {
+    if (typeof pattern !== "string") {
+      return validationError("filter pattern must be a string", pattern);
+    }
+    const trimmed = pattern.trim();
+    if (trimmed === "") {
+      return validationError("filter pattern must not be empty", trimmed);
+    }
+    if (!trimmed.startsWith("/")) {
+      return validationError("filter pattern must start with /", trimmed);
+    }
+    return { ok: true, pattern: trimmed, error: null };
+  }
+
+  function escapeRegexChar(ch) {
+    return /[\\^$.*+?()[\]{}|]/.test(ch) ? "\\" + ch : ch;
+  }
+
+  function compileSegmentGlob(segment) {
+    let out = "";
+    for (let i = 0; i < segment.length; i++) {
+      const ch = segment[i];
+      if (ch === "*") {
+        out += "[^/]*";
+      } else if (ch === "?") {
+        out += "[^/]";
+      } else {
+        out += escapeRegexChar(ch);
+      }
+    }
+    return out;
+  }
+
+  function globToRegexSource(pattern) {
+    // Patterns are absolute-path anchored. `**` has subpath semantics only
+    // when it is its own segment; elsewhere `*` keeps segment-local meaning.
+    if (pattern === "/") return "^/$";
+    const segments = pattern.slice(1).split("/");
+    let out = "^";
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const last = i === segments.length - 1;
+      if (seg === "**") {
+        if (last) {
+          // `/tmp/**` matches `/tmp`, `/tmp/a`, and `/tmp/a/b`.
+          out += out === "^" ? "/.*" : "(?:/.*)?";
+        } else {
+          // `/a/**/b` matches `/a/b`, `/a/x/b`, and `/a/x/y/b`.
+          out += "(?:/[^/]+)*";
+        }
+      } else {
+        out += "/" + compileSegmentGlob(seg);
+      }
+    }
+    return out + "$";
+  }
+
+  function compileFilterPattern(pattern) {
+    const valid = validateFilterPattern(pattern);
+    if (!valid.ok) {
+      throw new Error(valid.error);
+    }
+    return { pattern: valid.pattern, regex: new RegExp(globToRegexSource(valid.pattern)) };
+  }
+
+  function compileFilterPatterns(patterns) {
+    return (patterns || []).map(compileFilterPattern);
+  }
+
+  function createFilterMatcher(patterns) {
+    const compiled = compileFilterPatterns(patterns == null ? FACTORY_FILTER_PATTERNS : patterns);
+    return {
+      patterns: compiled.map((c) => c.pattern),
+      matches: function (path) {
+        if (!path) return false;
+        for (const c of compiled) {
+          if (c.regex.test(path)) return true;
+        }
+        return false;
+      },
+    };
+  }
+
+  const DEFAULT_FILTER_MATCHER = createFilterMatcher(FACTORY_FILTER_PATTERNS);
+
+  function isFilteredPath(path, matcher) {
+    return (matcher || DEFAULT_FILTER_MATCHER).matches(path);
+  }
+
+  function eventMatchesFilters(event, matcher) {
     const paths = [event.path, event.old_path, event.new_path].filter(
       (p) => p != null && p !== ""
     );
     if (paths.length === 0) return false;
-    return paths.every(isNoise);
+    return paths.every((p) => isFilteredPath(p, matcher));
+  }
+
+  // Backward-compatible names used by existing tests/UI until later phases
+  // rename the visible concepts from Noise to Filters.
+  function isNoise(path) {
+    return isFilteredPath(path, DEFAULT_FILTER_MATCHER);
+  }
+
+  function eventIsNoise(event) {
+    return eventMatchesFilters(event, DEFAULT_FILTER_MATCHER);
   }
 
   function parseTsMs(ts) {
@@ -76,7 +170,14 @@
     if (whenMs > entry.lastTouchedMs) entry.lastTouchedMs = whenMs;
   }
 
-  function createAggregator() {
+  function createAggregator(opts) {
+    const filterPatterns =
+      opts && Object.prototype.hasOwnProperty.call(opts, "filter_patterns")
+        ? opts.filter_patterns
+        : opts && Object.prototype.hasOwnProperty.call(opts, "filterPatterns")
+          ? opts.filterPatterns
+          : FACTORY_FILTER_PATTERNS;
+    const filterMatcher = createFilterMatcher(filterPatterns);
     const state = {
       paths: new Map(),
       filteredEventCount: 0,
@@ -142,7 +243,7 @@
       const tsMs = parseTsMs(event.timestamp);
       if (tsMs > state.latestTsMs) state.latestTsMs = tsMs;
 
-      if (eventIsNoise(event)) {
+      if (eventMatchesFilters(event, filterMatcher)) {
         state.filteredEventCount += 1;
       }
 
@@ -179,14 +280,14 @@
 
     function snapshot(opts) {
       const metric = (opts && opts.metric) || "bytes";
-      const includeNoise = !!(opts && opts.include_noise);
+      const includeNoise = !!(opts && (opts.include_noise || opts.include_filtered));
       const nowMs = state.latestTsMs || 0;
       const rootChildren = new Map();
       const rootFiles = [];
 
       for (const [path, entry] of state.paths.entries()) {
         if (entry.tombstoned) continue;
-        if (!includeNoise && isNoise(path)) continue;
+        if (!includeNoise && isFilteredPath(path, filterMatcher)) continue;
         if (!path.startsWith("/")) continue;
         const parts = path.split("/").filter((p) => p !== "");
         let cur = { children: rootChildren, files: rootFiles, full: "" };
@@ -272,10 +373,22 @@
       state.latestTsMs = 0;
     }
 
-    return { ingest: ingest, snapshot: snapshot, reset: reset };
+    return { ingest: ingest, snapshot: snapshot, reset: reset, filterPatterns: filterMatcher.patterns.slice() };
   }
 
-  const api = { createAggregator: createAggregator, isNoise: isNoise, eventIsNoise: eventIsNoise };
+  const api = {
+    createAggregator: createAggregator,
+    factoryFilterPatterns: FACTORY_FILTER_PATTERNS,
+    validateFilterPattern: validateFilterPattern,
+    compileFilterPattern: compileFilterPattern,
+    createFilterMatcher: createFilterMatcher,
+    isFilteredPath: isFilteredPath,
+    eventMatchesFilters: eventMatchesFilters,
+    // Backward-compatible aliases.
+    isNoise: isNoise,
+    eventIsNoise: eventIsNoise,
+    NOISE_PATTERNS: FACTORY_FILTER_PATTERNS,
+  };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {
