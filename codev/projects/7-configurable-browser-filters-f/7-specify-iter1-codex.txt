@@ -1,0 +1,16 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong spec with good scope and test coverage, but a few core interaction/semantics details are still ambiguous enough to block clean implementation.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The filtering model needs one explicit source of truth: are filters applied at ingest/replay time, snapshot/render time, or both? Right now the spec says the browser “replays the aggregator using the new filters,” but also introduces `Show filtered`, which implies filtered data remains revealable. That interaction is not precise enough.
+- “Exact path” actions are ambiguous for directory items. In the current viewer, directory rows/tiles are synthesized tree nodes, not literal event paths, so adding an exact filter for a directory like `/work/build` may be a no-op unless the spec defines how exact directory filters affect descendants or synthesized nodes.
+- Multi-select is underspecified, especially for treemap items. The current UI has no selection model; the spec requires multi-select on table/treemap items but does not define the user interaction pattern, selection persistence, or how the context action is invoked from a multi-selection.
+- Persistence behavior on non-`127.0.0.1:7878` origins should be stated more explicitly: should the app completely avoid reading/writing `localStorage` on fallback/custom ports, or merely treat it as best-effort? The intent is inferable, but the implementation contract should be explicit.
+
+Additional notes:
+- Technical feasibility looks good overall. The current code structure supports this: client-side aggregation is isolated in `src/ai_observe/viewer/static/aggregator.js`, the Python oracle mirrors it in `tests/_aggregator_oracle.py`, and the server already keeps filtering client-side.
+- Security/privacy requirements are solid and aligned with the existing server/tailer design.
+- Testing strategy is strong; I’d specifically add acceptance tests for directory exact-filter behavior and for `Show filtered` behavior after filter edits/reset.

@@ -1,0 +1,97 @@
+I'll review this spec by first verifying the claims against the actual codebase. Let me read the relevant source files.Let me also check existing tests to understand the test infrastructure:Now I have a comprehensive picture of the codebase. Let me write my review.
+
+---
+
+## Specification Review: Spec 7 – Configurable Browser Filters
+
+### 1. Completeness
+
+**Strengths:**
+- The spec is exceptionally thorough. It maps the current state accurately — I verified the hardcoded `NOISE_PATTERNS` regex list in `aggregator.js` (lines 13-22), the `Show noise` checkbox in `index.html` (line 18), the `eventIsNoise` all-paths-match rule (lines 32-38), the `include_noise` snapshot parameter, and the Python oracle mirror in `tests/_aggregator_oracle.py`. All confirmed correct.
+- Requirements are well-decomposed across filter matching, defaults/reset, persistence, UI wording, filter editor, context actions, aggregation, and port behavior.
+- Edge cases are explicitly addressed: malformed localStorage, `localStorage` exceptions in private browsing, tombstone-vs-filter precedence, mixed-path rename semantics, no-path events, duplicate patterns.
+- In-scope and out-of-scope lists are clearly delineated.
+
+**Minor gaps:**
+
+- **Event buffer retention architecture**: The spec says "the browser retains sanitized SSE events in a flat arrival-order buffer" and replays from it. Currently, `index.js` line 32 shows events go directly to `agg.ingest()` with no buffer:
+  ```js
+  es.addEventListener("append",ev=>{ try{ agg.ingest(JSON.parse(ev.data)); ...
+  ```
+  The spec correctly identifies this as new behavior (retaining events for replay), but it doesn't specify where the buffer sits architecturally — does it live alongside the aggregator, inside it, or in `index.js`? This is arguably an implementation detail appropriate for the plan, but since the spec says "MUST retain all sanitized events received by the browser in arrival order," a builder should have enough to work with.
+
+- **Filter change during live SSE**: The spec says "MUST continue to ingest live SSE events after filter changes." What happens to events that arrive *during* a replay? The current `scheduleRender` already debounces at 250ms (line 22 of `index.js`), but a full replay from buffer is heavier. This is probably fine for ~10^4 events, but worth noting as a "the plan should address" item.
+
+- **"Show filtered" checkbox behavior**: The spec says replace `Show noise` with `Show filtered`, but doesn't fully specify the interaction between `Show filtered` and the filter editor. Currently, `includeNoise` is a snapshot-level boolean. Presumably `Show filtered` = `includeNoise` equivalent but with user-defined filters instead of hardcoded ones. The spec implies this clearly enough, but the relationship between the checkbox and the snapshot parameter could be a sentence more explicit.
+
+### 2. Correctness
+
+**All verified claims are accurate:**
+- Default port is indeed `0` (ephemeral) — `__main__.py` line 29.
+- Server binds to `127.0.0.1` — `server.py` `_HOST = "127.0.0.1"`.
+- The 8 noise patterns match exactly between spec, JS, and Python oracle.
+- The `eventIsNoise` all-paths-match rule is correctly described.
+- Tombstone handling in `aggregator.js` is accurately described.
+
+**No contradictions found.**
+
+**One precision concern with glob semantics:**
+- The spec says `/tmp/**` matches `/tmp`. This is an anchoring choice: `**` matching zero segments means the pattern itself matches the prefix directory. This is worth calling out in the plan because it's not universal — many glob implementations require `**` to match *at least one* segment. The spec is explicit here, which is good, but it's a likely source of implementation bugs if not tested carefully.
+
+### 3. Feasibility
+
+**Port change (7878 with fallback):** Straightforward. The `ViewerServer.__init__` already accepts a `port` parameter. The `__main__.py` just needs to change default from `0` to `7878` and add fallback logic. One consideration: the spec says "MUST fall back to an OS-chosen ephemeral port if 7878 cannot be bound." The current server binds in `__init__` (line 184 of `server.py`). A bind failure would throw an `OSError` — the CLI would need to catch that and retry with port 0. Feasible.
+
+**Glob compiler (no eval):** Entirely feasible in pure JS. Convert globs to regex at pattern-add time. The subset (`*`, `**`, `?`, no char classes, no braces) is small and well-defined.
+
+**Full replay from buffer:** For ~10^4 events, this is fine. The current aggregator `ingest` function is straightforward per-event processing. Re-ingesting 10K events should be sub-100ms on any modern browser.
+
+**Context menus (right-click):** The treemap currently uses `<button>` elements (treemap.js line 87). Native `contextmenu` events work on buttons. The table uses `<tr>` elements (table.js line 28). Both are feasible targets for contextmenu handlers. Building a custom context menu UI is standard browser work.
+
+**Multi-select:** The table currently has no multi-select. Adding it with shift/ctrl-click is standard but adds meaningful UI complexity. The treemap multi-select is less conventional — the spec says "treemap and table items" for multi-select. Treemap tiles are small; multi-select there may be awkward UX. The spec allows this to be implementation-choice, so this is not a blocker.
+
+**localStorage on stable port:** This is a clever design. The `localStorage` is scoped by origin (`http://127.0.0.1:7878`), so ephemeral ports get different origins automatically. The spec's constraint "persistence is only guaranteed for the stable default port" is naturally enforced by the browser's same-origin policy. No special code needed beyond the port default change.
+
+### 4. Security
+
+- The spec explicitly calls out: continue using text APIs (not innerHTML), don't send raw syscall/command/process fields, keep filtering client-side. All appropriate.
+- The glob-to-regex compiler must escape regex metacharacters in literal path segments. The spec mentions this in testing ("literal regex metacharacters in paths"). Good.
+- No new server endpoints or server-side state changes. The attack surface doesn't expand.
+- `localStorage` contains only filter pattern strings (paths). Low sensitivity.
+
+### 5. Testing Strategy
+
+The suggested test scenarios are comprehensive and well-targeted:
+- Glob compiler unit tests ✓
+- JS/Python parity tests ✓ (critical — the existing `test_viewer_aggregator.py` uses `JsParityTests`)
+- Event-level filter tests ✓
+- Tombstone-wins-over-filters ✓
+- localStorage fallback ✓
+- Context menu preview ✓
+- Port behavior ✓
+
+**One addition I'd suggest**: Testing that the replay produces identical state to a fresh ingest. i.e., after ingesting N events, changing filters, and replaying, the resulting snapshot should be identical to creating a fresh aggregator with the new filters and ingesting the same N events. This is the core correctness property of the replay mechanism.
+
+### 6. Ambiguities / Minor Issues
+
+1. **Python oracle scope**: The spec says "JS aggregation semantics and Python oracle tests MUST remain in lock-step." Currently the Python oracle has hardcoded `_NOISE_REGEXES` (oracle lines 23-35). The spec doesn't clarify whether the Python oracle needs to support configurable filters too, or if it just needs updated defaults. Since the oracle is a *test* tool, it likely needs the ability to accept custom filter patterns to test parity with the JS glob compiler. The plan should address this.
+
+2. **Filter count in top bar**: The spec says "total events and filtered event count." Currently the `filteredEventCount` is computed during `ingest()` based on hardcoded noise patterns (aggregator.js lines 145-147). With configurable filters, this count needs to be recomputed during replay. The spec's requirement for full replay handles this implicitly, but it means the aggregator's `filteredEventCount` tracking needs to change — it can't be an incremental counter anymore if filters can change. This is a significant architectural shift from the current design that should be explicitly acknowledged.
+
+3. **Subtree option for files vs directories**: The spec says for right-click: "exact path" and "subtree" options. For a file like `/work/build/out.log`, should the subtree option be `/work/build/out.log/**` (meaningless for a file) or `/work/build/**` (parent's subtree)? The UX notes section discusses this but leaves it ambiguous: "if a subtree option is offered for files, it should be clearly based on the selected path as specified (`/path/**`) or parent subtree only if the implementation deliberately labels it that way." This should be pinned down — offering `/work/build/out.log/**` is confusing; omitting subtree for files or offering parent subtree is clearer.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-grounded spec with accurate codebase analysis; minor clarifications needed but nothing blocking.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The filtered-event counter architecture changes significantly (from incremental to replay-computed) — the spec implies this but doesn't call it out explicitly. The plan should address this.
+- Python oracle needs configurable filter support for parity testing — not mentioned in spec scope.
+- Subtree right-click option for files (vs directories) is ambiguous — should be clarified before implementation.
+```
+
+All three items are addressable during planning. The spec is comprehensive, technically accurate against the actual codebase, and ready for human review.
