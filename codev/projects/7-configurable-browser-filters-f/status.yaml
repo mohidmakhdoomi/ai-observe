@@ -8,12 +8,12 @@ plan_phases:
   - id: phase-2-replay-persistence-port
     status: complete
   - id: phase-3-filter-editor
-    status: in_progress
+    status: complete
   - id: phase-4-item-actions
-    status: pending
+    status: in_progress
   - id: phase-5-docs-smoke
     status: pending
-current_plan_phase: phase-3-filter-editor
+current_plan_phase: phase-4-item-actions
 gates:
   spec-approval:
     status: approved
@@ -28,7 +28,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T17:34:20.681Z'
+updated_at: '2026-05-14T17:37:24.937Z'
