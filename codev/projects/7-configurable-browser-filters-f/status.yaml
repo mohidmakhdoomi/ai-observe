@@ -1,9 +1,19 @@
 id: '7'
 title: configurable-browser-filters-f
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase-1-filter-core
+    status: in_progress
+  - id: phase-2-replay-persistence-port
+    status: pending
+  - id: phase-3-filter-editor
+    status: pending
+  - id: phase-4-item-actions
+    status: pending
+  - id: phase-5-docs-smoke
+    status: pending
+current_plan_phase: phase-1-filter-core
 gates:
   spec-approval:
     status: approved
@@ -21,4 +31,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T13:40:03.993Z'
+updated_at: '2026-05-14T13:40:19.410Z'
