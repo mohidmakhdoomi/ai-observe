@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implement the Spec 9 performance work in four independently testable phases. The plan first removes the quadratic tailer hot path, then reduces server/SSE backlog overhead with bounded `append_batch` frames, then teaches the browser to ingest batches and avoid no-op selection tree walks, and finally updates docs/review notes with the chosen envelope and validation results.
+Implement the Spec 9 performance work in four independently testable phases. The plan first removes the quadratic tailer hot path, then introduces a compatible server+browser SSE batching change in one phase, then adds the selection-pruning fast path, and finally updates docs/review notes with the chosen envelope and validation results.
 
 The implementation preserves Spec 7 semantics: filtering remains client-side, the browser-retained event buffer remains the source for filter changes, `Show filtered` and tombstone behavior remain unchanged, localStorage persistence remains stable-origin-only, and the server continues to bind only to `127.0.0.1` and stream sanitized fields.
 
@@ -17,19 +17,19 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
       "depends_on": []
     },
     {
-      "id": "phase-2-sse-batching",
-      "name": "Bounded SSE batch delivery with no-gap/no-duplicate tests",
+      "id": "phase-2-sse-browser-batching",
+      "name": "Compatible bounded SSE and browser batch ingestion",
       "depends_on": ["phase-1-linear-tailer"]
     },
     {
-      "id": "phase-3-browser-batch-selection",
-      "name": "Browser batch ingestion and selection-pruning fast path",
-      "depends_on": ["phase-2-sse-batching"]
+      "id": "phase-3-selection-pruning-fast-path",
+      "name": "Selection-pruning fast path",
+      "depends_on": ["phase-2-sse-browser-batching"]
     },
     {
       "id": "phase-4-docs-regression",
       "name": "Documentation, review notes, and full regression pass",
-      "depends_on": ["phase-3-browser-batch-selection"]
+      "depends_on": ["phase-3-selection-pruning-fast-path"]
     }
   ]
 }
@@ -53,14 +53,17 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
   - Run `python3 -m unittest tests.test_viewer_tailer`.
   - Include a deterministic large-chunk test using many JSONL lines in a single file read; assert exact delivered paths/results rather than brittle wall-clock timing.
 
-### Phase 2: Bounded SSE batch delivery with no-gap/no-duplicate tests (`phase-2-sse-batching`)
+### Phase 2: Compatible bounded SSE and browser batch ingestion (`phase-2-sse-browser-batching`)
 
-- **Objective**: Reduce Python write/flush overhead and browser callback pressure by emitting bounded `append_batch` SSE frames for backlog and burst/live slices while preserving legacy `append` support and per-client no-gap/no-duplicate semantics.
+- **Objective**: Reduce Python write/flush overhead and browser callback pressure by adding browser support for `append_batch` and emitting bounded batch frames from the server in the same independently shippable phase. Legacy `append` support remains available throughout.
 - **Files**:
   - `src/ai_observe/viewer/server.py` — add batch-size constants/helpers, encode `append_batch` payloads as arrays of sanitized events, flush once per frame/batch, preserve `append` helper compatibility, and keep `shutdown` behavior unchanged.
+  - `src/ai_observe/viewer/static/index.js` — add exported batch/single ingestion helpers, wire `EventSource` listeners for both `append` and `append_batch`, and preserve event-buffer ordering and aggregator ingestion.
   - `tests/test_viewer_server.py` — update SSE frame parsing helpers to read both `append` and `append_batch`, and add backlog/live exact-once tests across batch boundaries.
+  - `tests/test_viewer_index_js.py` — add Node-backed tests for legacy append ingestion, batch ingestion, event buffer order, exact-once aggregator calls, and malformed batch handling.
 - **Dependencies**: Phase 1.
 - **Success Criteria**:
+  - The checked-in server never emits `append_batch` without the checked-in browser being able to consume it.
   - Backlog delivery sends all events in original order exactly once for each SSE client.
   - Live events appended after the backlog watermark are delivered exactly once without gaps or duplicates.
   - Batch frames are bounded by a conservative maximum event count so one browser `JSON.parse` does not receive an unbounded 80k-event array.
@@ -68,23 +71,25 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
   - Sparse live traffic remains near-immediate; implementation should avoid intentionally delaying a single live event just to fill a batch.
   - SSE payloads still contain only sanitized fields: `timestamp`, `operation`, `path`, `old_path`, `new_path`, and `result`.
   - Existing `shutdown` frame behavior remains intact.
-- **Tests**:
-  - Run `python3 -m unittest tests.test_viewer_server`.
-  - Add a low test-only batch size or direct helper coverage where practical so tests verify multiple `append_batch` frames and a live event after the initial backlog.
-  - Preserve or adapt existing concurrent-client tests so every client receives the same ordered event stream.
-
-### Phase 3: Browser batch ingestion and selection-pruning fast path (`phase-3-browser-batch-selection`)
-
-- **Objective**: Accept both single-event `append` and array-valued `append_batch` SSE frames in the browser, centralize exact-once ingestion into testable helpers, and skip full snapshot-tree selection pruning when no paths are selected.
-- **Files**:
-  - `src/ai_observe/viewer/static/index.js` — add exported batch/single ingestion helpers, wire `EventSource` listeners for `append` and `append_batch`, preserve event-buffer ordering and aggregator ingestion, and add a no-selected-paths fast path to selection pruning.
-  - `tests/test_viewer_index_js.py` — add Node-backed tests for legacy append ingestion, batch ingestion, event buffer order, exact-once aggregator calls, malformed batch handling, and no-selection pruning behavior.
-- **Dependencies**: Phase 2.
-- **Success Criteria**:
   - Legacy `append` frames continue to work unchanged.
   - `append_batch` frames parse arrays of sanitized events, append them to `eventBuffer` in order, and ingest each event exactly once into the active aggregator.
   - Invalid or non-array batch payloads are ignored safely like existing malformed single-event payloads.
   - Backlog delivery produces bounded render scheduling: browser work is reduced primarily by fewer `EventSource` callbacks and fewer JSON parses; existing `scheduleRender()` coalescing remains intact.
+- **Tests**:
+  - Run `python3 -m unittest tests.test_viewer_server`.
+  - Run `python3 -m unittest tests.test_viewer_index_js`.
+  - Add a low test-only batch size or direct helper coverage where practical so tests verify multiple `append_batch` frames and a live event after the initial backlog.
+  - Preserve or adapt existing concurrent-client tests so every client receives the same ordered event stream.
+  - Add pure helper tests that track event buffer order and aggregator ingest calls for single and batch frames.
+
+### Phase 3: Selection-pruning fast path (`phase-3-selection-pruning-fast-path`)
+
+- **Objective**: Skip full snapshot-tree selection pruning when no paths are selected while preserving existing selection cleanup when selections exist.
+- **Files**:
+  - `src/ai_observe/viewer/static/index.js` — add a no-selected-paths fast path to `pruneSelections()` before calling the full tree-walking `pruneSelectedPaths()` helper; preserve anchor cleanup when selections are present.
+  - `tests/test_viewer_index_js.py` — add Node-backed tests for no-selection pruning behavior and preserve existing selected-path pruning tests.
+- **Dependencies**: Phase 2.
+- **Success Criteria**:
   - `pruneSelections()` returns before collecting tree paths when `state.selectedPaths.size === 0`.
   - Existing selected-path pruning behavior remains unchanged when selections are present.
   - Filter replay from `eventBuffer`, `Show filtered`, tombstone precedence, current root, metric, sorting, expansion, live badge, and filter editor behavior are preserved.
@@ -96,11 +101,12 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
 
 - **Objective**: Document the chosen performance strategy, remaining practical limits, and validation results; run the final regression suite before PR review.
 - **Files**:
-  - `docs/viewer.md` — add/update a short performance note describing linear tailer processing, bounded SSE batching, browser support for both frame formats, and the retained client-side filter replay envelope.
+  - `docs/viewer.md` — add/update a short performance note describing linear tailer processing, bounded SSE batching, browser support for both frame formats, and the retained client-side filter replay envelope; explicitly update or reaffirm the existing documented trace envelope.
   - `codev/reviews/9-speed-up-browser-viewer-event-.md` — create review notes during the Review phase with final tests, performance strategy, any remaining envelope limits, and flaky-test skips if any occur.
 - **Dependencies**: Phase 3.
 - **Success Criteria**:
   - Documentation explains that large backlog startup is optimized but the viewer still retains events client-side and filter changes still replay the retained buffer.
+  - Existing documentation that states a concrete event envelope is either updated with the new practical guidance or explicitly left unchanged with a rationale.
   - Review notes record the batch strategy, test commands/results, and any remaining limits or deferred work such as deeper filter-replay indexing.
   - Full test suite passes, or any unrelated pre-existing flaky tests are skipped with explicit annotations and documented under `## Flaky Tests` in the review.
   - No user-facing behavior from Spec 7 regresses.
@@ -113,7 +119,7 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
 
 - Do not edit `codev/projects/9-speed-up-browser-viewer-event-/status.yaml` directly; porch owns project state.
 - Do not use `git add .` or `git add -A`; stage files explicitly.
-- Keep server changes additive and compatible: the browser must support both `append` and `append_batch`, and server helpers may retain single-event `append` for tests or future compatibility.
+- Keep server changes additive and compatible: the browser must support both `append` and `append_batch`, and the server must not emit `append_batch` in a commit/phase where the checked-in browser cannot consume it.
 - Prefer small pure helpers for SSE frame chunking and browser ingestion so tests can validate behavior without fragile timing assertions.
 - Avoid hard wall-clock performance assertions in CI. Use structural tests for bounded batches and exact-once delivery, plus review notes/manual measurements for practical performance claims.
 - If batch size needs tuning, choose a conservative event-count constant that bounds browser JSON parse work and document it in code/review notes.
@@ -124,7 +130,7 @@ The implementation preserves Spec 7 semantics: filtering remains client-side, th
 - **Batching changes event delivery semantics**: Mitigate with server tests that parse both frame types and assert ordered exact-once backlog and live delivery for one and multiple clients.
 - **Large batch JSON.parse blocks the browser main thread**: Mitigate with a bounded maximum event count per batch and tests that force multiple batches.
 - **Sparse live event latency worsens**: Mitigate by sending currently available live slices immediately rather than waiting to fill a batch.
-- **Browser ingestion duplicates or reorders events**: Mitigate with pure helper tests that track event buffer order and aggregator ingest calls for single and batch frames.
+- **Browser ingestion duplicates or reorders events**: Mitigate in the combined protocol phase with pure helper tests that track event buffer order and aggregator ingest calls for single and batch frames.
 - **Tailer partial-line behavior regresses**: Mitigate with existing and new tests for incomplete trailing fragments completed in later polls and shutdown warnings.
 - **Selection pruning fast path skips needed cleanup**: Mitigate by applying the fast path only when no selections exist and preserving existing selected-path tests for non-empty selections.
 - **Performance tests become flaky**: Mitigate by avoiding strict timing thresholds in CI and validating performance through algorithmic structure, bounded-frame tests, and documented manual/bench observations.
