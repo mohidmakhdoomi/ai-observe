@@ -1,0 +1,95 @@
+I'll start by reading the key implementation files for phase-3-filter-editor. Let me read them in parallel.Let me check git status and the test files to understand the current state of the implementation.I'm in a builder worktree. Let me check the actual worktree state.I see - I was reading from the main repo, not the worktree. Let me find the worktree path and read the actual working files.Now let me read the actual worktree files that were modified for phase-3:Now let me read the aggregator.js from the worktree (phase 1/2 foundation) and also check the existing tests:Let me also read the server/main files and the Python oracle to verify the complete picture:Good, I have a complete picture of the implementation. Let me run the tests to verify they pass:All 48 tests pass. Now let me do a thorough review of the phase-3 implementation against the plan and spec.Now let me verify no `innerHTML`, `eval`, or `document.write` is used in the JS by doing a quick scan:Now let me verify the snapshot/render path properly uses `include_filtered`:I now have a thorough understanding of the implementation. Let me compile my review.
+
+---
+
+## Phase 3 Review: Top-bar filter editor and Filters wording
+
+### 1. Spec Adherence
+
+**UI Wording (MUST)** ✅
+- `Show noise` → `Show filtered` in HTML (line 19)
+- `Filters (N)` button added to top bar (line 18)
+- No user-facing "Noise" in HTML. Internal variable names like `includeNoise` in JS are acceptable per spec (user-facing only).
+- Smoke test explicitly asserts `assertNotIn("Show noise", html)` and `assertIn("Show filtered", html)`.
+
+**Filter Editor (MUST)** ✅
+- Reachable from top bar via `Filters` button with `aria-expanded`/`aria-controls` attributes
+- Displays current filter pattern list via `renderFilterEditor()`
+- Add: form submission with validation via `addFilterPattern`
+- Edit: inline input + Save button per row via `updateFilterPatternAt`
+- Remove: Remove button per row via `removeFilterPatternAt`
+- Reset: "Reset to defaults" button via `resetFilterPatterns`
+- Validation: `normalizeFilterPatterns` calls `validateFilterPattern`; errors surface via `setFilterError` into `role="alert"` element
+
+**Re-aggregation on commit (MUST)** ✅
+- `setFilterPatterns` → `rebuildAggregator()` (creates new aggregator from event buffer) → `scheduleRender()`
+- No `/events` reconnect on filter changes
+
+**Show filtered semantics (MUST)** ✅
+- `include_filtered` flag passed to `agg.snapshot()`; aggregator.js line 283 handles both `include_noise` and `include_filtered`
+- Toggling the checkbox does not mutate the filter list
+
+**Security (MUST)** ✅
+- All pattern/path rendering uses `textContent`, `value`, `createElement` — no `innerHTML`, `document.write`, or `eval`
+- Grep confirms zero forbidden API usage in `/static/`
+
+**Path data out of URL/title/history (SHOULD)** ✅
+- No modifications to `document.title`, `history`, or URL anywhere in the editor code
+
+### 2. Code Quality
+
+**Strengths:**
+- Clean separation of pure helper functions (exported for Node testing) from DOM-dependent code
+- Single mutation path: all filter changes flow through `setFilterPatterns` → `rebuildAggregator` → `scheduleRender`
+- Proper DOM cleanup with `while(el.filtersList.firstChild) el.filtersList.removeChild(...)` pattern
+- Good ARIA semantics: `role="dialog"`, `aria-labelledby`, `aria-expanded`, `aria-controls`, `aria-label`, `role="alert"` for errors
+
+**Minor observations (non-blocking):**
+- `state.includeNoise` (index.js:102, 161) is maintained alongside `state.includeFiltered` for backward compat. The aggregator accepts both, so this works, but `includeNoise` is effectively dead state since `render()` passes `include_filtered` only. Harmless but slightly confusing.
+- `el.filtered` lookup (line 104) has a fallback `|| document.getElementById("show-noise")` — defensive but unnecessary since the HTML was updated. Fine to leave.
+- No Escape key handler to dismiss the editor — the spec says SHOULD for keyboard usability. A close button exists which satisfies the minimum requirement.
+
+### 3. Test Coverage
+
+**Smoke/E2E (`test_viewer_smoke_e2e.py`)** ✅
+- Checks `"Filters (0)"`, `"Show filtered"`, `"Reset to defaults"` present in HTML
+- Confirms `"Show noise"` absent
+- Forbidden API checks (`innerHTML`, `document.write`, `eval(`, `raw_syscall`, `document.title`) still enforced
+- Bundle size check (<50KB) still enforced
+
+**Editor helper tests (`test_viewer_index_js.py`)** ✅
+- `test_filter_editor_helpers_validate_dedupe_and_reset`: covers `addFilterPattern` (dedup), `updateFilterPatternAt` (trim+validate, invalid rejection), `removeFilterPatternAt`, `resetFilterPatterns`, and `filterEditorSummary`
+- Existing phase-2 tests for storage, replay, and malformed data still exercise the helpers used by the editor
+
+**Parity/aggregator tests** ✅ — 48 tests pass, covering all prior phase work plus new editor helpers
+
+### 4. Error Handling
+
+- Invalid patterns (empty, whitespace, relative) rejected by `validateFilterPattern` and surfaced via `setFilterError`
+- Out-of-bounds index operations return `{ok: false}` with error message
+- localStorage exceptions caught with try/catch fallback to factory defaults
+- Malformed stored data falls back cleanly (tested)
+
+### 5. Plan Alignment
+
+All plan deliverables for phase-3 are met:
+- ✅ `index.html` — Show noise → Show filtered, Filters button, editor panel with accessible DOM
+- ✅ `index.js` — editor open/close, add/edit/remove/reset, validation, persistence, replay, no path data in URL
+- ✅ `style.css` — filter editor styles (positioning, grid layout, error styling)
+- ✅ `test_viewer_smoke_e2e.py` — updated for Filters wording and forbidden API checks
+- ✅ `test_viewer_index_js.py` — Node-backed editor helper tests
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 3 delivers a complete, well-tested filter editor with proper wording rename, validation, replay-on-commit, and security-safe DOM rendering
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+MINOR_NOTES (non-blocking):
+- `state.includeNoise` in index.js is dead state kept alongside `includeFiltered` — consider removing in a later cleanup
+- No Escape-key dismiss for the editor panel (SHOULD-level, close button suffices for now)
+- Reset button has no confirmation dialog — spec wording ("confirmed/activated") is ambiguous, and the plan doesn't require one; immediate reset is acceptable for v1

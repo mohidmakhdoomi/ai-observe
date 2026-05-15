@@ -17,6 +17,9 @@ from pathlib import Path
 from .server import ViewerServer
 
 
+DEFAULT_PORT = 7878
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m ai_observe.viewer",
@@ -26,8 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--port",
         type=int,
-        default=0,
-        help="TCP port to bind on 127.0.0.1 (default: OS-chosen).",
+        default=None,
+        help="TCP port to bind on 127.0.0.1 (default: 7878, falling back to OS-chosen if occupied).",
     )
     p.add_argument(
         "--no-browser",
@@ -50,7 +53,13 @@ def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     _validate_path(args.path)
 
-    server = ViewerServer(args.path, port=args.port)
+    requested_port = DEFAULT_PORT if args.port is None else args.port
+    try:
+        server = ViewerServer(args.path, port=requested_port)
+    except OSError:
+        if args.port is not None or requested_port != DEFAULT_PORT:
+            raise
+        server = ViewerServer(args.path, port=0)
     server.start()
     url = server.url
     print(f"ai_observe.viewer serving {args.path} at {url}", file=sys.stderr)

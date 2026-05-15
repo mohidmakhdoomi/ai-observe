@@ -1,0 +1,8 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 4 is close, but Ctrl/Cmd deselection is broken because a toggled-off item still remains visually selected as the active path.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- Ctrl/Cmd-click does not fully toggle selection off. `onMultiSelect()` always sets `state.selectedPath = path` even when the path was removed from `state.selectedPaths` (`src/ai_observe/viewer/static/index.js:250-259`). Both renderers mark a row/tile selected when either `selectedPaths` contains it or it equals `selectedPath` (`src/ai_observe/viewer/static/table.js:41-47`, `src/ai_observe/viewer/static/treemap.js:91-98`). So deselecting the last selected item leaves it highlighted, which violates the required toggle behavior and creates inconsistent UI state.
+- There is no test covering that deselect path. Current tests cover helper toggling in isolation (`tests/test_viewer_index_js.py:149-162`) but not the integrated state/render behavior that exposes the bug.

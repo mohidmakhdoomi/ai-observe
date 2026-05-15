@@ -1,0 +1,76 @@
+I'll start by reading the key implementation files for Phase 4 to understand what was built. Let me read the primary files in parallel.Now let me read the test files for Phase 4 and the aggregator to understand the full picture.Let me check the git state to understand where the changes actually are, and verify I'm reading from the right location.I see uncommitted changes. Let me look at the actual diffs for the Phase 4 work to understand what was modified.Good, now I can see the Phase 4 changes. Let me read the remaining diffs and the updated HTML/CSS/tests.Now let me re-read the current (uncommitted) state of the key files to verify the full picture.I was reading from the wrong path! The worktree is at `.builders/spir-7/`. Let me read the actual files.Now let me read the test files from the worktree path.Let me read the CSS from the worktree path too:Now let me run the tests to verify everything passes:Now I have a complete picture. Let me verify one more thing — that the filter editor helpers (added in Phase 3 but extended in Phase 4) are properly integrated:Good — the aggregator already has the glob-based filter system from Phase 1. Everything is wired correctly.
+
+Let me now compile my full review.
+
+---
+
+## Phase 4 Review: Treemap/table context actions and multi-select add-to-filters
+
+### 1. Spec Adherence ✅
+
+All Phase 4 success criteria from the plan are met:
+
+| Criterion | Status |
+|-----------|--------|
+| Right-click directory → exact + subtree proposals with editable preview | ✅ `filterPatternProposals` returns both; `showFilterPreview` renders radio chooser (`"single"` mode) |
+| Right-click file → exact only, subtree omitted | ✅ `filterPatternProposals` only adds subtree when `item.isDir` |
+| Committing preview adds validated, duplicate-harmless patterns + triggers replay | ✅ `commitFilterPreview` → `normalizeUniqueFilterPatterns` → `setFilterPatterns` → `rebuildAggregator` |
+| Ctrl/Cmd-click toggles selection on both table rows and treemap tiles | ✅ Both handle `ev.ctrlKey||ev.metaKey` → `onMultiSelect` → `togglePathSelection` |
+| Table Shift-click range selection | ✅ `flattenVisibleRows` provides ordering; `selectVisibleRange` computes range from anchor |
+| Multi-select add generates exact paths only with preview | ✅ `onAddSelectedFilters` → `exactPatternsForSelection` (no subtrees); `showFilterPreview` with `"multi"` mode |
+| Selection survives re-renders, pruned when absent | ✅ `pruneSelections(lastSnap.tree)` called in `render()` |
+| Add-selected button discoverable when ≥2 selected | ✅ `renderSelectionControls` shows button when `selectedPaths.size >= 2` |
+
+### 2. Code Quality ✅
+
+**Well-structured separation of concerns:**
+- **treemap.js**: Clean addition of `actionMetadataForRect` helper and `contextmenu`/modifier-click event routing via callbacks. No business logic leaks.
+- **table.js**: `flattenVisibleRows` is cleanly exported for both rendering and shift-selection. Context menu and multi-select routed through callbacks.
+- **index.js**: All Phase 4 helpers (`filterPatternProposals`, `exactPatternsForSelection`, `pruneSelectedPaths`, `togglePathSelection`, `selectVisibleRange`, `subtreePatternFor`) are pure, exported, testable functions. DOM wiring is in the browser-only section.
+
+**Security is maintained:**
+- All pattern/path text uses `textContent`, `setAttribute`, or `value` — no `innerHTML` or `eval`
+- `makePatternInput` creates proper DOM elements
+- Smoke test verifies no forbidden APIs across all static assets
+
+**Two minor observations (non-blocking):**
+1. The table row click handler was moved from the `btn` element to the `tr`, making the entire row clickable rather than just the path button. This is a slight behavior change (clicking the data cells now also triggers select/toggle) but is reasonable for multi-select UX and doesn't break anything.
+2. Shift-click is correctly excluded from treemap multi-select (only Ctrl/Cmd triggers it on tiles), since treemap items have no linear ordering for range selection. This is a good design choice.
+
+### 3. Test Coverage ✅
+
+**New tests added:**
+
+- `test_viewer_treemap.py::test_real_js_context_metadata_preserves_path_and_directory_flag` — Validates `actionMetadataForRect` correctly returns path/name/isDir.
+- `test_viewer_table_js.py::test_real_js_flattens_visible_rows_for_shift_selection` — Validates `flattenVisibleRows` with expanded directories returns correct path/depth/isDir ordering.
+- `test_viewer_index_js.py::test_filter_editor_helpers_validate_dedupe_and_reset` — Validates add (with dedup), edit (with trim), invalid pattern rejection, remove, and reset operations.
+- `test_viewer_index_js.py::test_item_action_helpers_build_preview_patterns_and_prune_selection` — Validates proposal generation (dir exact+subtree, file exact-only), duplicate elimination, selection pruning, toggle-off, and Shift-click range selection.
+- `test_viewer_smoke_e2e.py` — Updated to verify "Filters (0)", "Add selected to Filters", "Show filtered", "Reset to defaults" present; "Show noise" absent; no forbidden APIs.
+
+All 44 tests pass.
+
+### 4. Error Handling ✅
+
+- `selectVisibleRange` gracefully falls back to `togglePathSelection` when anchor/target not found in visible paths
+- `pruneSelectedPaths` safely handles missing tree paths and null/undefined node
+- `commitFilterPreview` validates patterns and shows errors in the preview dialog
+- `onAddSelectedFilters` is a no-op when fewer than 2 items selected
+- `actionMetadataForRect` normalizes `name` and `isDir` with fallback defaults
+
+### 5. Plan Alignment ✅
+
+All planned Phase 4 file changes are present and aligned:
+- ✅ `treemap.js` — context metadata + callbacks
+- ✅ `table.js` — flat row helper + context/multi-select hooks
+- ✅ `index.js` — selection state, proposals, preview, commit flow
+- ✅ `style.css` — filter editor/preview styling
+- ✅ Test files updated per plan
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 implements all context menu, multi-select, and add-to-filters flows with clean code, proper validation, security, and adequate test coverage.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

@@ -23,9 +23,14 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from _aggregator_oracle import (  # noqa: E402
     Aggregator,
+    FACTORY_FILTER_PATTERNS,
+    compile_filter_pattern,
     event_is_noise,
+    event_matches_filters,
+    is_filtered_path,
     is_noise,
     RECENCY_HALF_LIFE_MS,
+    validate_filter_pattern,
 )
 
 
@@ -68,6 +73,65 @@ def _all_paths(tree):
     return out
 
 
+class FilterGlobTests(unittest.TestCase):
+    def assertMatches(self, pattern, matches, non_matches):
+        rx = compile_filter_pattern(pattern)
+        for path in matches:
+            with self.subTest(pattern=pattern, path=path, expected=True):
+                self.assertIsNotNone(rx.match(path))
+        for path in non_matches:
+            with self.subTest(pattern=pattern, path=path, expected=False):
+                self.assertIsNone(rx.match(path))
+
+    def test_factory_filter_patterns_are_globs(self):
+        self.assertEqual(FACTORY_FILTER_PATTERNS[0], "/home/*/.codex/**")
+        self.assertIn("/tmp/**", FACTORY_FILTER_PATTERNS)
+        # Backward-compatible helper names still use the factory filters.
+        self.assertTrue(is_noise("/home/user/.codex/tmp/x"))
+        self.assertTrue(is_noise("/home/user/.codex"))
+        self.assertTrue(is_noise("/tmp"))
+        self.assertTrue(is_noise("/tmp/whatever"))
+        self.assertFalse(is_noise("/home/user/code/x"))
+
+    def test_spec_glob_examples(self):
+        self.assertMatches("/tmp/**", ["/tmp", "/tmp/a", "/tmp/a/b"], ["/tmpish", "/var/tmp/a"])
+        self.assertMatches(
+            "/home/*/.cache/**",
+            ["/home/alice/.cache", "/home/bob/.cache/pip/x"],
+            ["/home/alice/project/.cache", "/home/alice/.cachex"],
+        )
+        self.assertMatches("/work/build/*", ["/work/build/a.o"], ["/work/build", "/work/build/obj/a.o"])
+        self.assertMatches("/work/build/**", ["/work/build", "/work/build/a.o", "/work/build/obj/a.o"], ["/work/building/a.o"])
+        self.assertMatches("/work/?.txt", ["/work/a.txt"], ["/work/ab.txt", "/work/dir/a.txt"])
+
+    def test_double_star_middle_matches_zero_or_more_segments(self):
+        self.assertMatches("/a/**/b", ["/a/b", "/a/x/b", "/a/x/y/b"], ["/a/x/b/c", "/ax/b"])
+
+    def test_literal_regex_metacharacters_are_escaped(self):
+        self.assertMatches(
+            "/work/a+b.[txt]",
+            ["/work/a+b.[txt]"],
+            ["/work/ab.t", "/work/aaab.txt", "/work/a+bxtxt"],
+        )
+
+    def test_invalid_empty_whitespace_and_relative_patterns(self):
+        for pattern in ("", "   ", "tmp/**"):
+            with self.subTest(pattern=pattern):
+                ok, _normalized, error = validate_filter_pattern(pattern)
+                self.assertFalse(ok)
+                self.assertIsInstance(error, str)
+                with self.assertRaises(ValueError):
+                    compile_filter_pattern(pattern)
+
+    def test_exact_directory_filter_does_not_match_descendants(self):
+        exact = compile_filter_pattern("/work/build")
+        subtree = compile_filter_pattern("/work/build/**")
+        self.assertIsNotNone(exact.match("/work/build"))
+        self.assertIsNone(exact.match("/work/build/out.log"))
+        self.assertIsNotNone(subtree.match("/work/build"))
+        self.assertIsNotNone(subtree.match("/work/build/out.log"))
+
+
 class NoiseFilterTests(unittest.TestCase):
     def test_is_noise_matches_codex_tmp(self):
         self.assertTrue(is_noise("/home/user/.codex/tmp/x"))
@@ -87,6 +151,62 @@ class NoiseFilterTests(unittest.TestCase):
         self.assertFalse(event_is_noise(ev))
         # No paths at all → not noise.
         self.assertFalse(event_is_noise({"path": None, "old_path": None, "new_path": None}))
+
+
+class CustomFilterTests(unittest.TestCase):
+    def _event(self, path, idx=0, op="modify", old_path=None, new_path=None, result=1):
+        return {
+            "schema_version": 1,
+            "timestamp": f"2026-05-13T10:00:{idx:02d}.000000Z",
+            "operation": op,
+            "path": path,
+            "old_path": old_path,
+            "new_path": new_path,
+            "result": result,
+        }
+
+    def test_custom_filters_control_event_counts_and_snapshot_paths(self):
+        agg = Aggregator(filter_patterns=["/secret/**"])
+        agg.ingest(self._event("/secret/a.txt", idx=0, result=7))
+        agg.ingest(self._event("/work/a.txt", idx=1, result=11))
+
+        filtered = agg.snapshot(include_noise=False)
+        shown = agg.snapshot(include_noise=True)
+        self.assertEqual(filtered["total_event_count"], 2)
+        self.assertEqual(filtered["filtered_event_count"], 1)
+        self.assertIsNone(_find_node(filtered["tree"], "/secret/a.txt"))
+        self.assertIsNotNone(_find_node(filtered["tree"], "/work/a.txt"))
+        self.assertIsNotNone(_find_node(shown["tree"], "/secret/a.txt"))
+
+    def test_custom_event_filtering_uses_all_paths_match_rule(self):
+        secret_rx = [compile_filter_pattern("/secret/**")]
+        self.assertTrue(event_matches_filters(self._event("/secret/a"), secret_rx))
+        self.assertFalse(event_matches_filters(self._event(None, old_path="/secret/a", new_path="/work/a"), secret_rx))
+        self.assertFalse(event_matches_filters({"path": None, "old_path": None, "new_path": None}, secret_rx))
+
+        agg = Aggregator(filter_patterns=["/secret/**"])
+        agg.ingest(self._event("/secret/a", idx=0))
+        agg.ingest(self._event(None, idx=1, op="rename", old_path="/secret/a", new_path="/work/a"))
+        self.assertEqual(agg.snapshot()["filtered_event_count"], 1)
+
+    def test_exact_directory_filter_snapshot_does_not_hide_descendants(self):
+        agg = Aggregator(filter_patterns=["/work/build"])
+        agg.ingest(self._event("/work/build/out.log", idx=0))
+        snap = agg.snapshot(include_noise=False)
+        self.assertIsNotNone(_find_node(snap["tree"], "/work/build/out.log"))
+
+        subtree = Aggregator(filter_patterns=["/work/build/**"])
+        subtree.ingest(self._event("/work/build/out.log", idx=0))
+        self.assertIsNone(_find_node(subtree.snapshot(include_noise=False)["tree"], "/work/build/out.log"))
+        self.assertIsNotNone(_find_node(subtree.snapshot(include_noise=True)["tree"], "/work/build/out.log"))
+
+    def test_tombstones_win_even_when_filtered_paths_are_shown(self):
+        agg = Aggregator(filter_patterns=["/p/**"])
+        agg.ingest(self._event("/p/tmp", idx=0, result=3))
+        agg.ingest(self._event(None, idx=1, op="rename", old_path="/p/tmp", new_path="/p/final", result=0))
+        shown_paths = _all_paths(agg.snapshot(include_noise=True)["tree"])
+        self.assertNotIn("/p/tmp", shown_paths)
+        self.assertIn("/p/final", shown_paths)
 
 
 class SnapshotGoldenTests(unittest.TestCase):
@@ -239,20 +359,9 @@ class JsParityTests(unittest.TestCase):
             raise unittest.SkipTest("node not available; skipping JS parity check")
         cls.js_path = ROOT / "src" / "ai_observe" / "viewer" / "static" / "aggregator.js"
 
-    def _js_snapshot(self, fixture_path: Path) -> dict:
-        events = _load_jsonl(fixture_path)
-        # Tiny driver script: load aggregator.js via require, ingest, print
-        # the snapshot as JSON.
-        driver = f"""
-        const aggMod = require({json.dumps(str(self.js_path))});
-        const events = {json.dumps(events)};
-        const agg = aggMod.createAggregator();
-        for (const e of events) agg.ingest(e);
-        const snap = agg.snapshot({{}});
-        process.stdout.write(JSON.stringify(snap));
-        """
+    def _js_eval(self, script: str):
         proc = subprocess.run(
-            [self.node, "-e", driver],
+            [self.node, "-e", script],
             capture_output=True,
             text=True,
             timeout=15,
@@ -260,6 +369,21 @@ class JsParityTests(unittest.TestCase):
         if proc.returncode != 0:
             self.fail(f"node driver failed: {proc.stderr}")
         return json.loads(proc.stdout)
+
+    def _js_snapshot(self, fixture_path: Path, filter_patterns=None) -> dict:
+        events = _load_jsonl(fixture_path)
+        opts = {"filter_patterns": filter_patterns} if filter_patterns is not None else {}
+        # Tiny driver script: load aggregator.js via require, ingest, print
+        # the snapshot as JSON.
+        driver = f"""
+        const aggMod = require({json.dumps(str(self.js_path))});
+        const events = {json.dumps(events)};
+        const agg = aggMod.createAggregator({json.dumps(opts)});
+        for (const e of events) agg.ingest(e);
+        const snap = agg.snapshot({{}});
+        process.stdout.write(JSON.stringify(snap));
+        """
+        return self._js_eval(driver)
 
     def _normalize(self, snap: dict) -> dict:
         # Strip metric/include_noise labels; they're informational.
@@ -287,6 +411,35 @@ class JsParityTests(unittest.TestCase):
         self.assertEqual(py_snap["total_event_count"], js_snap["total_event_count"])
         self.assertEqual(py_snap["filtered_event_count"], js_snap["filtered_event_count"])
 
+
+    def test_js_filter_helpers_cover_validation_and_globs(self):
+        driver = f"""
+        const aggMod = require({json.dumps(str(self.js_path))});
+        const tmp = aggMod.createFilterMatcher(['/tmp/**']);
+        const exact = aggMod.createFilterMatcher(['/work/build']);
+        const subtree = aggMod.createFilterMatcher(['/work/build/**']);
+        const literal = aggMod.createFilterMatcher(['/work/a+b.[txt]']);
+        process.stdout.write(JSON.stringify({{
+          tmpRoot: tmp.matches('/tmp'),
+          tmpChild: tmp.matches('/tmp/a/b'),
+          exactChild: exact.matches('/work/build/out.log'),
+          subtreeChild: subtree.matches('/work/build/out.log'),
+          literalGood: literal.matches('/work/a+b.[txt]'),
+          literalBad: literal.matches('/work/ab.t'),
+          emptyOk: aggMod.validateFilterPattern('   ').ok,
+          relativeOk: aggMod.validateFilterPattern('tmp/**').ok
+        }}));
+        """
+        out = self._js_eval(driver)
+        self.assertTrue(out["tmpRoot"])
+        self.assertTrue(out["tmpChild"])
+        self.assertFalse(out["exactChild"])
+        self.assertTrue(out["subtreeChild"])
+        self.assertTrue(out["literalGood"])
+        self.assertFalse(out["literalBad"])
+        self.assertFalse(out["emptyOk"])
+        self.assertFalse(out["relativeOk"])
+
     def test_parity_basic(self):
         agg = Aggregator()
         for ev in _load_jsonl(FIXTURES / "basic.jsonl"):
@@ -294,6 +447,17 @@ class JsParityTests(unittest.TestCase):
         py = self._normalize(agg.snapshot())
         js = self._normalize(self._js_snapshot(FIXTURES / "basic.jsonl"))
         self._compare(py, js)
+
+
+    def test_parity_custom_filter_list(self):
+        patterns = ["/work/c.txt", "/home/*/.codex/**"]
+        agg = Aggregator(filter_patterns=patterns)
+        for ev in _load_jsonl(FIXTURES / "basic.jsonl"):
+            agg.ingest(ev)
+        py = self._normalize(agg.snapshot(include_noise=False))
+        js = self._normalize(self._js_snapshot(FIXTURES / "basic.jsonl", filter_patterns=patterns))
+        self._compare(py, js)
+        self.assertIsNone(_find_node(py["tree"], "/work/c.txt"))
 
     def test_parity_rename_chain(self):
         agg = Aggregator()

@@ -160,3 +160,14 @@ class ViewerTreemapJsParityTests(unittest.TestCase):
         self.assertEqual(out["never"], "never")
         self.assertIn("Last touched: 2026-05-13 10:00:01 UTC", out["tooltip"])
         self.assertNotIn("Last touched: 1778666401000", out["tooltip"])
+
+    def test_real_js_context_metadata_preserves_path_and_directory_flag(self):
+        import json, subprocess
+        driver = """
+        const t=require('./src/ai_observe/viewer/static/treemap.js');
+        const out=t.actionMetadataForRect({path:'/work/build',name:'build',isDir:true});
+        process.stdout.write(JSON.stringify(out));
+        """
+        proc = subprocess.run([self.node, "-e", driver], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {"path": "/work/build", "name": "build", "isDir": True})

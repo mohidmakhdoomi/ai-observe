@@ -1,0 +1,64 @@
+I see the docs and smoke tests. Let me now read the static files to verify what the current implementation looks like and check for terminology consistency.Let me check the aggregator and other key files to understand what prior phases implemented.Let me check the server and main module to see if prior phase work was completed.Let me check the test files and the git status to understand what's actually been changed.I was reading from the wrong path. The worktree is at `.builders/spir-7`. Let me re-read the actual files from this worktree.Good, now I'm reading from the correct worktree. Let me read the remaining changed files relevant to phase 5.Now let me read the remaining worktree files to complete the review.Let me check the remaining test files and the main module.Let me check the server and main module from the worktree, and run the tests.Good, all 123 tests pass. Let me verify no "Noise" terminology leaks remain in visible user-facing text, and check a few more details.Let me verify one final detail — that the `style.css` bundle size is reasonable and that the filter-related styling is complete.Now I have a complete picture. Let me compile my review.
+
+## Review: Phase 5 — Documentation, Smoke Coverage, and Final Regression
+
+### 1. Spec Adherence ✅
+
+**`docs/viewer.md`** has been thoroughly updated with all required content:
+- Default port `7878` and fallback behavior (lines 27–28) ✓
+- Complete Filters section with glob syntax (lines 82–118) ✓
+- Filter editor description (lines 122–129) ✓
+- Persistence rules with `http://127.0.0.1:7878` (lines 131–139) ✓
+- Right-click context actions and multi-select flow (lines 141–150) ✓
+- Replay and memory envelope section (lines 152–156) ✓
+- Comprehensive manual walkthrough checklist with all spec-required items (lines 189–206) ✓
+- "Show noise" / "Default noise filter" removed from docs ✓
+- Security section updated to reference "path and pattern strings" (line 168) ✓
+
+**Terminology**: No user-facing "Noise" remains in HTML, docs, or rendered labels. Internal backward-compatible aliases (`isNoise`, `include_noise` snapshot field) are explicitly allowed by the plan.
+
+### 2. Code Quality ✅
+
+- **HTML** (`index.html`): Clean, well-structured with proper ARIA attributes (`role="dialog"`, `aria-labelledby`, `aria-controls`, `aria-expanded`, `role="alert"` for errors).
+- **Static bundle**: Total is 49,984 bytes, passing the `< 50_000` assertion. This is tight (16 bytes of margin) but acceptable.
+- Minor observation: `state.includeNoise` on `index.js:290` is synced with `includeFiltered` but never read independently — it's dead internal state. Harmless.
+
+### 3. Test Coverage ✅
+
+**`test_viewer_smoke_e2e.py`** now has two focused tests:
+
+1. `test_page_references_expected_assets_and_lints` — verifies:
+   - "Filters (0)", "Add selected to Filters", "Show filtered", "Reset to defaults" present in HTML
+   - "Show noise" absent
+   - Forbidden API checks (`innerHTML`, `document.write`, `eval(`, `raw_syscall`, `document.title`)
+   - Bundle size
+
+2. `test_viewer_docs_describe_filters_and_port_behavior` — verifies docs contain key phrases and don't contain old "Noise" wording.
+
+**Full suite: 123 tests pass** in 12.6s with no failures.
+
+### 4. Plan Alignment ✅
+
+Phase 5 deliverables per plan:
+
+| Deliverable | Status |
+|---|---|
+| `docs/viewer.md` updated | ✅ Comprehensive rewrite |
+| Static files — final polish | ✅ No leftover old wording |
+| `tests/test_viewer_smoke_e2e.py` updated | ✅ New assertions + docs test |
+| Full test suite passes | ✅ 123/123 OK |
+| No user-facing "Noise" terminology | ✅ Verified via grep + test assertions |
+
+### 5. Minor Observations (Not Blocking)
+
+- **Bundle size margin**: The 50KB static asset limit has only 16 bytes of headroom. Future changes might trip the test. Consider bumping to 55KB or 60KB if this becomes fragile.
+- **Dead state sync**: `state.includeNoise=state.includeFiltered` on `index.js:290` is a leftover from backward-compat wiring. The render path uses `include_filtered` directly. Harmless but could be cleaned up eventually.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 5 documentation is thorough and accurate, smoke tests verify all key terminology and security constraints, and the full 123-test suite passes cleanly.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

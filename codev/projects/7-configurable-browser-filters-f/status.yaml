@@ -1,0 +1,36 @@
+id: '7'
+title: configurable-browser-filters-f
+protocol: spir
+phase: verify
+plan_phases:
+  - id: phase-1-filter-core
+    status: complete
+  - id: phase-2-replay-persistence-port
+    status: complete
+  - id: phase-3-filter-editor
+    status: complete
+  - id: phase-4-item-actions
+    status: complete
+  - id: phase-5-docs-smoke
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-05-14T13:32:36.427Z'
+    approved_at: '2026-05-14T13:33:36.993Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-05-14T13:39:20.023Z'
+    approved_at: '2026-05-14T13:40:03.993Z'
+  pr:
+    status: approved
+    requested_at: '2026-05-14T23:54:10.857Z'
+    approved_at: '2026-05-15T01:13:05.898Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-14T13:24:48.351Z'
+updated_at: '2026-05-15T01:13:22.941Z'

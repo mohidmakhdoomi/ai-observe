@@ -1,0 +1,92 @@
+I'll start by reading the actual project files referenced in the plan to verify assumptions about structure, existing code, and test patterns.Let me verify one more detail about the index.js file and the current noise wiring:Now let me check the `__main__.py` port handling and the `_aggregator_oracle.py` structure:Now I have a thorough understanding of the codebase. Let me compile my review.
+
+---
+
+## Plan Review: Configurable Browser Filters
+
+### 1. Spec Coverage
+
+**All spec requirements are covered.** I verified each functional requirement against the phases:
+
+| Spec Requirement | Phase | Covered? |
+|---|---|---|
+| Glob filter syntax | Phase 1 | ✅ |
+| Factory defaults | Phase 1 | ✅ |
+| Rename/filter semantics | Phase 1 | ✅ |
+| Event buffer + replay | Phase 2 | ✅ |
+| Port 7878 + fallback | Phase 2 | ✅ |
+| localStorage persistence (stable origin only) | Phase 2 | ✅ |
+| Filter editor UI | Phase 3 | ✅ |
+| "Noise" → "Filters" renaming | Phase 3 | ✅ |
+| Context menu (right-click) | Phase 4 | ✅ |
+| Multi-select + add to filters | Phase 4 | ✅ |
+| Documentation | Phase 5 | ✅ |
+
+No spec requirements are missed, and no phases go beyond spec scope.
+
+### 2. Phase Breakdown & Ordering
+
+The linear 5-phase chain is appropriate. Each phase builds on the last and each is independently committable:
+
+- **Phase 1** (core) → Pure logic, no UI changes. Can be tested in isolation.
+- **Phase 2** (runtime) → Wires core into live viewer. Server + browser state changes.
+- **Phase 3** (editor UI) → User-facing filter editor. Needs Phase 2's replay and persistence.
+- **Phase 4** (context actions) → Requires the editor/filter mutation path from Phase 3.
+- **Phase 5** (docs/polish) → Final pass after all functionality is in.
+
+**Phase sizing is reasonable.** Phase 1 is the heaviest (glob compiler in both JS and Python, aggregator changes, parity tests), but it's all tightly coupled "filter core" work that shouldn't be split. Phase 5 is the lightest, appropriate for cleanup.
+
+### 3. Technical Approach
+
+**Verified against actual code:**
+
+- **`aggregator.js` (line 12–21):** Current `NOISE_PATTERNS` is an array of 8 hardcoded regexes. The plan correctly identifies replacing these with a glob compiler that produces equivalent regexes. The `isNoise`/`eventIsNoise` functions (lines 23–37) need to be generalized to accept configurable filter patterns — Phase 1 covers this.
+
+- **`index.js` (37 lines):** Currently creates a single `agg` instance (line 14), ingests events directly from SSE (line 32), and has no event buffer. Phase 2 correctly identifies adding a flat buffer and replay. The file is compact but readable (not minified), so editing is feasible.
+
+- **`__main__.py` (line 29):** Port currently defaults to `0`. Phase 2 correctly targets changing this to `7878` with fallback. The fallback logic belongs in `__main__.py` (catch bind failure on `ViewerServer(path, port=7878)`, retry with `port=0`). The plan's mention of `server.py` changes "if needed" is appropriately hedged — `ViewerServer` already handles arbitrary ports, so the real work is in `__main__.py`.
+
+- **`_aggregator_oracle.py` (lines 22–34):** Mirrors the same 8 regex patterns. The plan correctly requires updating both in lockstep with parity tests.
+
+- **`index.html` (line 18):** `Show noise` checkbox with `id="show-noise"`. Phase 3 correctly renames this to "Show filtered" and adds filter editor controls.
+
+### 4. Testing Strategy
+
+**Strong.** The plan follows existing test patterns faithfully:
+
+- **Node-backed parity tests** (subprocess execution, skip if Node unavailable) — matches `test_viewer_aggregator.py::JsParityTests` and `test_viewer_breadcrumb.py` patterns.
+- **Golden snapshot testing** — Phase 1 correctly notes updating committed goldens only when intentional.
+- **Server CLI tests** — Phase 2 adds port 7878/fallback/explicit-port tests to the existing `test_viewer_server.py` which already tests port binding and CLI args.
+- **Smoke/security tests** — Phase 5 runs `test_viewer_smoke_e2e.py` which already checks for `innerHTML`, `document.write`, `eval()`, `raw_syscall`, `document.title` in all static assets.
+- **Each phase specifies which test commands to run**, giving builders clear verification steps.
+
+### 5. Risk Assessment
+
+The plan identifies the right risks. One additional consideration:
+
+**Non-standard `/tmp/**` matching `/tmp` itself.** The spec explicitly requires `/tmp/**` to match both `/tmp` and `/tmp/a/b`. Standard glob semantics would NOT match the parent path itself. The Phase 1 success criteria correctly state this requirement, but the glob compiler implementation needs to handle this edge case deliberately. A builder using a standard glob library or implementing naïve `**` expansion could miss this. The criteria are specific enough that a careful builder will catch it, but it's worth noting as a subtle implementation trap.
+
+### 6. Minor Comments (Non-blocking)
+
+1. **Keyboard accessibility**: The spec says the editor "SHOULD be usable with keyboard and pointer input." Phase 3's success criteria don't explicitly mention keyboard navigation for the filter editor. A builder might focus only on pointer interaction. Consider adding "filter editor supports keyboard Add/Edit/Remove/Reset" to Phase 3 success criteria.
+
+2. **Phase 2's `server.py` scope**: The plan says "if needed, expose/handle bind failures cleanly." Based on my read of `server.py`, the `ViewerServer.__init__` raises `OSError` on bind failure, so the fallback logic lives entirely in `__main__.py`. The `server.py` bullet could be narrowed to "no changes expected; verify bind failures propagate cleanly" to avoid confusing the builder about where the work goes.
+
+3. **`tests/test_viewer_index_js.py` vs `test_viewer_breadcrumb.py`**: Phase 2 mentions "or a new `tests/test_viewer_index_js.py`." This file already exists (confirmed in the project structure), but currently only `test_viewer_breadcrumb.py` tests index.js helpers. The plan should be slightly more precise about whether to extend the existing breadcrumb test file or use the existing `test_viewer_index_js.py` (if it has content) or create new content in it. Very minor.
+
+4. **`index.js` growth**: Phase 2 adds event buffer, replay, storage helpers, and filter state to a 37-line file. Phase 3 adds editor state/actions. Phase 4 adds selection state and context action wiring. By Phase 4, `index.js` will be substantially larger. The plan doesn't discuss whether to extract modules (e.g., a `filters.js` module). The existing architecture loads scripts in order via `<script>` tags with UMD exports, so adding a new `filters.js` would be consistent. This is an implementation choice the builder can make, but the plan could mention it as an option.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-sequenced plan that covers all spec requirements with correct technical approach and strong testing strategy; minor suggestions only.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None (blocking)
+- Minor: Phase 3 success criteria should mention keyboard accessibility for the filter editor (spec SHOULD requirement)
+- Minor: Phase 2 could be more precise about server.py vs __main__.py for port fallback logic
+- Minor: Plan could note `/tmp/**` matching `/tmp` as a non-standard glob edge case requiring deliberate implementation
+```

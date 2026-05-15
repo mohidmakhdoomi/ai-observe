@@ -1,0 +1,67 @@
+I'll start by reading all the key implementation files for this phase review.I see the CLAUDE.md is at `.builders/spir-7/` — this is a worktree. Let me read the actual implementation files from the correct worktree path.Now let me run the tests to verify everything passes:All 27 tests pass. Let me also run the broader test suite to check for regressions, and verify a few more details of the implementation:All 112 tests pass. Let me verify a few more things — the security requirement about no `eval`, and check the glob compiler edge cases more carefully:Let me verify the golden snapshot files were not modified (proving backward compatibility):No golden files or fixtures were modified — factory defaults produce identical snapshots. Let me do one final verification of the Python glob compiler against the JS one for an edge case the tests don't explicitly cover:All compiled regexes look correct. Here's my review:
+
+---
+
+## Implementation Review: Phase 1 — Filter Core
+
+### 1. Spec Adherence ✅
+
+**Factory defaults**: The 8 factory filter patterns are exact glob equivalents of the previously hardcoded regex patterns. Golden snapshot tests pass without modification, proving identical behavior.
+
+**Glob syntax**: All spec-mandated examples pass:
+- `/tmp/**` → matches `/tmp`, `/tmp/a`, `/tmp/a/b` ✓
+- `/home/*/.cache/**` → matches `/home/alice/.cache`, `/home/bob/.cache/pip/x` ✓
+- `/work/build/*` → matches `/work/build/a.o`, not `/work/build/obj/a.o` ✓
+- `/work/build/**` → matches `/work/build`, descendants ✓
+- `/work/?.txt` → matches `/work/a.txt`, not `/work/ab.txt` ✓
+- Regex metacharacters escaped (`/work/a+b.[txt]`) ✓
+
+**Validation**: Non-absolute patterns rejected. Empty/whitespace-only rejected. Clear error messages.
+
+**Event-level rule**: All-non-empty-paths-match rule applied correctly with custom filters.
+
+**Exact vs subtree**: `/work/build` does not hide `/work/build/out.log`; `/work/build/**` does. ✓
+
+**Tombstones**: Tombstoned paths hidden even when `include_noise=True`. ✓
+
+### 2. Code Quality ✅
+
+- Clean separation: glob compilation → filter matcher → aggregator consumption. Each layer is independently testable.
+- Backward-compatible API: `isNoise`/`eventIsNoise` remain as aliases, `NOISE_PATTERNS` alias points to factory patterns. Existing callers won't break.
+- `createAggregator(opts)` accepts both `filter_patterns` (snake_case) and `filterPatterns` (camelCase), which is pragmatic for JS/Python interop.
+- No `eval`, `innerHTML`, or `document.write` in the aggregator — security requirement met.
+- `FACTORY_FILTER_PATTERNS` is frozen in JS and a tuple in Python — immutable.
+- `snapshot()` accepts both `include_noise` (backward compat) and `include_filtered` (new name) — clean migration path for phase 3.
+
+### 3. Test Coverage ✅
+
+27 aggregator tests pass. 112 total tests pass (no regressions).
+
+Coverage highlights:
+- `FilterGlobTests`: 6 tests covering all spec glob examples, `**` in middle position, literal regex metacharacter escaping, invalid pattern validation, and exact-vs-subtree directory semantics.
+- `CustomFilterTests`: 4 tests covering custom filter event counts/snapshot paths, all-paths-match rule with mixed renames, exact-directory-not-hiding-descendants, and tombstone precedence over filter visibility.
+- `JsParityTests`: 5 tests including `test_parity_custom_filter_list` (custom filters) and `test_js_filter_helpers_cover_validation_and_globs` (direct JS glob/validation testing).
+- All pre-existing tests pass unchanged with the new implementation.
+
+### 4. Plan Alignment ✅
+
+All Phase 1 deliverables are complete:
+- ✅ `aggregator.js`: factory defaults, glob compiler, filter matcher, `createAggregator` with active-filter support
+- ✅ `_aggregator_oracle.py`: mirrored glob compiler, filter matcher, `Aggregator` accepting filter patterns
+- ✅ `test_viewer_aggregator.py`: glob syntax, custom filters, exact-vs-subtree, tombstone precedence, all-paths-match, JS parity with custom filters
+- ✅ Golden fixtures unchanged — backward compatibility proven
+- ✅ No fixture modifications needed
+
+### 5. Minor Observations (non-blocking)
+
+- `glob_to_regex_source` is public (no underscore) in the Python oracle but module-private in JS. This is fine since the oracle is a test module, not a public package.
+- A pattern like `/a//b` (double slash) compiles without error, producing a regex matching the literal string `/a//b`. This is harmless — unusual input, predictable output.
+- The `compileSegmentGlob` function treats `*` inside a non-`**` segment as segment-local, which means a pattern like `/foo/a**b/bar` treats the stars as two `[^/]*` rather than a subpath wildcard. This is correct per spec but might surprise users. Not a phase-1 concern — validation could warn on suspicious patterns in a later phase.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers a correct, well-tested glob-based filter core with full JS/Python parity, backward compatibility, and all spec-required glob semantics.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

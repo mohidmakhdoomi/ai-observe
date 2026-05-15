@@ -1,0 +1,77 @@
+I'll start by reading all the key implementation and test files for this phase review.Let me check the git status and find where the actual changes are:Good, now I can see the phase-2 commit (`1aaf803`). Let me read all the changed implementation files at their current state:Now let me also check the aggregator.js to see the phase-1 changes that phase-2 depends on (particularly `createAggregator` with filter_patterns, `validateFilterPattern`, `factoryFilterPatterns`):Now let me run the tests to verify they pass:All 46 tests pass. Let me also check a few more things — the `ViewerServer` constructor to confirm how it raises on port conflicts, and verify the review file from phase 1:Now I have a thorough understanding of all the changes. Let me compile my review.
+
+---
+
+## Phase 2 Review: Runtime wiring — event-buffer replay, stable-port persistence, port fallback
+
+### 1. Spec Adherence
+
+**Default port 7878**: ✅ `DEFAULT_PORT = 7878` in `__main__.py`. `--port` default changed from `0` to `None` to distinguish "not specified" (use 7878 with fallback) from explicit.
+
+**Port fallback**: ✅ On `OSError` binding 7878, falls back to port `0` only when `args.port is None`. Explicit `--port` re-raises the OSError with no silent fallback. Loopback-only binding unchanged (still `_HOST = "127.0.0.1"` in `server.py`).
+
+**Stable-origin-only persistence**: ✅ `isStableFilterOrigin()` checks `location.origin === "http://127.0.0.1:7878"` with a secondary `protocol/hostname/port` path for environments without `.origin`. Read and write helpers gate on this check; fallback/custom ports get factory defaults and never touch `localStorage`.
+
+**Event buffer and replay**: ✅ `eventBuffer` array accumulates all parsed SSE events. `rebuildAggregator()` creates a fresh aggregator from the buffer with current `state.filterPatterns`. `setFilterPatterns()` validates → persists (if eligible) → rebuilds → renders. Since JS is single-threaded, no SSE events can interleave during a synchronous replay — the live-event-ordering concern is naturally handled.
+
+**Malformed storage fallback**: ✅ `readStoredFilterPatterns` wraps in try/catch, falls back to factory defaults on JSON parse failure, invalid patterns, or `getItem()` throwing (e.g., private browsing). Write validates patterns before serializing — invalid sets aren't persisted.
+
+### 2. Code Quality
+
+**`__main__.py`**: Clean, minimal diff. The guard `if args.port is not None or requested_port != DEFAULT_PORT: raise` is technically redundant in the second condition (when `args.port is None`, `requested_port` always equals `DEFAULT_PORT`), but it's harmless belt-and-suspenders. Help text is updated to describe the fallback behavior.
+
+**`index.js`**: Well-structured separation of pure helpers (exported for Node tests) from browser-only runtime. Key design choices are sound:
+- `normalizeFilterPatterns` returns `{ok, patterns, errors}` — callers decide what to do
+- `readStoredFilterPatterns` does all-or-nothing fallback on invalid stored data (spec says "malformed or unusable" → defaults)
+- `writeStoredFilterPatterns` refuses to write invalid patterns
+- `rebuildAggregator` replaces both local `agg` and `root.viewer.agg` — no stale reference bugs
+- State includes both `includeFiltered` (new) and `includeNoise` (backward compat), kept in sync in the checkbox handler
+
+**Backward compatibility**: The noise checkbox handler sets both `includeFiltered` and `includeNoise`. The aggregator's `snapshot()` accepts `include_noise || include_filtered`. The `render()` call now passes `include_filtered`. Existing code paths are preserved.
+
+### 3. Test Coverage
+
+**`test_viewer_index_js.py`** (3 tests, Node-backed):
+- `test_stable_origin_storage_is_read_and_written_only_on_7878` — verifies reads/writes only on stable origin, no storage access on fallback port. Checks mock storage call counts. Thorough.
+- `test_storage_malformed_invalid_and_throwing_values_fall_back_to_defaults` — covers malformed JSON, invalid relative patterns, throwing storage, empty patterns. Each falls back to factory defaults.
+- `test_snapshot_from_events_replays_with_active_filters` — verifies `snapshotFromEvents` with custom filters produces correct filtered/unfiltered snapshots. This is the structural replay equivalence test.
+
+**`test_viewer_server.py`** (3 new CLI tests):
+- `test_default_port_constant_is_stable_7878` — constant value and parser default
+- `test_default_port_collision_falls_back_to_ephemeral` — binds a socket, patches `DEFAULT_PORT` to that port, verifies CLI starts on a different port
+- `test_explicit_port_collision_does_not_fall_back` — verifies `OSError` is raised with `--port`
+
+All 46 tests pass cleanly.
+
+### 4. Error Handling
+
+- ✅ `OSError` catch in `__main__.py` only catches bind failures; re-raises for explicit `--port`
+- ✅ `localStorage` exceptions (private browsing, quota) → caught, returns defaults / returns `false`
+- ✅ Malformed JSON in storage → caught, returns factory defaults
+- ✅ Invalid patterns in stored data → validation failure, returns factory defaults
+- ✅ `normalizeFilterPatterns` rejects non-array input, empty strings, relative patterns
+
+### 5. Plan Alignment
+
+The plan specifies these files for phase 2:
+- ✅ `src/ai_observe/viewer/static/index.js` — event buffer, replay, active-filter state, Show filtered, storage helpers, malformed fallback
+- ✅ `src/ai_observe/viewer/__main__.py` — default port 7878, collision fallback, explicit --port
+- ✅ `src/ai_observe/viewer/server.py` — no changes needed (constructor already raises on bind failure)
+- ✅ `tests/test_viewer_index_js.py` — new Node-backed test file for index.js runtime helpers
+- ✅ `tests/test_viewer_server.py` — new CLI tests for port behavior
+
+All plan-specified deliverables are present.
+
+### Minor Observations (non-blocking)
+
+1. The `_run_cli_one_shot` helper in the server tests is a nice DRY refactor for the existing CLI test patterns.
+2. `snapshotFromEvents` is a clean composition of `createAggregatorFromEvents` + `.snapshot()`, which will be useful for future phases.
+3. The `FILTER_STORAGE_KEY` uses a versioned key (`filters.v1`), which is forward-thinking for potential schema changes.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 delivers all planned items — event-buffer replay, stable-origin persistence, port 7878 default with fallback — with clean code and solid test coverage.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
