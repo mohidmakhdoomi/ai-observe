@@ -156,6 +156,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
     def test_item_action_helpers_build_preview_patterns_and_prune_selection(self):
         script = r"""
         const h = require('./src/ai_observe/viewer/static/index.js');
+        const throwingTree = {get path(){ throw new Error('walked empty selection tree'); }};
         const tree = {path:'/', children:[
           {path:'/work', isDir:true, children:[
             {path:'/work/a.log', isDir:false, children:[]},
@@ -167,6 +168,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
           dir: h.filterPatternProposals({path:'/work', isDir:true}),
           file: h.filterPatternProposals({path:'/work/a.log', isDir:false}),
           exact: h.exactPatternsForSelection(['/work/a.log','/work/a.log','/work/b.log']),
+          emptyPruned: h.pruneSelectedPaths([], throwingTree),
           pruned: h.pruneSelectedPaths(['/work/a.log','/missing'], tree),
           toggled: h.togglePathSelection(['/work/a.log'], '/work/a.log'),
           range: h.selectVisibleRange(['/work/a.log'], '/work/a.log', '/tmp', ['/work/a.log','/work/b.log','/tmp']),
@@ -182,6 +184,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         )
         self.assertEqual([p["pattern"] for p in out["file"]], ["/work/a.log"])
         self.assertEqual(out["exact"], ["/work/a.log", "/work/b.log"])
+        self.assertEqual(out["emptyPruned"], [])
         self.assertEqual(out["pruned"], ["/work/a.log"])
         self.assertEqual(out["toggled"], [])
         self.assertEqual(out["range"], ["/work/a.log", "/work/b.log", "/tmp"])

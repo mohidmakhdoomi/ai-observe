@@ -1,8 +1,7 @@
 "use strict";
 (function(root){
-  const nodeAggregator = (typeof module !== "undefined" && module.exports && (!root || !root.document)) ? require("./aggregator.js") : null;
-  const FILTER_STORAGE_KEY="ai_observe.viewer.filters.v1";
-  const STABLE_FILTER_ORIGIN = "http://127.0.0.1:7878";
+  const nodeAggregator=(typeof module!=="undefined"&&module.exports&&(!root||!root.document))?require("./aggregator.js"):null;
+  const FILTER_STORAGE_KEY="ai_observe.viewer.filters.v1";const STABLE_FILTER_ORIGIN="http://127.0.0.1:7878";
 
   function parentPath(p){ if(!p||p==="/") return null; const parts=p.split("/").filter(Boolean); parts.pop(); return parts.length?"/"+parts.join("/"):"/"; }
   function breadcrumbSegments(path){ const segs=[{label:"/",path:"/"}]; const parts=(path||"/").split("/").filter(Boolean); let cur=""; for(const part of parts){ cur += "/"+part; segs.push({label:part,path:cur}); } return segs; }
@@ -74,10 +73,7 @@
     for(const child of (node.children||[])) collectTreePaths(child,out);
     return out;
   }
-  function pruneSelectedPaths(paths, tree){
-    const allowed=new Set(collectTreePaths(tree,[]));
-    return (paths||[]).filter(path=>allowed.has(path));
-  }
+  function pruneSelectedPaths(paths,tree){if(!paths||paths.length===0)return [];const allowed=new Set(collectTreePaths(tree,[]));return paths.filter(path=>allowed.has(path));}
   function togglePathSelection(paths, path){
     const next=new Set(paths||[]);
     if(next.has(path)) next.delete(path); else next.add(path);
