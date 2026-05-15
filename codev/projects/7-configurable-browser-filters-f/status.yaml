@@ -24,12 +24,13 @@ gates:
     requested_at: '2026-05-14T13:39:20.023Z'
     approved_at: '2026-05-14T13:40:03.993Z'
   pr:
-    status: pending
+    status: approved
     requested_at: '2026-05-14T23:54:10.857Z'
+    approved_at: '2026-05-15T01:13:05.898Z'
   verify-approval:
     status: pending
 iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-14T23:54:10.857Z'
+updated_at: '2026-05-15T01:13:05.898Z'
