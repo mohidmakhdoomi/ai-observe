@@ -21,3 +21,6 @@ dist/
 
 # ai-observe default logs (may contain secrets)
 .codev/observe/
+
+# Claude
+.claude/scheduled_tasks.lock
