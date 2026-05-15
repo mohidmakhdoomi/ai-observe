@@ -23,6 +23,17 @@ The main changes are:
 - [x] Selection pruning has a no-selection fast path.
 - [x] Documentation describes the chosen strategy and remaining limits.
 
+## Architecture Updates
+
+Updated `codev/resources/arch.md` with a new "Browser viewer large-backlog delivery" section. It documents the linear tailer buffering invariant, append-only broadcaster/watermark delivery model, bounded `append_batch` SSE frames, browser compatibility with legacy `append`, and the invariant that all received events flow into the same retained browser event buffer used for filter replay.
+
+## Lessons Learned Updates
+
+Updated `codev/resources/lessons-learned.md` with two general lessons:
+
+- ship streaming protocol changes with producer and consumer compatibility in the same independently shippable phase;
+- prefer structural performance tests over brittle timing thresholds for CI-stable performance work.
+
 ## Performance Strategy
 
 ### Tailer
@@ -88,6 +99,36 @@ Build check is skipped by `.codev/config.json`.
 
 - The selection-pruning fast path is implemented both in `pruneSelections()` and defensively in `pruneSelectedPaths()` so the runtime path and helper callers avoid tree walks on empty selections.
 - Static browser code was lightly minified to keep the existing 50KB static asset smoke budget passing after new helper code was added.
+
+## Lessons Learned
+
+### What Went Well
+
+- The phased plan isolated the major bottlenecks: tailer first, server/browser protocol second, render/selection cleanup third, and documentation/review last.
+- The server's existing append-only broadcaster and snapshot watermark made batching a localized change without weakening no-gap/no-duplicate delivery.
+- Node-backed browser helper tests caught compatibility and ordering behavior without needing browser automation.
+
+### Challenges Encountered
+
+- **Protocol phase compatibility**: The initial plan separated server and browser batch work, which would have produced an incompatible intermediate state. Consultation caught this and the plan was revised to ship producer and consumer support together.
+- **Static asset size budget**: Adding browser helpers pushed the static bundle over the existing 50KB smoke-test limit. The final implementation kept behavior but compressed some existing browser code to stay under budget.
+- **Testing `pruneSelections()` directly**: The runtime function lives inside the browser-only section of `index.js`. The final coverage combines a behavioral helper test that proves no tree walk happens for empty selections with a source-level guard check for the runtime fast path.
+
+### What Would Be Done Differently
+
+- Check static asset size before and after browser changes rather than discovering the limit during full-suite regression.
+- Define protocol compatibility as a plan-phase invariant any time a producer and consumer change together.
+
+### Methodology Improvements
+
+- Plans for performance work should explicitly identify deterministic structural assertions, such as frame counts, batch sizes, and tree-walk avoidance.
+- Review prompts for browser runtime changes should distinguish testable pure helpers from browser-only integration points so both receive appropriate coverage.
+
+## Technical Debt
+
+- `src/ai_observe/viewer/server.py` still contains the legacy `_send_batch()` helper, now unused after switching `/events` to `append_batch`. It can be removed in a cleanup change.
+- The static asset bundle remains very close to the 50KB smoke-test budget.
+- Very large traces still replay filters on the browser main thread; filter-independent indexes or worker-based aggregation remain future work.
 
 ## Flaky Tests
 

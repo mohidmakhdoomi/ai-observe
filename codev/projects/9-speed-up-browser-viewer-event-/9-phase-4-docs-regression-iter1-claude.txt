@@ -1,0 +1,66 @@
+I'll read the key files for this phase review. Let me start with the documentation and review notes that are the primary deliverables for phase-4-docs-regression, plus the implementation files to verify correctness.The review file wasn't found at the expected path. Let me search for it and read the remaining key files.The review file exists according to glob but wasn't found at the absolute path. Let me fix the path and read the remaining files.Now let me check the actual implementation files in the worktree to verify the prior phases' work is present and consistent with the documentation claims.Now let me read the worktree test files and run the full test suite to verify the regression pass.All 128 tests pass. I now have a complete picture of the phase-4-docs-regression deliverables. Let me compile my review.
+
+---
+
+## Phase 4 Review: Documentation, Review Notes, and Full Regression Pass
+
+### 1. Spec Adherence ✅
+
+**Phase 4 plan requirements vs. deliverables:**
+
+| Requirement | Status |
+|---|---|
+| `docs/viewer.md` — add/update performance note describing linear tailer, bounded SSE batching, both frame formats, retained client-side filter replay envelope | ✅ Done (lines 156–163 in worktree) |
+| Update or reaffirm existing documented trace envelope | ✅ Done — envelope updated from "roughly `10^4` events" to nuanced guidance: `10^4` for interactive filter replay, `8 * 10^4` for startup without pathological behavior (line 163) |
+| `codev/reviews/9-speed-up-browser-viewer-event-.md` — create review notes with performance strategy, test results, remaining limits, deferred work | ✅ Done — comprehensive 101-line document |
+| Full test suite passes | ✅ 128 tests pass, 0 failures, 0 skips |
+| No Spec 7 behavioral regression | ✅ Verified — filter semantics, localStorage persistence, event buffer replay, tombstone behavior all preserved in code and tests |
+
+### 2. Code Quality ✅
+
+**`docs/viewer.md` changes** (the "Replay and memory envelope" section, lines 154–163):
+- Clear and accurate: explains the four optimizations (linear tailer, bounded `append_batch`, sparse live delivery, selection pruning fast path).
+- Correctly distinguishes the filter-replay envelope (`10^4`) from the startup pathology fix target (`8 * 10^4`).
+- Concise and doesn't over-promise.
+- The smoke-test section (line 194) is also updated with the correct post-batching performance expectations.
+
+**`codev/reviews/9-speed-up-browser-viewer-event-.md`**:
+- Well-structured with Summary, Spec Compliance checklist, Performance Strategy, Remaining Envelope Limits, Tests Run, Consultation Feedback, Deviations, Flaky Tests, and Follow-up Items.
+- Performance strategy sections clearly explain the before/after for tailer, SSE batching, and selection pruning.
+- Accurately documents the batch constant (`_APPEND_BATCH_SIZE = 512`).
+- Documents real follow-up items (dead `_send_batch` helper, 50KB asset budget, future filter indexing).
+
+### 3. Test Coverage ✅
+
+All prior-phase tests remain in the suite and pass:
+- **Tailer**: 9 tests including large-chunk linear processing, partial fragments, malformed/schema/truncation/inode/shutdown
+- **Server**: 8 tests including `append_batch` boundary verification, concurrent clients, shutdown frame, empty JSONL
+- **Index.js**: 6 tests including ingestion helpers, filter semantics, selection pruning (throwing-tree empty-selection fast path + source verification)
+- **Other viewer tests**: aggregator, breadcrumb, table, treemap, smoke — all pass
+
+The review notes accurately report "128 tests" with no flaky tests.
+
+### 4. Error Handling ✅
+
+No new code is introduced in this phase — only documentation and review notes.
+
+### 5. Plan Alignment ✅
+
+Phase 4 was scoped to exactly two files plus a regression pass. Both files are present and complete. The test suite was run and passes. No out-of-scope changes were made.
+
+### Minor Observations (Non-blocking)
+
+1. **Dead `_send_batch` helper**: The review correctly identifies `_send_batch` (server.py:167-169) as unused dead code. This is a follow-up item, not a phase-4 issue.
+
+2. **Review notes test commands**: The review lists `python3 -m unittest tests.test_viewer_smoke_e2e` — I verified this module exists and is included in the 128-test discover run.
+
+3. **Smoke-test section wording**: Line 194 of `docs/viewer.md` says "Larger static backlogs should start substantially faster than the pre-batching implementation" — this is clear but strictly speaking the reader won't have a "pre-batching" baseline. This is cosmetic and fine for developer docs.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 documentation and review notes are complete, accurate, and well-structured; full 128-test suite passes with no regressions.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

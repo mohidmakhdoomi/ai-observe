@@ -1,0 +1,8 @@
+Using direct file reads to verify the on-disk spec/plan and current viewer code before reviewing.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong spec coverage overall, but the phase ordering currently introduces an incompatible SSE protocol change before the browser can consume it.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- Phase 2 is not independently shippable as written. `src/ai_observe/viewer/server.py` would start emitting `append_batch` before `src/ai_observe/viewer/static/index.js` listens for it; the current browser only handles `append` (`index.js` adds one `append` listener at line ~300). Either combine server+browser protocol work into one phase, or make Phase 2 additive only (e.g. add helpers/tests first, keep `/events` on `append` until Phase 3).
+- Phase 4 should explicitly update the existing documented envelope in `docs/viewer.md` (“roughly 10^4 events” / “Expected v1 envelope”) or state that it remains unchanged; right now the plan mentions a performance note, but the current doc already contains concrete envelope claims that this spec is trying to improve.

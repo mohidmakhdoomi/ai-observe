@@ -1,0 +1,93 @@
+I'll read all the implementation and test files to review phase-2-sse-browser-batching thoroughly.Let me also read the rebuttals file and plan to understand the full context.Now let me verify the tests pass with the current code:Good, tests pass. Now let me verify the actual content of the server's `_send_batch` and `_serve_events` to be absolutely sure of what's happening:I see — I was reading from the wrong path! The worktree is at `.builders/aspir-9/`. Let me re-read all implementation files from the correct worktree location.Now let me re-read the test files from the correct worktree path:Now I have the correct picture. Let me verify the tests pass from the worktree:All 33 tests pass. Here's my comprehensive review:
+
+---
+
+## Phase 2 Review: Compatible bounded SSE and browser batch ingestion
+
+### 1. Spec Adherence ✅
+
+The implementation correctly delivers the Phase 2 objective: reducing Python write/flush overhead and browser callback pressure via bounded `append_batch` SSE frames.
+
+**Server (`server.py`):**
+- `_APPEND_BATCH_SIZE = 512` — conservative batch-size constant (line 30). For 80k events this produces ~157 flushes instead of 80,000.
+- `_event_batches()` helper (lines 33-42) — clean generator that yields bounded, non-empty batches in original order with input validation.
+- `_send_append_batches()` (lines 163-165) — routes events into `append_batch` frames.
+- `_serve_events()` uses `_send_append_batches` for both backlog and live delivery (lines 149, 158).
+- Shutdown frame preserved unchanged.
+- SSE payloads remain sanitized-only.
+
+**Browser (`index.js`):**
+- `ing1`, `ingN`, `ingestAppendData`, `ingestAppendBatchData` — small, testable, exported helpers (lines 140-143).
+- `ingN` guards with `Array.isArray` for non-array payloads.
+- Both `append` and `append_batch` listeners wired (lines 304-305).
+- Shared `onIngested(n)` helper (line 303) updates timestamp and schedules render only when events were actually ingested.
+- Malformed JSON in both single and batch frames caught via try/catch returning 0.
+
+### 2. Code Quality ✅
+
+Clean, readable, minimal. The helpers are well-factored for testability. The `_event_batches` generator is a nice touch — it's a pure function at module scope, easy to reason about.
+
+**One minor issue — dead code:**
+
+`_send_batch()` (server.py:167-169) is no longer called anywhere. The server now exclusively uses `_send_append_batches()`. This legacy helper should be removed to avoid confusion. Not blocking.
+
+**Minor: `_send_event` lost its type hint** (line 171) — `payload` was previously `payload: dict`, now it accepts both dicts (shutdown) and lists (append_batch). A `payload: Union[dict, list]` annotation would be clearer. Not blocking.
+
+### 3. Test Coverage ✅
+
+**Server tests (`test_viewer_server.py`):**
+- Updated SSE frame parsing: `_decode_sse_frame`, `_events_from_sse_frame`, `_read_sse_event_frames` handle both `append` and `append_batch` (lines 69-117).
+- `test_sse_append_batch_replay_and_live_exactly_once_across_boundaries` (lines 165-188) is the key Phase 2 test — patches `_APPEND_BATCH_SIZE=2`, verifies 5 events produce 3 batch frames with sizes [2, 2, 1], all events arrive in order with sanitized fields only, then verifies a live event arrives as a batch of [1].
+- Existing tests (`test_sse_replay_then_live`, concurrent clients, empty JSONL, shutdown) all preserved and passing with the updated helpers.
+
+**Browser tests (`test_viewer_index_js.py`):**
+- `test_append_and_append_batch_ingestion_helpers_preserve_order` (lines 106-126) — covers single ingestion, batch ingestion, non-array rejection, malformed JSON (both batch and single), event buffer ordering, and aggregator exact-once calls via a mock.
+
+### 4. Error Handling ✅
+
+- `_event_batches` validates `batch_size > 0`.
+- Browser `ingestAppendBatchData` gracefully handles: malformed JSON (try/catch → 0), non-array payloads (`Array.isArray` guard → 0).
+- Browser `ingestAppendData` gracefully handles malformed JSON (try/catch → 0).
+- Server `_serve_events` catches `BrokenPipeError` and `ConnectionResetError`.
+- Empty batch list produces zero `append_batch` frames (the generator yields nothing).
+
+### 5. Plan Alignment ✅
+
+Every Phase 2 deliverable is present:
+
+| Plan Requirement | Status |
+|---|---|
+| Batch-size constant | ✅ `_APPEND_BATCH_SIZE = 512` |
+| `append_batch` SSE frames as arrays | ✅ `_send_append_batches` → `_send_event("append_batch", batch)` |
+| Flush once per batch | ✅ One `wfile.flush()` per batch frame |
+| Legacy `append` browser support | ✅ Listener preserved |
+| `append_batch` browser listener | ✅ Added |
+| Exported ingestion helpers | ✅ `ingestAppendData`, `ingestAppendBatchData` |
+| Backlog exact-once test across batch boundaries | ✅ With `_APPEND_BATCH_SIZE=2` |
+| Live event test after backlog | ✅ |
+| Node helper tests (order, counts, malformed) | ✅ |
+| Concurrent client tests preserved | ✅ |
+| Sanitized-only payloads | ✅ Asserted in test |
+| Shutdown behavior preserved | ✅ |
+| Empty batches not emitted | ✅ |
+| Sparse live traffic immediate | ✅ No delay waiting to fill a batch |
+| Server+browser shipped together | ✅ |
+
+### Security ✅
+
+- Server binds only to `127.0.0.1`.
+- No new endpoints.
+- Batch payloads contain only sanitized fields (tested).
+- No server-side filter persistence or path logging.
+- Browser uses text APIs (no innerHTML).
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 2 cleanly implements bounded SSE batching across server and browser with thorough exact-once and malformed-input tests; only minor dead code to clean up.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- (Minor/Non-blocking) `_send_batch()` method at server.py:167-169 is dead code — it's never called after the switch to `_send_append_batches()`. Remove it to avoid confusion.
+- (Minor/Non-blocking) `_send_event` payload parameter lost its type hint at server.py:171. Consider `payload: Union[dict, list]` for clarity.
