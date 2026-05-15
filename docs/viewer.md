@@ -153,7 +153,14 @@ For multiple items, Ctrl/Cmd-click rows or tiles to toggle them in the selection
 
 The browser retains sanitized SSE events in a flat arrival-order buffer. Filter list changes rebuild a fresh aggregator by replaying that buffer with the current filters, then render a new snapshot. Live events appended while the page is open are appended to the same buffer and included exactly once.
 
-This v1 design intentionally uses memory linear in event count and targets the existing documented envelope of roughly `10^4` events. Larger traces may still work, but bounded retention/windowing is out of scope for this version.
+Startup and backlog delivery are optimized for larger local traces:
+
+- the JSONL tailer scans newly read chunks linearly and keeps only an incomplete trailing line between polls;
+- the SSE stream delivers sanitized events in bounded `append_batch` frames while the browser remains compatible with legacy single-event `append` frames;
+- sparse live appends are sent as soon as they are observed rather than delayed to fill a batch;
+- selection pruning skips the snapshot-tree walk when no paths are selected.
+
+This v1 design still uses memory linear in event count. The expected interactive filter-replay envelope remains roughly `10^4` events because filter edits intentionally replay the retained browser buffer on the main thread. Larger traces, including traces around `8 * 10^4` schema-v1 events, should no longer hit the previous tailer/SSE startup pathologies, but bounded retention/windowing and filter-independent indexes remain out of scope for this version.
 
 ## Security and privacy posture
 
@@ -184,7 +191,7 @@ For a larger local walkthrough, use the reference trace mentioned in the feature
 PYTHONPATH=src python3 -m ai_observe.viewer --no-browser .codev/observe/20260513T165110Z-16975-8f23.jsonl
 ```
 
-Expected v1 envelope: traces around `10^4` events should replay within a few seconds on a developer laptop and remain interactive. The reference trace is about 8,800 events.
+Expected v1 envelope: traces around `10^4` events should replay filters within a few seconds on a developer laptop and remain interactive. Larger static backlogs should start substantially faster than the pre-batching implementation because tailer processing is linear and SSE callbacks are batched, but repeated filter changes on very large retained buffers can still be limited by full client-side replay. The reference trace is about 8,800 events.
 
 Manual walkthrough checklist:
 
