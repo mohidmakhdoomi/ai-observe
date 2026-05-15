@@ -1,0 +1,83 @@
+I'll start by reading the diff file and key source files in parallel to understand the full scope of changes.The files aren't at the expected paths — we're in a worktree. Let me find the actual file locations and read the key implementation files.Good. Now let me read the core implementation files and the spec/plan/review documents.Now let me read the remaining key implementation files and the diff in parallel.Now let me read the test files and the remaining key files.Now let me read the remaining test files and documentation files.Now let me read the docs and the aggregator test file, and run the test suite.All 123 tests pass. Let me now check commit history and a few remaining items.Good — no debug code, TODOs, or console.log statements in the source. Let me do a few more security and quality checks.Let me verify one more edge case — the CSS selector construction in table.js:I've completed a thorough review of all the key files. Here is my assessment:
+
+---
+
+## PR Review: [Spec 7] Configurable browser filters for the viewer
+
+### Completeness ✅
+
+All spec requirements are fully implemented across 5 well-defined phases:
+- **Filter core**: Glob compiler, factory defaults, JS/Python parity — all working
+- **Replay/persistence/port**: Event buffer replay, stable-port-only localStorage, port 7878 with fallback
+- **Filter editor**: Top-bar editor with add/edit/remove/reset/validation
+- **Item actions**: Right-click exact/subtree previews, Ctrl/Cmd multi-select, Shift-click range selection
+- **Docs & smoke**: viewer.md updated, terminology normalized, smoke tests passing
+
+All three codev artifacts present: spec, plan, review.
+
+### Code Quality ✅
+
+- **Clean architecture**: Pure helper functions exported from every JS module, enabling Node-backed tests without browser automation
+- **Security**: Zero `innerHTML`, `document.write`, or `eval` in static assets. All path/pattern rendering uses `textContent` and DOM APIs
+- **No debug artifacts**: No TODO, FIXME, console.log, or debugger statements in source
+- **Backward compatibility**: `isNoise`/`eventIsNoise` aliases maintained for existing test infrastructure
+- **Glob compiler**: Identical logic in JS (`globToRegexSource`) and Python (`glob_to_regex_source`) with parity tests enforcing lock-step
+
+### Test Coverage ✅ (123 tests, all passing)
+
+- Glob syntax unit tests (*, **, ?, anchoring, literal metachar escaping, invalid patterns)
+- JS/Python parity tests across 3 fixtures + custom filters
+- Server/CLI tests for port 7878 default, collision fallback, explicit port failure, loopback binding
+- Node-backed helper tests for all index.js pure functions (storage, editor, selection, replay)
+- Smoke tests: static asset budget (50KB), forbidden API checks, terminology checks, doc content assertions
+- Edge cases: tombstone-vs-filter precedence, exact-vs-subtree directory semantics, all-paths-match rule, malformed localStorage
+
+### Minor Observations (non-blocking)
+
+1. **Static asset budget is razor-thin**: Total is ~49,984 bytes against a 50,000 byte limit. The review correctly flags this as tech debt. Future UI additions will need to revisit the limit first.
+
+2. **CSS selector fallback in table.js:52**: When `CSS.escape` is unavailable, the fallback only escapes double-quotes. This is adequate for sanitized filesystem paths (the only data source) and used solely for `scrollIntoView` (read-only), but a more robust fallback could handle edge cases with backslashes or closing brackets. Extremely low risk.
+
+3. **Long lines in index.js**: The file is 305 lines but many lines are very dense single-statement lines. This is a browser static asset (not a bundled module), so there's no minification step, but readability for future maintainers could benefit from occasional formatting passes. Not a blocker.
+
+4. **`isNoise` internal names**: Documented as tech debt in the review. Appropriate for a v1 that maintains backward compatibility.
+
+### Spec Fidelity
+
+Every acceptance criterion from the spec is addressed:
+- Factory filters match existing behavior ✅
+- Users can add/edit/remove/reset filters ✅
+- Persistence only on `http://127.0.0.1:7878` ✅
+- Port 7878 default with ephemeral fallback ✅
+- Replay from retained buffer on filter changes ✅
+- Right-click exact/subtree + multi-select exact-path ✅
+- Tombstones win over filters ✅
+- All-paths-match event-level rule ✅
+- "Filters"/"Show filtered" terminology ✅
+
+---
+VERDICT: APPROVE
+SUMMARY: Comprehensive, well-tested implementation of configurable browser filters with solid spec compliance, clean security posture, and thorough test coverage across all 5 phases.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Replaces the viewer's hardcoded noise list with user-configurable glob Filters, adding a top-bar editor, right-click/multi-select item actions, stable-port localStorage persistence, event-buffer replay on filter changes, and a default port of 7878 with ephemeral fallback.
+
+  ## Key Changes
+  - Glob filter engine in `aggregator.js` + Python oracle parity in `_aggregator_oracle.py`
+  - Filter editor UI with add/edit/remove/reset/validation in `index.html`/`index.js`/`style.css`
+  - Right-click exact/subtree previews and Ctrl/Cmd + Shift multi-select in `treemap.js`/`table.js`
+  - Stable-origin-only `localStorage` persistence and client-side event-buffer replay in `index.js`
+  - Default port 7878 with ephemeral fallback in `__main__.py`
+  - Comprehensive `docs/viewer.md` rewrite covering all new behaviors
+  - 123 tests covering glob syntax, JS/Python parity, server/CLI, Node-backed helpers, and smoke/security
+
+  ## Test Plan
+  - `python3 -m unittest discover -s tests` — all 123 tests pass
+  - Manual: load viewer, edit/remove/reset filters, verify persistence on 7878, test right-click and multi-select flows
+  - Verify port fallback by occupying 7878 before launch
