@@ -3,14 +3,10 @@
   const nodeAggregator=(typeof module!=="undefined"&&module.exports&&(!root||!root.document))?require("./aggregator.js"):null;
   const FILTER_STORAGE_KEY="ai_observe.viewer.filters.v1";const STABLE_FILTER_ORIGIN="http://127.0.0.1:7878";
 
-  function parentPath(p){ if(!p||p==="/") return null; const parts=p.split("/").filter(Boolean); parts.pop(); return parts.length?"/"+parts.join("/"):"/"; }
+  function parentPath(p){if(!p||p==="/")return null;const parts=p.split("/").filter(Boolean);parts.pop();return parts.length?"/"+parts.join("/"):"/";}
   function breadcrumbSegments(path){ const segs=[{label:"/",path:"/"}]; const parts=(path||"/").split("/").filter(Boolean); let cur=""; for(const part of parts){ cur += "/"+part; segs.push({label:part,path:cur}); } return segs; }
-  function liveBadgeState(lastAppendAtMs, status, nowMs){
-    if(status==="shutdown") return {text:"shutdown", className:"badge red"};
-    const live = typeof lastAppendAtMs === "number" && nowMs - lastAppendAtMs < 2000;
-    return live ? {text:"live", className:"badge green"} : {text:"idle", className:"badge gray"};
-  }
-  function isInScope(currentRoot, path){ return currentRoot==="/" || path===currentRoot || path.startsWith(currentRoot+"/"); }
+  function liveBadgeState(lastAppendAtMs,status,nowMs){if(status==="shutdown")return {text:"shutdown",className:"badge red"};const live=typeof lastAppendAtMs==="number"&&nowMs-lastAppendAtMs<2000;return live?{text:"live",className:"badge green"}:{text:"idle",className:"badge gray"};}
+  function isInScope(currentRoot,path){return currentRoot==="/"||path===currentRoot||path.startsWith(currentRoot+"/");}
 
   function apiOrDefault(api){ return api || nodeAggregator || (root && root.AiObserveAggregator); }
   function factoryFilterPatterns(api){ const aggApi=apiOrDefault(api); return (aggApi&&aggApi.factoryFilterPatterns?aggApi.factoryFilterPatterns:[]).slice(); }
@@ -255,11 +251,7 @@
     closeFilterPreview();
     return true;
   }
-  function pruneSelections(tree){
-    const pruned=pruneSelectedPaths(selectedPathList(),tree);
-    state.selectedPaths=new Set(pruned);
-    if(state.selectionAnchorPath && !state.selectedPaths.has(state.selectionAnchorPath)) state.selectionAnchorPath=pruned.length?pruned[pruned.length-1]:null;
-  }
+  function pruneSelections(tree){if(state.selectedPaths.size===0){state.selectionAnchorPath=null;return;}const pruned=pruneSelectedPaths(selectedPathList(),tree);state.selectedPaths=new Set(pruned);if(state.selectionAnchorPath&&!state.selectedPaths.has(state.selectionAnchorPath))state.selectionAnchorPath=pruned.length?pruned[pruned.length-1]:null;}
   function onMultiSelect(path, info){
     const next=updateMultiSelectionState({selectedPaths:selectedPathList(),selectedPath:state.selectedPath,selectionAnchorPath:state.selectionAnchorPath},path,info||{});
     state.selectedPaths=new Set(next.selectedPaths);

@@ -194,6 +194,13 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         self.assertEqual(out["rangeState"]["selectedPaths"], ["/work/a.log", "/work/b.log", "/tmp"])
         self.assertEqual(out["rangeState"]["selectedPath"], "/tmp")
 
+    def test_runtime_prune_selections_has_empty_selection_fast_path(self):
+        index_js = (self.root / "src/ai_observe/viewer/static/index.js").read_text()
+        self.assertIn(
+            "if(state.selectedPaths.size===0){state.selectionAnchorPath=null;return;}",
+            index_js,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
