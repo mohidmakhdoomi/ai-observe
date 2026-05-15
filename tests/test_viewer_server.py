@@ -14,6 +14,7 @@ import socket as _socket
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from ai_observe.viewer import server as viewer_server
 from ai_observe.viewer.server import ViewerServer, assert_loopback
 from ai_observe.viewer import __main__ as cli
 
@@ -65,9 +66,33 @@ def _open_sse(url, timeout=2.0):
     return sock, fh
 
 
-def _read_sse_frames(fh, n, timeout=5.0):
-    """Read n SSE 'append' frames from a buffered SSE file handle."""
+def _decode_sse_frame(cur_lines):
+    evt_type = None
+    data = None
+    for raw_line in cur_lines:
+        s = raw_line.decode("utf-8", errors="replace")
+        if s.startswith("event: "):
+            evt_type = s[len("event: "):]
+        elif s.startswith("data: "):
+            data = s[len("data: "):]
+    if evt_type is None or data is None:
+        return None
+    return evt_type, json.loads(data)
+
+
+def _events_from_sse_frame(frame):
+    evt_type, payload = frame
+    if evt_type == "append":
+        return [payload]
+    if evt_type == "append_batch":
+        return list(payload)
+    return []
+
+
+def _read_sse_event_frames(fh, n, timeout=5.0):
+    """Read SSE frames until at least n append events have arrived."""
     deadline = time.monotonic() + timeout
+    raw_frames = []
     frames = []
     cur_lines = []
     while len(frames) < n and time.monotonic() < deadline:
@@ -76,19 +101,19 @@ def _read_sse_frames(fh, n, timeout=5.0):
             break
         line = line.rstrip(b"\r\n")
         if line == b"":
-            evt_type = None
-            data = None
-            for raw_line in cur_lines:
-                s = raw_line.decode("utf-8", errors="replace")
-                if s.startswith("event: "):
-                    evt_type = s[len("event: "):]
-                elif s.startswith("data: "):
-                    data = s[len("data: "):]
-            if evt_type == "append" and data is not None:
-                frames.append(json.loads(data))
+            frame = _decode_sse_frame(cur_lines)
+            if frame is not None:
+                raw_frames.append(frame)
+                frames.extend(_events_from_sse_frame(frame))
             cur_lines = []
         else:
             cur_lines.append(line)
+    return raw_frames, frames
+
+
+def _read_sse_frames(fh, n, timeout=5.0):
+    """Read n appended events from a buffered SSE file handle."""
+    _, frames = _read_sse_event_frames(fh, n, timeout=timeout)
     return frames
 
 
@@ -136,6 +161,31 @@ class ViewerServerTests(unittest.TestCase):
             self.assertEqual(live[0]["path"], "/live")
         finally:
             sock.close()
+
+    def test_sse_append_batch_replay_and_live_exactly_once_across_boundaries(self):
+        _append_events(self.path, [_make_event(path=f"/r{i}", idx=i) for i in range(5)])
+        with mock.patch.object(viewer_server, "_APPEND_BATCH_SIZE", 2):
+            srv = self._server()
+            time.sleep(0.2)
+            sock, fh = _open_sse(srv.url + "events", timeout=3.0)
+            try:
+                raw_backlog, backlog = _read_sse_event_frames(fh, 5, timeout=3.0)
+                self.assertEqual([f["path"] for f in backlog], [f"/r{i}" for i in range(5)])
+                self.assertEqual([kind for kind, _ in raw_backlog], ["append_batch", "append_batch", "append_batch"])
+                self.assertEqual([len(payload) for _, payload in raw_backlog], [2, 2, 1])
+                for f in backlog:
+                    self.assertEqual(
+                        sorted(f.keys()),
+                        sorted(["timestamp", "operation", "path", "old_path", "new_path", "result"]),
+                    )
+
+                _append_events(self.path, [_make_event(path="/live", idx=9)])
+                raw_live, live = _read_sse_event_frames(fh, 1, timeout=3.0)
+                self.assertEqual([f["path"] for f in live], ["/live"])
+                self.assertEqual([kind for kind, _ in raw_live], ["append_batch"])
+                self.assertEqual([len(payload) for _, payload in raw_live], [1])
+            finally:
+                sock.close()
 
     def test_two_concurrent_clients_each_get_full_replay(self):
         _append_events(self.path, [_make_event(path=f"/r{i}", idx=i) for i in range(2)])

@@ -103,6 +103,28 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         self.assertIn("/work/a.txt", out["hiddenPaths"])
         self.assertIn("/secret/a.txt", out["shownPaths"])
 
+    def test_append_and_append_batch_ingestion_helpers_preserve_order(self):
+        script = r"""
+        const h = require('./src/ai_observe/viewer/static/index.js');
+        const eventBuffer = [];
+        const ingested = [];
+        const agg = {ingest(ev){ ingested.push(ev.path); }};
+        const singleCount = h.ingestAppendData(JSON.stringify({path:'/one'}), eventBuffer, agg);
+        const batchCount = h.ingestAppendBatchData(JSON.stringify([{path:'/two'}, {path:'/three'}]), eventBuffer, agg);
+        const invalidBatchCount = h.ingestAppendBatchData(JSON.stringify({path:'/not-array'}), eventBuffer, agg);
+        const malformedBatchCount = h.ingestAppendBatchData('{not json', eventBuffer, agg);
+        const malformedSingleCount = h.ingestAppendData('{not json', eventBuffer, agg);
+        process.stdout.write(JSON.stringify({
+          counts: [singleCount, batchCount, invalidBatchCount, malformedBatchCount, malformedSingleCount],
+          buffered: eventBuffer.map(ev => ev.path),
+          ingested
+        }));
+        """
+        out = self._run_node(script)
+        self.assertEqual(out["counts"], [1, 2, 0, 0, 0])
+        self.assertEqual(out["buffered"], ["/one", "/two", "/three"])
+        self.assertEqual(out["ingested"], ["/one", "/two", "/three"])
+
     def test_filter_editor_helpers_validate_dedupe_and_reset(self):
         script = r"""
         const h = require('./src/ai_observe/viewer/static/index.js');

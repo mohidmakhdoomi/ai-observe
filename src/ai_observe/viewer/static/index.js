@@ -1,7 +1,7 @@
 "use strict";
 (function(root){
   const nodeAggregator = (typeof module !== "undefined" && module.exports && (!root || !root.document)) ? require("./aggregator.js") : null;
-  const FILTER_STORAGE_KEY = "ai_observe.viewer.filters.v1";
+  const FILTER_STORAGE_KEY="ai_observe.viewer.filters.v1";
   const STABLE_FILTER_ORIGIN = "http://127.0.0.1:7878";
 
   function parentPath(p){ if(!p||p==="/") return null; const parts=p.split("/").filter(Boolean); parts.pop(); return parts.length?"/"+parts.join("/"):"/"; }
@@ -137,8 +137,12 @@
   function snapshotFromEvents(events, filterPatterns, snapshotOpts, api){
     return createAggregatorFromEvents(events, filterPatterns, api).snapshot(snapshotOpts||{});
   }
+  function ing1(buf,agg,event){buf.push(event);agg.ingest(event);return 1;}
+  function ingN(buf,agg,events){if(!Array.isArray(events))return 0;for(const event of events)ing1(buf,agg,event);return events.length;}
+  function ingestAppendData(data,buf,agg){try{return ing1(buf,agg,JSON.parse(data));}catch(_err){return 0;}}
+  function ingestAppendBatchData(data,buf,agg){try{return ingN(buf,agg,JSON.parse(data));}catch(_err){return 0;}}
 
-  const helpers={parentPath:parentPath,breadcrumbSegments:breadcrumbSegments,liveBadgeState:liveBadgeState,isInScope:isInScope,FILTER_STORAGE_KEY:FILTER_STORAGE_KEY,STABLE_FILTER_ORIGIN:STABLE_FILTER_ORIGIN,isStableFilterOrigin:isStableFilterOrigin,normalizeFilterPatterns:normalizeFilterPatterns,normalizeUniqueFilterPatterns:normalizeUniqueFilterPatterns,uniquePatterns:uniquePatterns,filterEditorSummary:filterEditorSummary,addFilterPattern:addFilterPattern,updateFilterPatternAt:updateFilterPatternAt,removeFilterPatternAt:removeFilterPatternAt,resetFilterPatterns:resetFilterPatterns,subtreePatternFor:subtreePatternFor,filterPatternProposals:filterPatternProposals,exactPatternsForSelection:exactPatternsForSelection,collectTreePaths:collectTreePaths,pruneSelectedPaths:pruneSelectedPaths,togglePathSelection:togglePathSelection,selectVisibleRange:selectVisibleRange,updateMultiSelectionState:updateMultiSelectionState,readStoredFilterPatterns:readStoredFilterPatterns,writeStoredFilterPatterns:writeStoredFilterPatterns,createAggregatorFromEvents:createAggregatorFromEvents,snapshotFromEvents:snapshotFromEvents};
+  const helpers={parentPath,breadcrumbSegments,liveBadgeState,isInScope,FILTER_STORAGE_KEY,STABLE_FILTER_ORIGIN,isStableFilterOrigin,normalizeFilterPatterns,normalizeUniqueFilterPatterns,uniquePatterns,filterEditorSummary,addFilterPattern,updateFilterPatternAt,removeFilterPatternAt,resetFilterPatterns,subtreePatternFor,filterPatternProposals,exactPatternsForSelection,collectTreePaths,pruneSelectedPaths,togglePathSelection,selectVisibleRange,updateMultiSelectionState,readStoredFilterPatterns,writeStoredFilterPatterns,createAggregatorFromEvents,snapshotFromEvents,ingestAppendData,ingestAppendBatchData};
   if(typeof module!=="undefined"&&module.exports&&(!root||!root.document)){ module.exports=helpers; return; }
 
   const eventBuffer=[];
@@ -296,8 +300,9 @@
   el.filterPreviewForm.addEventListener("submit",ev=>{ ev.preventDefault(); commitFilterPreview(); });
   el.filterPreviewCancel.addEventListener("click",closeFilterPreview);
   el.up.addEventListener("click",()=>{ const p=parentPath(state.currentRoot); if(p){ state.currentRoot=p; preserveSelection(); scheduleRender(); }});
-  const es=new EventSource("/events");
-  es.addEventListener("append",ev=>{ try{ const parsed=JSON.parse(ev.data); eventBuffer.push(parsed); agg.ingest(parsed); state.lastAppendAtMs=performance.now(); scheduleRender(); }catch(_err){} });
+  const es=new EventSource("/events");function onIngested(n){if(n>0){state.lastAppendAtMs=performance.now();scheduleRender();}}
+  es.addEventListener("append",ev=>{ onIngested(ingestAppendData(ev.data,eventBuffer,agg)); });
+  es.addEventListener("append_batch",ev=>{ onIngested(ingestAppendBatchData(ev.data,eventBuffer,agg)); });
   es.addEventListener("shutdown",()=>{ state.liveStatus="shutdown"; updateBadge(); es.close(); });
   es.onerror=()=>{ if(state.liveStatus!=="shutdown") state.liveStatus="idle"; updateBadge(); };
   function updateBadge(){ const b=liveBadgeState(state.lastAppendAtMs,state.liveStatus,performance.now()); el.badge.textContent=b.text; el.badge.className=b.className; }
