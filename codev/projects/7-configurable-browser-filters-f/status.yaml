@@ -1,7 +1,7 @@
 id: '7'
 title: configurable-browser-filters-f
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase-1-filter-core
     status: complete
@@ -33,4 +33,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-15T01:13:05.898Z'
+updated_at: '2026-05-15T01:13:22.941Z'
