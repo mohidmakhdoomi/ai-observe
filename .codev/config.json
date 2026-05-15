@@ -1,6 +1,6 @@
 {
   "shell": {
-    "architect": "claude --dangerously-skip-permissions --effort xhigh",
+    "architect": "codex -config model_reasoning_effort=xhigh",
     "builder": "codex --config model_reasoning_effort=high",
     "shell": "bash"
   },
