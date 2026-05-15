@@ -1,7 +1,7 @@
 id: '9'
 title: speed-up-browser-viewer-event-
 protocol: aspir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -10,7 +10,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-15T20:26:38.061Z'
-updated_at: '2026-05-15T20:28:15.897Z'
+updated_at: '2026-05-15T20:31:44.323Z'
