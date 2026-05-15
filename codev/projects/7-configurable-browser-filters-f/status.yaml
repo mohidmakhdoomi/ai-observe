@@ -31,7 +31,7 @@ gates:
     status: pending
     requested_at: '2026-05-15T01:13:56.610Z'
 iteration: 1
-build_complete: false
+build_complete: true
 history: []
 started_at: '2026-05-14T13:24:48.351Z'
-updated_at: '2026-05-15T01:13:56.610Z'
+updated_at: '2026-05-15T01:15:41.788Z'
