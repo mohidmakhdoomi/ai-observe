@@ -1,0 +1,9 @@
+Using direct file review to verify the implementation against the spec/plan and test expectations.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The generic observer refactor is solid overall, but named-shim resolution still allows recursive wrapper chaining across different ai-observe installs.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- `resolve_real_program()` only rejects the current shim path, not other observer shims with the same program name elsewhere in `PATH` or via `AI_OBSERVE_REAL_<PROGRAM>` (`src/ai_observe/observe.py:663-698`). That violates the spec’s “without recursion” requirement for named shims and can recurse/nest tracing if another checkout’s `bin/claude`/`bin/codex`/etc. is found first.
+- The new resolver tests cover cross-directory recursion for generic mode, but not for named shims (`tests/test_observe_resolver.py:29-97`). A regression test is needed for “other directory shim before real binary” and for explicit `AI_OBSERVE_REAL_<PROGRAM>` pointing at another observer shim.

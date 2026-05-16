@@ -95,6 +95,32 @@ class NamedResolverTests(unittest.TestCase):
             with self.assertRaises(observe.ObserveError):
                 observe.resolve_real_program("claude", {"AI_OBSERVE_REAL_CLAUDE": str(shim)}, wrapper_argv0=shim)
 
+    def test_path_lookup_skips_observer_shim_in_other_directory_for_named_program(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current_shim = root / "current" / "claude"
+            other_shim = root / "other-shims" / "claude"
+            real = root / "real" / "claude"
+            write_observer_shim(current_shim, "claude")
+            write_observer_shim(other_shim, "claude")
+            write_exe(real)
+            env = {"PATH": f"{other_shim.parent}{os.pathsep}{real.parent}"}
+            self.assertEqual(
+                observe.resolve_real_program("claude", env, wrapper_argv0=current_shim),
+                real.resolve(),
+            )
+
+    def test_explicit_real_rejects_observer_shim_in_other_directory_for_named_program(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current_shim = root / "current" / "opencode"
+            other_shim = root / "other-shims" / "opencode"
+            write_observer_shim(current_shim, "opencode")
+            write_observer_shim(other_shim, "opencode")
+            env = {"AI_OBSERVE_REAL_OPENCODE": str(other_shim)}
+            with self.assertRaises(observe.ObserveError):
+                observe.resolve_real_program("opencode", env, wrapper_argv0=current_shim)
+
 
 class GenericCliResolverTests(unittest.TestCase):
     def test_parse_generic_args_requires_separator_and_command(self):

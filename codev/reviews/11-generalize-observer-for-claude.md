@@ -163,6 +163,17 @@ Updated `codev/resources/lessons-learned.md` with three generalizable lessons:
 #### Gemini
 - No concerns raised — APPROVE.
 
+### PR Review Phase (Round 1)
+
+#### Codex
+- **Concern**: Named-shim resolution rejected only the currently invoked shim path and could still select another observer shim for the same program from a different PATH directory or from `AI_OBSERVE_REAL_<PROGRAM>`.
+  - **Addressed**: `validate_real_candidate()` now uses the same content-aware observer-shim detection as generic command mode. PATH lookup skips recursive observer shims and continues to later real executables, while explicit real-env values that point at observer shims are rejected.
+- **Concern**: Resolver tests covered cross-directory recursion for generic mode but not named shims.
+  - **Addressed**: Added named-shim tests for skipping a cross-directory observer shim before a real binary and rejecting explicit `AI_OBSERVE_REAL_OPENCODE` pointing at an observer shim.
+
+#### Claude
+- No blocking concerns raised — APPROVE.
+
 ## Tests Run
 
 Focused commands run during implementation included:
@@ -186,7 +197,7 @@ Review-phase verification before PR:
 
 ```bash
 python3 -m unittest discover -s tests
-# Ran 157 tests in 15.261s — OK
+# Ran 159 tests in 15.280s — OK after PR-review resolver fix
 
 # Smoke-tested fake-tool execution through:
 # - bin/codex with legacy CODEV_OBSERVE_REAL_CODEX

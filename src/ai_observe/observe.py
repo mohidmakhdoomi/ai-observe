@@ -689,7 +689,12 @@ def resolve_real_program(program: str, env: dict[str, str], *, wrapper_argv0: Pa
             continue
         if safe_resolve(candidate) == wrapper_real:
             continue
-        return validate_real_candidate(candidate, wrapper_real, f"PATH {program}")
+        try:
+            return validate_real_candidate(candidate, wrapper_real, f"PATH {program}")
+        except ObserveError as exc:
+            if "resolves to observer shim" in str(exc):
+                continue
+            raise
 
     for name in (f"{program}.real", f"{program}.bin"):
         candidate = wrapper_real.parent / name
@@ -767,7 +772,7 @@ def same_directory_observer_shim_paths(wrapper_real: Path) -> set[Path]:
 
 def validate_real_candidate(path: Path, wrapper_real: Path, label: str) -> Path:
     path = validate_executable(path, label)
-    if path == wrapper_real:
+    if is_observer_shim(path, wrapper_real):
         raise ObserveError(f"{label} resolves to observer shim; refusing recursion: {path}", 127)
     return path
 
