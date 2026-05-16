@@ -16,6 +16,16 @@ def write_exe(path: Path) -> None:
     path.chmod(0o755)
 
 
+def write_observer_shim(path: Path, program: str = "codex") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.name == "ai-observe":
+        body = "from ai_observe.observe import main_generic\nraise SystemExit(main_generic())\n"
+    else:
+        body = f"from ai_observe.observe import main_shim\nraise SystemExit(main_shim({program!r}))\n"
+    path.write_text(f"#!/usr/bin/env python3\n{body}", encoding="utf-8")
+    path.chmod(0o755)
+
+
 class NamedResolverTests(unittest.TestCase):
     def test_named_programs_use_ai_observe_real_env(self):
         with tempfile.TemporaryDirectory() as td:
@@ -123,6 +133,32 @@ class GenericCliResolverTests(unittest.TestCase):
                 observe.resolve_command_argv(["codex", "arg"], env, wrapper_argv0=wrapper),
                 [str(real_codex.resolve()), "arg"],
             )
+
+    def test_generic_path_lookup_skips_observer_shim_in_other_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            wrapper = root / "current" / "ai-observe"
+            other_shim = root / "other-shims" / "codex"
+            real_codex = root / "real" / "codex"
+            write_observer_shim(wrapper)
+            write_observer_shim(other_shim, "codex")
+            write_exe(real_codex)
+            env = {"PATH": f"{other_shim.parent}{os.pathsep}{real_codex.parent}"}
+            self.assertEqual(
+                observe.resolve_command_argv(["codex", "arg"], env, wrapper_argv0=wrapper),
+                [str(real_codex.resolve()), "arg"],
+            )
+
+    def test_generic_rejects_path_resolved_ai_observe_shim_in_other_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            wrapper = root / "current" / "ai-observe"
+            other_wrapper = root / "other-shims" / "ai-observe"
+            write_observer_shim(wrapper)
+            write_observer_shim(other_wrapper)
+            env = {"PATH": str(other_wrapper.parent)}
+            with self.assertRaises(observe.ObserveError):
+                observe.resolve_command_argv(["ai-observe"], env, wrapper_argv0=wrapper)
 
     def test_generic_rejects_explicit_observer_shim(self):
         with tempfile.TemporaryDirectory() as td:

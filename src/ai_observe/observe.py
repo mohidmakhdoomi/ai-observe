@@ -734,12 +734,28 @@ def resolve_command_argv(command_argv: list[str], env: dict[str, str], *, wrappe
 
 def validate_non_recursive_executable(path: Path, wrapper_real: Path, label: str) -> Path:
     path = validate_executable(path, label)
-    if path in observer_shim_paths(wrapper_real):
+    if is_observer_shim(path, wrapper_real):
         raise ObserveError(f"{label} resolves to observer shim; refusing recursion: {path}", 127)
     return path
 
 
-def observer_shim_paths(wrapper_real: Path) -> set[Path]:
+def is_observer_shim(path: Path, wrapper_real: Path) -> bool:
+    path = safe_resolve(path)
+    if path in same_directory_observer_shim_paths(wrapper_real):
+        return True
+    if path.name not in OBSERVER_SHIM_NAMES:
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return (
+        "ai_observe.observe" in text
+        and ("main_shim" in text or "main_generic" in text)
+    ) or "ai_observe.codex_observe" in text
+
+
+def same_directory_observer_shim_paths(wrapper_real: Path) -> set[Path]:
     shim_dir = wrapper_real.parent
     paths = {wrapper_real}
     for name in OBSERVER_SHIM_NAMES:
