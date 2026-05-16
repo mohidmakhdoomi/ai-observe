@@ -46,12 +46,14 @@ Refactor the current Codex-specific observer into a generic command observer wit
 - **Success Criteria**:
   - Existing tests importing `from ai_observe import codex_observe` still pass or require only mechanical expectation changes caused by the generic module split.
   - `codex_observe.main(argv, env)` and `codex_observe.run(argv, env)` continue to work for the Codex shim.
-  - Existing helper functions used by tests, including log preparation, safe JSONL/trace helpers, session-id sanitization, exit-code normalization, and real Codex resolution, remain available from `ai_observe.codex_observe` or are deliberately re-exported there.
+  - Existing helper functions and classes used by tests remain available from `ai_observe.codex_observe` or are deliberately re-exported there. This includes, at minimum, `ObserveError`, `LogPaths`, `LiveTracer`, `resolve_real_codex`, `prepare_logs`, `resolve_observe_dir`, `sanitize_session_id`, `generate_session_id`, `exclusive_touch`, `verify_parent`, `safe_resolve`, `safe_write_jsonl`, `safe_append_jsonl_handle`, `safe_open_trace_read`, `validate_real_candidate`, `validate_executable`, `normalize_exit_code`, `wait_for_process`, `_live_enabled`, `_live_poll_seconds`, and `_live_join_timeout`.
   - The traced command recorded in JSONL remains the resolved real executable path plus argv.
   - `schema_version` and trace parsing behavior remain unchanged.
   - Error handling, parser-failure partial output, live parse fallback, signal forwarding, exit code preservation, and strict parse behavior match existing Codex behavior.
+  - Default observe-dir discovery remains tool-agnostic and unchanged: if no env var overrides the directory, the wrapper searches upward for `.codev` and uses `.codev/observe`.
 - **Tests**:
   - Run `python3 -m unittest tests.test_codex_observe` after the refactor.
+  - Run `python3 -m unittest tests.test_live_trace` after the refactor because it directly exercises `codex_observe.LiveTracer`, live-mode env knobs, safe file helpers, and monkeypatched module-level internals.
   - Add or adapt focused unit tests for generic environment lookup so `AI_OBSERVE_*` values override `CODEV_OBSERVE_*` aliases for shared variables.
 
 ### Phase 2: Named shims, generic CLI, and resolver coverage (`phase-2-entrypoints-resolvers`)
@@ -92,6 +94,7 @@ Refactor the current Codex-specific observer into a generic command observer wit
   - `AI_OBSERVE_DISABLE=1` bypasses tracing and execs the resolved real command for named and generic entry points.
   - Legacy `CODEV_OBSERVE_DISABLE=1` still bypasses for Codex compatibility.
   - Preferred shared variables override legacy aliases for at least observe dir, session id, quiet mode, disable, live parse, live poll/join settings, strict parse, include log writes, symlink-dir allowance, and signal grace where applicable.
+  - Live-mode compatibility remains intact for the `codex_observe` facade, including monkeypatchable `LiveTracer`, `safe_open_trace_read`, `safe_append_jsonl_handle`, `safe_write_jsonl`, `_live_enabled`, `_live_poll_seconds`, and `_live_join_timeout` behavior used by current tests.
   - Fake-strace tests verify generic command mode writes `.trace`/`.jsonl`, preserves child exit code, records the real command argv, and produces schema-compatible events.
   - At least one non-Codex shim, preferably `claude` because its usage mirrors Codex-style prompts, is exercised end-to-end with a fake real executable and fake strace.
   - Missing `strace` returns `127` before running the child command for generic and named paths.
@@ -99,6 +102,7 @@ Refactor the current Codex-specific observer into a generic command observer wit
   - Viewer tests continue to pass, confirming JSONL schema and sanitization remain compatible.
 - **Tests**:
   - Run `python3 -m unittest tests.test_codex_observe`.
+  - Run `python3 -m unittest tests.test_live_trace`.
   - Run `python3 -m unittest tests.test_observe_resolver tests.test_observe_cli`.
   - Run `python3 -m unittest discover -s tests` before completing the phase.
   - Keep the existing real-`strace` process-tree test skip behavior when `strace` is unavailable or ptrace is denied.
@@ -136,6 +140,7 @@ Refactor the current Codex-specific observer into a generic command observer wit
 - Do not add transcript/session parsing for target AI tools; the observer should remain command/process-tree based.
 - Prefer small pure helpers for environment lookup and resolver behavior so precedence and recursion rules can be tested without subprocesses.
 - Keep `ai_observe.codex_observe` as a compatibility facade; avoid forcing downstream callers to migrate immediately.
+- Treat `tests/test_live_trace.py` as part of the public compatibility surface during this refactor: it monkeypatches `codex_observe` module attributes, so adapter re-exports must still affect the code path used by in-process Codex wrapper runs or the tests must be updated in a deliberately equivalent way.
 - When both preferred and legacy env vars exist, preferred `AI_OBSERVE_*` values should win. Codex real-binary lookup must also support legacy `CODEV_OBSERVE_REAL_CODEX`.
 - Existing internal test knobs can remain undocumented, but tests need deterministic parser-failure coverage after refactor.
 - Avoid broad chmod or shell eval patterns in shims; keep launchers minimal and argv-preserving.

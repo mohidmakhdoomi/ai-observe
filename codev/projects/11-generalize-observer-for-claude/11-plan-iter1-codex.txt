@@ -1,0 +1,11 @@
+Using filesystem inspection to verify the plan against the actual project structure and current observer implementation.I’ve verified the current observer is still a single Codex-specific module with many tests reaching into its helper APIs, so the review needs to account for that compatibility surface explicitly.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong plan overall, but it misses a real compatibility surface in the current codebase: `tests/test_live_trace.py` and its direct dependence on `ai_observe.codex_observe` internals.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The plan underestimates existing compatibility requirements. In the current repo, `tests/test_live_trace.py` directly uses `codex_observe.LiveTracer`, `_live_enabled`, `_live_poll_seconds`, `_live_join_timeout`, `safe_append_jsonl_handle`, and `safe_write_jsonl`; Phase 1 only explicitly protects some helpers and Phase 3 only names `tests.test_codex_observe`, so builders could break live-trace compatibility without noticing.
+- Phase 1 success criteria should explicitly require the `ai_observe.codex_observe` facade to preserve the full test-facing API used today, not just `main/run` plus a partial helper list.
+- The test plan should explicitly include `python3 -m unittest tests.test_live_trace` during/after the refactor phases, not just `tests.test_codex_observe` and later full discovery; that suite is a primary regression target for this module split.
+- Minor: Phase 3 says shared-variable precedence should cover many aliases, but the plan only names focused env tests in Phase 1 for generic lookup. It would be better to call out live-parse-related aliases specifically because current code has dedicated behavior around them.
