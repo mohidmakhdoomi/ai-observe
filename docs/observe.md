@@ -188,7 +188,7 @@ One event per line; `schema_version` remains `1`:
 Operations:
 
 - `create`: strong creation evidence like `creat`, `O_CREAT|O_EXCL`, `mkdir*`, `mknod*`, `symlink*`, `link*` destination.
-- `modify`: positive-byte writes to known writable fd, `O_TRUNC`, `truncate*`, `ftruncate`, parsed `fallocate`.
+- `modify`: positive-byte writes/splices to known writable fd, `O_TRUNC`, `truncate*`, `ftruncate`, parsed `fallocate`.
 - `delete`: `unlink*`, `rmdir`.
 - `rename`: `rename*`; partial old/new resolution allowed.
 - `chmod`: `chmod*`, `fchmod*`.
@@ -237,7 +237,7 @@ Filesystem/parser limits:
 - Hardlink writes log only the path used by the syscall.
 - Deleted-open files may resolve as `null` if fd path is unavailable.
 - `fchdir`, inherited fds, fd reuse, and cwd races are best effort.
-- `io_uring`, `copy_file_range`, `sendfile`, and `splice` may be missed or under-attributed.
+- `io_uring`, `copy_file_range`, and `sendfile` may be missed or under-attributed. `splice` is counted when the destination is a known writable file descriptor.
 - Wrapper runs traced commands in a separate process group, forwards SIGINT/SIGTERM/SIGQUIT plus interactive terminal signals SIGWINCH/SIGTSTP/SIGCONT where available, and escalates termination after a short grace period.
 
 ## Troubleshooting

@@ -68,6 +68,21 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual(self.ops(events), ["modify", "modify"])
         self.assertEqual(events[0]["path"], "/tmp/work/file.txt")
         self.assertEqual(events[1]["path"], "/tmp/work/trunc.txt")
+        self.assertEqual(events[1]["result"], 0)
+
+    def test_splice_to_dup_writable_fd_counts_bytes(self):
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "largefile.csv", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3</tmp/work/largefile.csv>
+123 1714932000.000002 dup2(3</tmp/work/largefile.csv>, 1</tmp/work/stdout>) = 1</tmp/work/largefile.csv>
+123 1714932000.000003 close(3</tmp/work/largefile.csv>) = 0
+123 1714932000.000004 splice(0<pipe:[123]>, NULL, 1</tmp/work/largefile.csv>, NULL, 12, 0 <unfinished ...>
+123 1714932000.000005 <... splice resumed>) = 7
+123 1714932000.000006 splice(0<pipe:[123]>, NULL, 1</tmp/work/largefile.csv>, NULL, 5, 0) = 5
+""")
+        file_events = [e for e in events if e["path"] == "/tmp/work/largefile.csv"]
+        self.assertEqual(self.ops(file_events), ["modify", "modify", "modify"])
+        self.assertEqual([e["result"] for e in file_events], [0, 7, 5])
+        self.assertEqual(sum(e["result"] for e in file_events if e["result"] > 0), 12)
 
     def test_delete_rename_chmod_metadata(self):
         events = self.parse("""
