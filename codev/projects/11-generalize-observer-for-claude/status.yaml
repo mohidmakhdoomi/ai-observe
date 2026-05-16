@@ -1,0 +1,34 @@
+id: '11'
+title: generalize-observer-for-claude
+protocol: spir
+phase: verify
+plan_phases:
+  - id: phase-1-generic-core
+    status: complete
+  - id: phase-2-entrypoints-resolvers
+    status: complete
+  - id: phase-3-integration-compatibility-tests
+    status: complete
+  - id: phase-4-docs-review-regression
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-05-16T17:38:15.218Z'
+    approved_at: '2026-05-16T17:38:53.429Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-05-16T17:43:05.086Z'
+    approved_at: '2026-05-16T17:43:39.743Z'
+  pr:
+    status: approved
+    requested_at: '2026-05-16T22:10:52.758Z'
+    approved_at: '2026-05-16T22:11:40.132Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-16T17:33:32.779Z'
+updated_at: '2026-05-16T22:11:50.600Z'

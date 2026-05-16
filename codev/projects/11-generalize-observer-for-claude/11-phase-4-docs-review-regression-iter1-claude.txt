@@ -1,0 +1,43 @@
+The review notes file wasn't found at the expected path. Let me search for it and also check the working directory structure.The `docs/observe.md` file I just read appears to still be the old Codex-specific version. Let me verify the actual state of the file in the worktree.Good - the file has been updated. The earlier Read must have cached the old version. Let me re-read the actual current content.Now let me re-read the viewer.md to see the actual content:Now let me verify the executable bits on the bin files and run the test suite:All 157 tests pass and all bin files have proper executable bits. Let me do a final check on a few specific plan requirements — verifying the docs have all required content areas mentioned in the spec.Everything checks out. Let me provide my final assessment.
+
+---
+
+## Review: Phase 4 — Generic Observer Documentation and Final Regression
+
+### Spec Adherence
+
+The documentation rewrite fully meets the spec requirements:
+
+- **`docs/observe.md`** has been reframed from "Codex filesystem observer" to "ai-observe command filesystem observer" with the intro explicitly stating it's "a Linux-first filesystem mutation observer for commands launched through its wrapper."
+- **Named shim examples** cover all four tools (Codex, Claude Code, Gemini CLI, OpenCode) plus legacy Codex compatibility.
+- **Generic command mode** has its own "Quick start" section with clear examples including `AI_OBSERVE_REAL_COMMAND` usage.
+- **Environment variable table** shows preferred `AI_OBSERVE_*` names first with legacy aliases clearly marked.
+- **Security warnings** appear prominently at line 7 (before any setup) and again at line 184 (JSONL schema section), explicitly mentioning secrets in paths, argv, and raw syscall text.
+- **Limitations section** thoroughly covers Linux-only, ptrace/sandbox, process-tree scope, remote services, editor/IDE edits, TUI/daemon/container caveats, and parser fidelity limits.
+- **Troubleshooting** covers all specified scenarios including recursion, missing strace, ptrace denial, observe dir issues, parser partial output, and generic CLI usage errors.
+
+### `docs/viewer.md` Update
+
+Minimal but correct: "Codex filesystem observer" → "ai-observe command wrappers", and the live-mode example uses Claude with alternative comments for Codex and generic mode.
+
+### Review Notes (`codev/reviews/11-generalize-observer-for-claude.md`)
+
+Comprehensive: implementation summary, schema compatibility notes, consultation history, test commands and results, deferred work, and flaky test status. Well-structured and actionable for future maintainers.
+
+### Test Coverage & Regression
+
+- **157 tests pass** with no failures or unexpected skips.
+- All `bin/*` files have proper executable bits (`-rwxr-xr-x`).
+- No git-untracked debris in the docs or review paths.
+
+### Code Quality
+
+Documentation is well-organized, copy-pasteable, avoids shell interpolation hazards in examples, and uses consistent formatting throughout. The JSONL example was updated to show Claude instead of Codex, reinforcing the generic positioning.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 documentation fully generalizes the observer framing, all spec doc requirements met, 157 tests pass, review notes are thorough.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

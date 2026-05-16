@@ -1,5 +1,32 @@
 # Architecture Notes
 
+## Generic command observer
+
+The filesystem observer is a command-oriented wrapper rather than a Codex-only
+integration. `src/ai_observe/observe.py` owns the shared tracing backend:
+real-executable resolution, safe observe-directory/log creation, `strace -f`
+process-tree execution, live parsing, parser-failure handling, signal
+forwarding, and environment-variable compatibility.
+
+Key invariants:
+
+- `bin/ai-observe` is the generic checkout entry point and requires `-- command
+  [args...]`; named shims in `bin/codex`, `bin/claude`, `bin/gemini`, and
+  `bin/opencode` are thin launchers that pass a program name to the generic
+  core.
+- `src/ai_observe/codex_observe.py` remains a compatibility facade by aliasing
+  the generic module so existing imports, helper access, and monkeypatch-based
+  tests continue to exercise the real implementation.
+- Public configuration prefers `AI_OBSERVE_*`. Legacy `CODEV_OBSERVE_*` aliases
+  remain supported for the compatibility window, with preferred names taking
+  precedence where both are set.
+- Resolver logic must avoid recursive execution of observer wrappers while
+  still finding real executables via explicit env vars, PATH, or adjacent
+  `.real`/`.bin` files.
+- JSONL schema version remains `1`; the existing `command` field records the
+  resolved real executable argv passed under `strace`. Wrapper/tool metadata is
+  intentionally deferred until a deliberate schema migration.
+
 ## Browser viewer configurable filters
 
 The browser viewer keeps filtering entirely client-side. The server continues to serve sanitized JSONL events over SSE without changing the event payload contract; the browser owns the active filter list, a flat arrival-order event buffer, and the aggregator instance used for rendering.

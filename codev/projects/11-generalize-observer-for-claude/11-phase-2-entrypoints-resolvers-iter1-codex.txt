@@ -1,0 +1,9 @@
+Using direct file reads to verify the phase-2 implementation against the spec and plan.Reading the resolver and CLI portions deeper, plus verifying executable bits on new shims.Running the phase-2 unit tests to verify resolver and parsing behavior.Capturing line numbers around the resolver logic for precise review notes.One more chunk for the shim-recursion helper and tests with line numbers.Spot-checking the new generic CLI behavior directly from the new entrypoint.Reading the committed plan/spec files directly for phase scoping confirmation.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Entry points and most resolver behavior are in place, but generic recursion avoidance is too narrow and the new resolver tests miss that case.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- `src/ai_observe/observe.py:735-749` only treats shims in the invoked wrapper’s own directory as recursive targets. In generic mode, a different `ai-observe` shim install earlier in `PATH` (for example another `codex`/`ai-observe` pair in a different directory) will be accepted and recurse, which falls short of the phase-2 requirement to avoid resolving to observer shims.
+- `tests/test_observe_resolver.py:113-147` covers same-directory shim rejection, but it does not cover the broader recursive-target cases required by the phase plan/spec (for example a shim in a different `PATH` directory, or `ai-observe` itself as a PATH-resolved command).

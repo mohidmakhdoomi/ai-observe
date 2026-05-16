@@ -1,0 +1,79 @@
+Now I have a thorough understanding of the codebase. Let me provide my review.
+
+---
+
+## Plan Review: 11-generalize-observer-for-claude
+
+### 1. Spec Coverage
+
+The plan covers **all** spec requirements comprehensively:
+
+- ✅ Generic observer module extracted from Codex-specific code
+- ✅ Named shims for codex, claude, gemini, opencode
+- ✅ Generic `ai-observe` CLI with `--` separator semantics
+- ✅ Resolver priority chain with recursion avoidance
+- ✅ `AI_OBSERVE_*` preferred env vars with `CODEV_OBSERVE_*` compatibility
+- ✅ JSONL schema v1 preservation
+- ✅ `AI_OBSERVE_REAL_COMMAND` for generic mode
+- ✅ Documentation reframing
+- ✅ Security warnings preserved
+- ✅ All test scenarios from spec addressed
+
+No spec requirements are missing from the plan. No phases go beyond spec scope.
+
+### 2. Phase Breakdown
+
+The 4-phase structure is well-designed:
+
+- **Phase 1** (extract core) → **Phase 2** (entry points/resolvers) → **Phase 3** (integration tests) → **Phase 4** (docs/review)
+
+This respects dependencies correctly. Each phase is independently committable and testable. Phase sizing is appropriate — Phase 1 is the heaviest (core refactor) but not unmanageably large given the source file is ~696 lines. Phases 2-4 are progressively lighter.
+
+### 3. Technical Approach
+
+**Strengths:**
+- The plan correctly identifies that `codex_observe.py` is ~696 lines of largely generic code. The only truly Codex-specific pieces are `resolve_real_codex()` and the `CODEV_OBSERVE_*` env var reads scattered through `run()`, `prepare_logs()`, `_live_enabled()`, `_live_poll_seconds()`, and `_live_join_timeout()`.
+- Keeping `codex_observe.py` as a thin adapter is the right call — it preserves the import path `from ai_observe import codex_observe` that the test suite uses.
+- Pure-function resolver design enables testing without real CLIs.
+
+**Minor concern:**
+- The plan says Phase 1 creates `src/ai_observe/observe.py` with "parameterized real-command resolution hooks." This is slightly vague — a builder might need more guidance on whether this means a callback, a program-name parameter, or a strategy object. However, the Phase 2 success criteria clarify the resolver priority, so this is navigable.
+
+### 4. Testability
+
+Excellent test strategy:
+- Each phase has explicit `python3 -m unittest` commands
+- Fake-strace pattern from existing `test_codex_observe.py` (lines 93-132) is well-understood and directly reusable
+- Resolver tests are specified as pure-function tests (no subprocess needed)
+- Phase 3 explicitly requires regression of existing tests plus new integration coverage
+- The plan avoids requiring real AI CLIs — all testing uses fake executables
+
+### 5. Risk Assessment
+
+The plan identifies the right risks. Verified against actual code:
+
+- **Compatibility regression**: Real risk. `codex_observe.py` has 15+ `CODEV_OBSERVE_*` reads. The plan's mitigation (run existing tests each phase) is correct.
+- **Env alias precedence**: Well-mitigated by pure lookup tests. The current code has no layered env resolution, so this is new logic requiring careful testing.
+- **Recursive shim execution**: The existing `resolve_real_codex` already handles self-rejection (line 568-569). The generalization is straightforward.
+- **Signal/exit code**: The existing `wait_for_process` and signal handling (lines 127-174, 293-325) is complex. The plan correctly says "preserve existing process-management code" — don't rewrite it.
+
+### 6. Minor Observations
+
+1. **`resolve_observe_dir` searches for `.codev/`** (line 653-656). The plan doesn't explicitly mention whether this heuristic changes for non-Codex tools. Should generic mode still search for `.codev/observe`? The spec's env var table suggests `AI_OBSERVE_DIR` overrides this, but the default fallback behavior is worth a builder note. This is a minor gap.
+
+2. **The `CODEV_OBSERVE_SIGNAL_GRACE` read on line 166** is buried in a float cast inside the Popen block. The plan's env var table includes `AI_OBSERVE_SIGNAL_GRACE` but doesn't call out this specific location in the refactoring notes. Not a blocker — a competent builder will find it.
+
+3. **Cross-phase implementation notes** are excellent — especially the "don't edit status.yaml" and "don't use git add ." reminders that align with project conventions.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-structured plan that faithfully covers all spec requirements with sound technical approach and strong test strategy
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+**Minor suggestions (non-blocking):**
+- Phase 1 could briefly clarify the parameterization strategy for the generic resolver hook (callback vs. program-name string) to reduce builder ambiguity
+- Consider noting that `resolve_observe_dir`'s `.codev/` ancestor search semantics should remain unchanged for all entry points (it's tool-agnostic already), preventing a builder from accidentally making it tool-specific

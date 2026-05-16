@@ -1,0 +1,83 @@
+Now let me run the tests to verify they pass and look at a few more files:I've completed a thorough review of this PR. Let me provide my assessment.
+
+---
+
+## Review Summary
+
+### Code Quality and Correctness ✅
+
+**Architecture**: The refactoring approach is excellent — extracting the entire implementation to `observe.py` and keeping `codex_observe.py` as a 14-line `sys.modules` alias. This preserves monkeypatch compatibility for existing tests (particularly `test_live_trace.py` which patches `codex_observe.LiveTracer`) while avoiding any re-export boilerplate.
+
+**Key implementation highlights:**
+- `env_value()`/`env_flag()` properly implement preferred `AI_OBSERVE_*` over `CODEV_OBSERVE_*` precedence
+- `resolve_real_program()` correctly implements the 5-level resolver priority chain
+- `is_observer_shim()` does content-based detection for cross-directory shim avoidance (reads Python launcher text)
+- `parse_generic_args()` properly enforces `--` separator requirement
+- No shell interpolation — all command execution via argv arrays
+- Signal forwarding, exit-code preservation, and live-parse fallback logic preserved intact
+
+**Minor nit (non-blocking):** The `codex_code` variable name on line 294 of `observe.py` is still Codex-themed. This is a local variable and doesn't affect behavior, but it's a small readability inconsistency in the now-generic module.
+
+### Spec/Plan Alignment ✅
+
+All acceptance criteria from the spec are met:
+- Generic observer module exists (`observe.py`)
+- `bin/codex` continues to work with `CODEV_OBSERVE_REAL_CODEX`
+- `bin/claude`, `bin/gemini`, `bin/opencode` exist and are executable
+- `bin/ai-observe` supports arbitrary commands after `--`
+- `AI_OBSERVE_REAL_<PROGRAM>` works for all named shims
+- `AI_OBSERVE_REAL_COMMAND` works for generic mode
+- JSONL schema version remains 1
+- Docs reframed as generic, with security warnings prominent
+
+### Test Coverage ✅
+
+- **157 tests pass** (verified locally, 15.1s)
+- **New test files**: `test_observe_resolver.py` (14 tests), `test_observe_env.py` (7 tests), `test_observe_cli.py` (8 tests)
+- Coverage includes: resolver priority, cross-directory shim detection, env precedence for all shared variables, disable bypass, missing strace, `AI_OBSERVE_REAL_COMMAND` replacement, strict parse precedence
+- **Existing test suites pass unchanged**: `test_codex_observe.py`, `test_live_trace.py`, `test_viewer_*`, `test_trace_parser.py`
+- No skipped or flaky tests
+
+### Security ✅
+
+- Argv-array execution throughout (no shell interpolation)
+- Log path hardening preserved: `O_NOFOLLOW`, `O_EXCL`, symlink checks, `0700`/`0600` permissions
+- Prominent security warnings in docs (lines 7 and 184)
+- Browser viewer continues to exclude `command`, `raw_syscall`, PID from page delivery
+
+### Documentation ✅
+
+- `docs/observe.md` fully rewritten as generic command observer docs
+- Environment variable table complete with preferred/legacy names
+- Troubleshooting section covers all spec-required scenarios
+- Review document (`codev/reviews/11-generalize-observer-for-claude.md`) is comprehensive with consultation history, test results, and deferred work
+- Architecture notes updated in `codev/resources/arch.md`
+
+### Commits
+
+35 commits on branch, following `[Spec 11][Phase: ...]` format. Atomic and well-described per phase.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, well-tested generalization of ai-observe from Codex-specific to generic command observer with full backward compatibility preserved.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Generalizes ai-observe from a Codex-specific shim into a generic Linux command filesystem observer while preserving Codex compatibility. The implementation extracts a shared observer core, adds named shims for Claude Code/Gemini/OpenCode, and provides a generic `ai-observe -- command [args...]` entry point.
+
+  ## Key Changes
+  - Extract generic observer core to `src/ai_observe/observe.py` with `ai_observe.codex_observe` as a thin compatibility alias
+  - Add `bin/ai-observe` generic CLI plus named shims for `codex`, `claude`, `gemini`, and `opencode`
+  - Implement `AI_OBSERVE_*` preferred environment variables with `CODEV_OBSERVE_*` backward-compatible aliases
+  - Add resolver/env/wrapper integration tests (157 total, all passing) using fake tools and fake strace
+  - Rewrite `docs/observe.md` as generic command-observer documentation with security warnings, examples, and troubleshooting
+
+  ## Test Plan
+  - `python3 -m unittest discover -s tests` — 157 tests OK
+  - Verify executable bits on all `bin/*` files
+  - Smoke-test `bin/codex` with legacy env vars, `bin/claude` with `AI_OBSERVE_REAL_CLAUDE`, and `bin/ai-observe -- <command>`

@@ -1,0 +1,17 @@
+Using direct file reads to verify the phase-1 implementation against the spec and plan.Reading the rest of the core module plus existing test surfaces to verify compatibility, not just the new helper test.Running the phase-1 test targets the plan explicitly calls for, to verify the adapter/core split didn’t break compatibility.One more check: the actual wrapper entry point and package layout, to ensure phase-1 didn’t silently break the existing Codex path.Scanning the generic core for remaining Codex-specific strings and phase-1 compatibility-sensitive behavior.Checking whether the refactor consistently routes config through the new preferred/legacy env helper instead of leaving hidden legacy-only branches behind.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The phase-1 refactor is structurally solid and preserves the Codex compatibility surface, but the new generic core still leaks legacy Codex-specific env names in user-facing errors.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- `src/ai_observe/observe.py:100` still tells users to set `CODEV_OBSERVE_DISABLE=1` when `strace` is missing. For the new generic core, phase-1 should prefer `AI_OBSERVE_*` naming in new code paths, ideally mentioning the preferred name first (and optionally the legacy alias).
+- `src/ai_observe/observe.py:716` still raises `invalid CODEV_OBSERVE_SESSION_ID after sanitization`. This is another generic-core error that should be tool-agnostic / `AI_OBSERVE_*`-preferred rather than Codex-specific.
+
+- I verified the important phase-1 positives:
+  - `src/ai_observe/observe.py` contains the extracted generic core.
+  - `src/ai_observe/codex_observe.py` is a thin compatibility adapter via module aliasing, which preserves monkeypatch behavior for existing tests/callers.
+  - The expected compatibility helpers remain available from `ai_observe.codex_observe`.
+  - `tests/test_observe_env.py` adds focused preferred-vs-legacy env precedence coverage.
+
+- Test note: I attempted the requested unittest targets, but this sandbox has no usable temp directory, so runtime verification was blocked by environment-level `tempfile` failures rather than code failures.

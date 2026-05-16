@@ -1,0 +1,54 @@
+The `observe.py` file wasn't found at `src/ai_observe/observe.py`. Let me find it in the actual worktree location:Now let me check the existing tests and verify how they interact with the refactored code:Let me run the existing tests to verify they pass with the refactored code:Let me also verify backward-compatible imports work properly with the module aliasing approach:All 133 tests pass. Let me also quickly check the `bin/codex` entry point hasn't been broken:Everything looks solid. Let me write up my review.
+
+---
+
+## Phase 1 Review: Generic Observer Core and Compatibility Adapter
+
+### Spec Adherence ✅
+
+The implementation fulfills all phase 1 success criteria from the plan:
+
+- **Generic observer module exists** (`src/ai_observe/observe.py`) with tool-agnostic naming
+- **`codex_observe.main(argv, env)` and `codex_observe.run(argv, env)` continue to work** via the `sys.modules` aliasing trick
+- **All required exports remain available** from `ai_observe.codex_observe` (verified programmatically: `ObserveError`, `LogPaths`, `LiveTracer`, `resolve_real_codex`, `prepare_logs`, all safe file helpers, live-mode knobs, etc.)
+- **Environment alias precedence** is implemented: `AI_OBSERVE_*` wins over `CODEV_OBSERVE_*`
+- **JSONL schema unchanged** — `schema_version: 1`, `command` field unchanged
+- **Observe-dir discovery unchanged** — still searches upward for `.codev`
+- **Full test suite passes** — 133 tests, 0 failures
+
+### Code Quality ✅
+
+The refactoring approach is clean and well-chosen:
+
+1. **Module aliasing via `sys.modules[__name__] = _observe`** — elegant pattern that makes `codex_observe` a true alias of `observe`, meaning monkeypatches applied to `codex_observe.LiveTracer` (as done in `test_live_trace.py`) correctly affect the runtime code path. No re-export boilerplate needed.
+
+2. **`env_value` / `env_flag` helpers** — concise, correct, and composable. The signature `env_value(env, "DIR")` reads naturally.
+
+3. **`resolve_real_program`** is properly parameterized for future named shims while `resolve_real_codex` remains as a trivial delegation wrapper.
+
+4. **`run_shim`** cleanly parameterizes error_prefix and program name, with the Codex path (`run()`) preserving `"codex-observe"` prefix for backward compatibility.
+
+### Test Coverage ✅
+
+- **All 133 existing tests pass** without modification to test files
+- **New `test_observe_env.py`** adds 5 focused tests covering env alias precedence for: `env_value`, `env_flag`, `prepare_logs` (dir + session), live knobs (parse/poll/join), and resolver `REAL_CODEX` preferred-over-legacy
+- **Monkeypatch compatibility verified** — critical for `test_live_trace.py` which patches `codex_observe.LiveTracer`
+
+### Error Handling ✅
+
+All existing error paths preserved unchanged: parser failure partial output, live parse fallback, signal forwarding/escalation, strict parse mode, symlink rejection, and ptrace-denied warnings.
+
+### Minor Observations (Non-blocking)
+
+1. `prepare_logs` uses hardcoded `"ai-observe:"` for the group/world-accessible warning (line 670) rather than a parameterized prefix. Acceptable since `prepare_logs` is shared infrastructure and no tests check this prefix.
+2. `sanitize_session_id` error still references `"CODEV_OBSERVE_SESSION_ID"` — acceptable for backward compat during the compatibility window.
+3. Strace-not-found error suggests `"set CODEV_OBSERVE_DISABLE=1"` rather than the preferred `AI_OBSERVE_DISABLE=1`. Fine for this phase; later phases can adjust messaging.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean structural refactoring with correct module aliasing, full backward compatibility, env alias precedence, and all 133 tests passing.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

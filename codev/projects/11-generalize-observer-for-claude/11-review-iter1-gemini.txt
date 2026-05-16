@@ -1,0 +1,22 @@
+---
+VERDICT: APPROVE
+SUMMARY: The PR successfully generalizes the filesystem observer while accurately preserving Codex compatibility and introducing new named shims and generic modes.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR generalizes the filesystem mutation observer from a Codex-specific shim (`bin/codex`) into a generic Linux command observer (`bin/ai-observe`). It preserves backwards compatibility for legacy usage while introducing named shims for Claude Code, Gemini CLI, and OpenCode, and implements correct recursion-avoidance for path resolution.
+
+  ## Key Changes
+  - Extracts the generic tracing backend into `src/ai_observe/observe.py` and leaves `ai_observe.codex_observe` as a backward-compatible alias.
+  - Adds new executable named shims for `claude`, `gemini`, `opencode`, and the generic `ai-observe` entry point.
+  - Adds support for preferred `AI_OBSERVE_*` environment variables, retaining `CODEV_OBSERVE_*` as legacy aliases.
+  - Implements robust resolver logic with recursion detection (avoiding shims invoking themselves).
+  - Updates documentation to reflect generic capabilities and provides usage examples for different AI tools.
+
+  ## Test Plan
+  - Verified through 159 passing unit tests covering generic args parsing, resolver logic with cross-directory recursion detection, and strict `AI_OBSERVE_*` / `CODEV_OBSERVE_*` precedence.
+  - Smoke tests validate integration with fake binaries and fake `strace` configurations.
