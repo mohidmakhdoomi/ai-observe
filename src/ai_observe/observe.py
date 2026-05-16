@@ -19,6 +19,7 @@ from typing import Callable
 from .trace_parser import ParserFailure, TraceParser, dump_event, parse_trace_file
 
 SESSION_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+OBSERVER_SHIM_NAMES = frozenset({"ai-observe", "codex", "claude", "gemini", "opencode"})
 
 
 @dataclass
@@ -70,6 +71,62 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None) -> in
         return exc.code
 
 
+def main_shim(
+    program: str,
+    argv: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    *,
+    error_prefix: str = "ai-observe",
+) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    env = dict(os.environ if env is None else env)
+    try:
+        return run_shim(program, argv, env, wrapper_argv0=Path(sys.argv[0]), error_prefix=error_prefix)
+    except ObserveError as exc:
+        print(f"{error_prefix}: {exc}", file=sys.stderr)
+        return exc.code
+
+
+def main_generic(argv: list[str] | None = None, env: dict[str, str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    env = dict(os.environ if env is None else env)
+    try:
+        session_id, command = parse_generic_args(argv)
+        if session_id is not None:
+            env["AI_OBSERVE_SESSION_ID"] = session_id
+        return run_command(command, env, wrapper_argv0=Path(sys.argv[0]), error_prefix="ai-observe")
+    except ObserveError as exc:
+        print(f"ai-observe: {exc}", file=sys.stderr)
+        return exc.code
+
+
+def parse_generic_args(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Parse the phase-2 generic CLI form: options, ``--``, command argv."""
+    session_id: str | None = None
+    idx = 0
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg == "--":
+            command = argv[idx + 1 :]
+            if not command:
+                raise ObserveError(f"usage: {generic_usage()}", 2)
+            return session_id, command
+        if arg == "--session":
+            if idx + 1 >= len(argv):
+                raise ObserveError("--session requires a value", 2)
+            session_id = argv[idx + 1]
+            idx += 2
+            continue
+        if arg in {"-h", "--help"}:
+            raise ObserveError(generic_usage(), 0)
+        raise ObserveError(f"usage: {generic_usage()}", 2)
+    raise ObserveError(f"usage: {generic_usage()}", 2)
+
+
+def generic_usage() -> str:
+    return "ai-observe [--session SESSION] -- command [args...]"
+
+
 def run(argv: list[str], env: dict[str, str]) -> int:
     """Backward-compatible Codex shim runner."""
     return run_shim("codex", argv, env, wrapper_argv0=Path(sys.argv[0]), error_prefix="codex-observe")
@@ -85,12 +142,30 @@ def run_shim(
 ) -> int:
     """Run a named program shim under the generic observer backend.
 
-    Phase 1 only uses this for the Codex compatibility shim; later phases add
-    more entry points.
+    Named shims pass their program name here; generic command mode uses
+    ``run_command`` with an explicit requested argv.
     """
     real_command = resolve_real_program(program, env, wrapper_argv0=wrapper_argv0)
+    return run_resolved_command([str(real_command), *argv], env, error_prefix=error_prefix)
+
+
+def run_command(
+    command_argv: list[str],
+    env: dict[str, str],
+    *,
+    wrapper_argv0: Path,
+    error_prefix: str = "ai-observe",
+) -> int:
+    """Run an arbitrary requested command under the observer backend."""
+    real_argv = resolve_command_argv(command_argv, env, wrapper_argv0=wrapper_argv0)
+    return run_resolved_command(real_argv, env, error_prefix=error_prefix)
+
+
+def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_prefix: str) -> int:
+    real_command = Path(real_argv[0])
+    argv = real_argv[1:]
     if env_flag(env, "DISABLE"):
-        os.execvpe(str(real_command), [str(real_command), *argv], env)
+        os.execvpe(str(real_command), real_argv, env)
         raise AssertionError("execvpe returned")
 
     if sys.platform.startswith("linux") is False:
@@ -122,10 +197,9 @@ def run_shim(
         str(logs.trace_path),
         "-e",
         "trace=%file,%desc,%process",
-        str(real_command),
-        *argv,
+        *real_argv,
     ]
-    command = [str(real_command), *argv]
+    command = list(real_argv)
     proc = None
     interrupted: int | None = None
     forced_terminated = False
@@ -594,14 +668,17 @@ def resolve_real_program(program: str, env: dict[str, str], *, wrapper_argv0: Pa
     """
     wrapper_real = safe_resolve(wrapper_argv0)
     env_name = f"REAL_{program.upper().replace('-', '_')}"
-    explicit = env_value(env, env_name)
+    preferred_key = f"{PREFERRED_ENV_PREFIX}{env_name}"
+    legacy_key = f"{LEGACY_ENV_PREFIX}{env_name}"
+    explicit = env.get(preferred_key)
+    label = preferred_key
+    if explicit is None and program == "codex":
+        explicit = env.get(legacy_key)
+        label = legacy_key
     if explicit is not None:
         candidate = Path(explicit).expanduser()
         if not candidate.is_absolute():
             candidate = Path.cwd() / candidate
-        label = f"{PREFERRED_ENV_PREFIX}{env_name}"
-        if f"{LEGACY_ENV_PREFIX}{env_name}" in env and f"{PREFERRED_ENV_PREFIX}{env_name}" not in env:
-            label = f"{LEGACY_ENV_PREFIX}{env_name}"
         return validate_real_candidate(candidate, wrapper_real, label)
 
     for entry in env.get("PATH", os.defpath).split(os.pathsep):
@@ -619,6 +696,57 @@ def resolve_real_program(program: str, env: dict[str, str], *, wrapper_argv0: Pa
         if candidate.exists() and os.access(candidate, os.X_OK):
             return validate_real_candidate(candidate, wrapper_real, name)
     raise ObserveError(f"real {program} not found; set {PREFERRED_ENV_PREFIX}{env_name}", 127)
+
+
+def resolve_command_argv(command_argv: list[str], env: dict[str, str], *, wrapper_argv0: Path) -> list[str]:
+    if not command_argv:
+        raise ObserveError(f"usage: {generic_usage()}", 2)
+    wrapper_real = safe_resolve(wrapper_argv0)
+    forced = env.get(f"{PREFERRED_ENV_PREFIX}REAL_COMMAND")
+    if forced is not None:
+        real = Path(forced).expanduser()
+        if not real.is_absolute():
+            real = Path.cwd() / real
+        real = validate_non_recursive_executable(real, wrapper_real, f"{PREFERRED_ENV_PREFIX}REAL_COMMAND")
+        return [str(real), *command_argv[1:]]
+
+    requested = command_argv[0]
+    if "/" in requested:
+        candidate = Path(requested).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        real = validate_non_recursive_executable(candidate, wrapper_real, requested)
+        return [str(real), *command_argv[1:]]
+
+    for entry in env.get("PATH", os.defpath).split(os.pathsep):
+        if not entry:
+            continue
+        candidate = Path(entry) / requested
+        if not candidate.exists() or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            real = validate_non_recursive_executable(candidate, wrapper_real, f"PATH {requested}")
+        except ObserveError:
+            continue
+        return [str(real), *command_argv[1:]]
+    raise ObserveError(f"command not found or resolves to observer shim: {requested}", 127)
+
+
+def validate_non_recursive_executable(path: Path, wrapper_real: Path, label: str) -> Path:
+    path = validate_executable(path, label)
+    if path in observer_shim_paths(wrapper_real):
+        raise ObserveError(f"{label} resolves to observer shim; refusing recursion: {path}", 127)
+    return path
+
+
+def observer_shim_paths(wrapper_real: Path) -> set[Path]:
+    shim_dir = wrapper_real.parent
+    paths = {wrapper_real}
+    for name in OBSERVER_SHIM_NAMES:
+        candidate = shim_dir / name
+        if candidate.exists():
+            paths.add(safe_resolve(candidate))
+    return paths
 
 
 def validate_real_candidate(path: Path, wrapper_real: Path, label: str) -> Path:

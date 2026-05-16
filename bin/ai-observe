@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Drop-in Codex observer shim."""
+"""Generic ai-observe command wrapper."""
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ai_observe.observe import main_shim
+from ai_observe.observe import main_generic
 
 if __name__ == "__main__":
-    raise SystemExit(main_shim("codex", error_prefix="codex-observe"))
+    raise SystemExit(main_generic())
