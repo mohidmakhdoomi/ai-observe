@@ -97,7 +97,11 @@ def run_shim(
         raise ObserveError("Linux required for strace backend", 1)
     strace = shutil.which("strace", path=env.get("PATH"))
     if not strace:
-        raise ObserveError("strace not found; install strace or set CODEV_OBSERVE_DISABLE=1", 127)
+        raise ObserveError(
+            "strace not found; install strace or set AI_OBSERVE_DISABLE=1 "
+            "(legacy CODEV_OBSERVE_DISABLE=1)",
+            127,
+        )
 
     logs = prepare_logs(env)
     if not env_flag(env, "QUIET"):
@@ -713,7 +717,7 @@ def resolve_observe_dir(env: dict[str, str]) -> Path:
 def sanitize_session_id(value: str) -> str:
     sanitized = SESSION_SAFE_RE.sub("_", value)
     if sanitized in {"", ".", ".."}:
-        raise ObserveError("invalid CODEV_OBSERVE_SESSION_ID after sanitization", 1)
+        raise ObserveError("invalid AI_OBSERVE_SESSION_ID/CODEV_OBSERVE_SESSION_ID after sanitization", 1)
     return sanitized
 
 
