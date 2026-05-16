@@ -1,0 +1,11 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong, feasible spec, but a few command-resolution and compatibility behaviors need tighter definition before handoff.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `AI_OBSERVE_REAL_COMMAND` semantics are still ambiguous. The spec should explicitly say whether generic mode replaces only `argv[0]`, whether the token after `--` is still required, and what exact `command` field should contain in that case.
+- Generic recursion avoidance is underspecified. Named shims have a clear lookup order, but generic mode should explicitly define behavior when the requested command resolves to `ai-observe` itself, a shim in `bin/`, or another recursive wrapper path.
+- Delivery expectations for the generic entry point are too loose. “Repository checkout and/or package entry point” leaves room for incomplete implementation; the spec should require a concrete artifact such as `bin/ai-observe` in this repo, with console-script support optional.
+- Backward-compatibility scope should be made more testable. The spec says keep `CODEV_OBSERVE_*` aliases for at least one release, but it should explicitly require precedence tests for preferred-vs-legacy vars beyond Codex real-binary lookup, especially `DISABLE`, `DIR`, `SESSION_ID`, and `QUIET`.

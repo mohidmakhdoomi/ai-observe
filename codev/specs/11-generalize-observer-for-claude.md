@@ -19,7 +19,7 @@ The public positioning should become: **a generic Linux filesystem mutation obse
 ### Desired state
 
 - The core wrapper module and user docs are tool-agnostic.
-- The package exposes a generic `ai-observe` command path that can run any supported command via:
+- The repository exposes a concrete `bin/ai-observe` command path that can run any supported command via:
 
   ```bash
   ai-observe --session my-run -- command arg1 arg2
@@ -97,15 +97,16 @@ It is not universal. The first iteration must explicitly document these limits:
   - `bin/claude`
   - `bin/gemini`
   - `bin/opencode`
-- Add a generic `ai-observe` command path, available from the repository checkout and/or package entry point, that accepts a command after `--`.
+- Add a generic `bin/ai-observe` command path, available from the repository checkout, that accepts a command after `--`.
+- Generic `ai-observe` invocation without `--` and without a command must print usage/help and exit nonzero without running `strace` or a child command.
 - For named shims, resolve the real executable without recursion using this priority:
   1. `AI_OBSERVE_REAL_<PROGRAM>` if set and executable.
   2. Legacy `CODEV_OBSERVE_REAL_CODEX` for the Codex shim.
   3. First matching `<program>` in `PATH` whose resolved path is not the wrapper/shim path.
   4. Adjacent `<program>.real` or `<program>.bin` beside the shim.
   5. Exit `127` with an actionable error if no real executable is found.
-- For generic command mode, support direct commands after `--` and avoid accidentally resolving to the wrapper itself.
-- Support `AI_OBSERVE_REAL_COMMAND` for generic mode when users want to force the real executable path while preserving command arguments.
+- For generic command mode, support direct commands after `--` and avoid accidentally resolving to the wrapper itself or to one of the observer shims.
+- Support `AI_OBSERVE_REAL_COMMAND` for generic mode when users want to force the real executable path while preserving command arguments. In this mode the first token after `--` is still required and is treated as the display/requested command name; `AI_OBSERVE_REAL_COMMAND` replaces only `argv[0]` for execution and JSONL `command`, while tokens after that first command token remain arguments.
 - Prefer `AI_OBSERVE_*` environment variables in docs and new code paths.
 - Keep compatible aliases for existing `CODEV_OBSERVE_*` variables for at least one release.
 - Preserve existing observe-dir/session/log behavior, including collision suffixes, safe artifact creation, live parsing, parser-failure partial output, and signal forwarding semantics unless a deliberate compatibility note is documented.
@@ -122,7 +123,7 @@ It is not universal. The first iteration must explicitly document these limits:
 - Keep backwards-compatible import path `ai_observe.codex_observe` as a thin adapter to the generalized implementation.
 - Use error prefixes/messages that are generic (`ai-observe:`) for new code while avoiding unnecessary churn in compatibility tests where feasible.
 - Offer `AI_OBSERVE_DISABLE`, `AI_OBSERVE_DIR`, `AI_OBSERVE_SESSION_ID`, `AI_OBSERVE_STRICT_PARSE`, `AI_OBSERVE_INCLUDE_LOG_WRITES`, `AI_OBSERVE_ALLOW_SYMLINK_DIR`, `AI_OBSERVE_QUIET`, `AI_OBSERVE_LIVE_PARSE`, `AI_OBSERVE_LIVE_POLL_MS`, and `AI_OBSERVE_LIVE_JOIN_TIMEOUT` as preferred names.
-- Keep `CODEV_OBSERVE_*` aliases behaviorally equivalent during the compatibility window.
+- Keep `CODEV_OBSERVE_*` aliases behaviorally equivalent during the compatibility window, with explicit tests for preferred-vs-legacy precedence on shared variables such as disable, observe directory, session id, and quiet mode.
 - Make command resolution testable as pure functions without requiring real AI tools.
 - Keep docs examples copy-pasteable and avoid shell interpolation hazards.
 
@@ -160,6 +161,14 @@ AI_OBSERVE_REAL_COMMAND=/absolute/path/to/tool ai-observe -- tool args...
 ai-observe -- bash -lc 'echo hi > generated.txt'
 ```
 
+With `AI_OBSERVE_REAL_COMMAND=/opt/tools/tool-real` and `ai-observe -- tool args...`, the executed and recorded command is:
+
+```json
+["/opt/tools/tool-real", "args..."]
+```
+
+The `tool` token is still required so the CLI has a requested command name for usage validation and diagnostics, but the forced real executable path replaces that token for the actual traced process.
+
 ### Backwards-compatible Codex mode
 
 ```bash
@@ -194,6 +203,8 @@ Preferred `AI_OBSERVE_*` variables should map to existing semantics:
 | `AI_OBSERVE_SIGNAL_GRACE` | `CODEV_OBSERVE_SIGNAL_GRACE` | Signal escalation grace |
 
 If both preferred and legacy variables are set, the preferred `AI_OBSERVE_*` value should win. Codex real-executable lookup is the special case where both `AI_OBSERVE_REAL_CODEX` and `CODEV_OBSERVE_REAL_CODEX` should be recognized.
+
+Internal test-only controls such as parser failure injection may remain undocumented user-facing behavior, but existing tests should continue to have a deterministic way to exercise those branches.
 
 ## JSONL schema compatibility
 
@@ -299,7 +310,7 @@ Approach B: implement a generic wrapper core, preserve Codex compatibility throu
 
 ### Important
 
-- Should the package expose `ai-observe` only as `bin/ai-observe`, or also through packaging console-scripts if packaging metadata exists or is added? Acceptance requires a generic command path; packaging can be implementation-dependent.
+- Should the package also expose `ai-observe` through packaging console-scripts if packaging metadata exists or is added? Acceptance requires `bin/ai-observe`; package entry points are optional.
 - What exact deprecation timeline should apply to `CODEV_OBSERVE_*` aliases? This spec requires at least one-release compatibility but does not set a removal release.
 - Should new stderr prefixes change from `codex-observe:` to `ai-observe:` everywhere, or should compatibility tests tolerate either during transition?
 
@@ -334,11 +345,14 @@ Approach B: implement a generic wrapper core, preserve Codex compatibility throu
 - Codex resolver accepts legacy `CODEV_OBSERVE_REAL_CODEX` when preferred variable is unset.
 - Resolver rejects explicit real path if it resolves to the shim itself.
 - Resolver skips the shim path in `PATH` and finds the next executable of the same name.
+- Generic resolver rejects or skips recursive targets, including `bin/ai-observe` itself and observer-provided named shims such as `bin/codex`, unless the user explicitly points at a distinct real executable.
 - Resolver finds adjacent `<program>.real` and `<program>.bin`.
 - Generic mode runs command after `--`, preserves argv, writes logs, and records the resolved command in JSONL.
-- Generic mode with `AI_OBSERVE_REAL_COMMAND` runs that executable while preserving supplied arguments as specified by implementation docs.
+- Generic mode with `AI_OBSERVE_REAL_COMMAND` runs that executable, replaces only the command token, preserves remaining supplied arguments, and records the resulting real command argv in JSONL.
 - `AI_OBSERVE_DISABLE=1` bypasses tracing and execs the real command.
 - Legacy `CODEV_OBSERVE_DISABLE=1` still works for Codex compatibility.
+- Preferred `AI_OBSERVE_*` shared variables override legacy `CODEV_OBSERVE_*` aliases for disable, observe directory, session id, and quiet mode.
+- `bin/ai-observe` with no `--` or no command prints usage/help and exits nonzero without running `strace`.
 - Existing fake-strace process-tree tests pass for Codex and at least one non-Codex shim or generic mode.
 - Missing `strace` returns `127` before running the child command.
 - Ptrace-denied empty trace still reports an actionable warning.

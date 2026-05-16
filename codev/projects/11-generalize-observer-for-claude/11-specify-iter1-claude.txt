@@ -1,0 +1,89 @@
+Let me examine the actual codebase to verify the spec's claims about current state and assess feasibility.Now I have a solid understanding of the current codebase. Let me provide my review.
+
+---
+
+## Specification Review: 11-generalize-observer-for-claude
+
+### Overall Assessment
+
+This is an exceptionally thorough specification. The author clearly understands the existing codebase and has done careful analysis of the refactoring required. Having verified the actual source code, the spec's description of current state is accurate — the ~700-line `codex_observe.py` module is indeed tool-agnostic in its tracing logic but Codex-specific in its naming and resolver.
+
+---
+
+### 1. Completeness ✓
+
+**Strengths:**
+- Comprehensive environment variable mapping table with clear precedence rules
+- Detailed acceptance criteria (16 items, all testable)
+- Test scenarios cover resolver priority, recursion avoidance, disable bypass, legacy compat, and error cases
+- Solution approaches section provides genuine trade-off analysis
+- Non-goals are well-scoped and explicitly address things people might expect
+- External CLI compatibility context shows research into target tools
+
+**Minor gaps:**
+- The spec doesn't address what happens when `ai-observe` is invoked with no `--` separator and no named shim context. Should it print usage and exit? This is a minor UX edge case but worth a sentence.
+- No mention of whether `bin/ai-observe` should be a Python script (like `bin/codex`) or whether it could also be a console_script entry point. The "COULD" section mentions packaging, but the MUST section says "available from the repository checkout and/or package entry point" — given there's currently no `pyproject.toml` or `setup.py`, the spec should be explicit that the first iteration uses `bin/ai-observe` as a script (same pattern as `bin/codex`).
+
+### 2. Correctness ✓
+
+**Verified against codebase:**
+- The spec correctly identifies that `codex_observe.py` uses only `CODEV_OBSERVE_*` env vars (confirmed in source lines 51, 62, 88, 93, etc.)
+- The resolver logic described matches the actual `resolve_real_codex()` function (lines 540-563)
+- The JSONL schema description matches `trace_parser.py`'s `SCHEMA_VERSION = 1`
+- The existing `bin/codex` shim structure is accurately described
+- The claim that "the parser already records command metadata as the actual executable path" is confirmed by `command = [str(real_codex), *argv]` at line 83
+
+**One technical note:** The spec's generic mode example shows `AI_OBSERVE_REAL_COMMAND=/absolute/path/to/tool ai-observe -- tool args...` — the interaction between `AI_OBSERVE_REAL_COMMAND` and the command after `--` needs clearer semantics. Does `AI_OBSERVE_REAL_COMMAND` replace the resolved path of the first token after `--`, while keeping the remaining args? The spec says "force the real executable path while preserving command arguments" which is sufficient but could benefit from one explicit example showing the resulting `command` array in JSONL.
+
+### 3. Feasibility ✓
+
+**Strongly feasible.** The refactoring is straightforward:
+- Extract a generic `observe()` function that takes `program_name` (for named shims) or `command_argv` (for generic mode)
+- The resolver becomes parameterized by program name
+- `codex_observe.py` becomes a thin adapter calling the generic module
+- New shims are trivial (same pattern as existing `bin/codex`)
+
+The main complexity is the dual env-var support (`AI_OBSERVE_*` + `CODEV_OBSERVE_*`), but this is just a lookup-with-fallback pattern — no architectural risk.
+
+**No packaging metadata exists** (no `pyproject.toml`, `setup.py`, or `setup.cfg`). The spec correctly acknowledges this in the COULD section. `bin/ai-observe` as a script is the right first step.
+
+### 4. Clarity ✓
+
+A builder would have no trouble implementing from this spec. The priority lists for resolver behavior are numbered. The env-var table is explicit. The acceptance criteria are independently verifiable.
+
+### 5. Security Considerations ✓
+
+Well-handled. The spec preserves:
+- argv arrays over shell interpolation
+- Symlink protections
+- Exclusive file creation
+- Restricted permissions
+- Sensitive data warnings
+
+No new attack surface is introduced by generalization.
+
+### 6. Testing Strategy ✓
+
+The existing fake-strace test harness (verified in `test_codex_observe.py`) is well-suited for extension. The spec correctly identifies that resolver tests can be pure-function tests with fake executables — no real AI CLIs needed.
+
+---
+
+### Minor Suggestions (non-blocking)
+
+1. **Signal grace env var:** The spec lists `AI_OBSERVE_SIGNAL_GRACE` / `CODEV_OBSERVE_SIGNAL_GRACE` in the table, but the current code reads it as `CODEV_OBSERVE_SIGNAL_GRACE` at line 166 (`float(env.get("CODEV_OBSERVE_SIGNAL_GRACE", "2"))`). This is already covered by the general "prefer AI_OBSERVE_*" requirement, but worth noting it exists in current code.
+
+2. **`CODEV_OBSERVE_TEST_FAIL_AFTER`**: This internal test-only env var (line 88) isn't mentioned in the compatibility table. It's minor since it's internal, but a builder might wonder whether to generalize it too.
+
+3. **stderr prefix transition**: The open question about `codex-observe:` → `ai-observe:` is well-flagged. I'd suggest the plan resolve this by: new generic code uses `ai-observe:`, compatibility adapter preserves `codex-observe:` for `bin/codex` path. This avoids breaking existing test assertions while giving new shims the generic prefix.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally thorough spec with verified accuracy against codebase; ready for planning phase.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None critical. Minor: clarify behavior when ai-observe is invoked without -- and without shim context (usage/help exit).
+```
