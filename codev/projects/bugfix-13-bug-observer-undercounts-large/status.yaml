@@ -1,7 +1,7 @@
 id: bugfix-13
 title: bug-observer-undercounts-large
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates: {}
@@ -9,4 +9,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-16T23:19:22.422Z'
-updated_at: '2026-05-16T23:20:20.775Z'
+updated_at: '2026-05-16T23:22:59.186Z'
