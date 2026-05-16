@@ -27,6 +27,19 @@ from .tailer import JsonlTailer
 
 _HOST = "127.0.0.1"
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_APPEND_BATCH_SIZE = 512
+
+
+def _event_batches(events: List[dict], batch_size: Optional[int] = None):
+    """Yield bounded, non-empty event batches in original order."""
+    if batch_size is None:
+        batch_size = _APPEND_BATCH_SIZE
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    for start in range(0, len(events), batch_size):
+        batch = events[start : start + batch_size]
+        if batch:
+            yield batch
 
 
 class _Broadcaster:
@@ -133,7 +146,7 @@ def _build_handler(broadcaster: _Broadcaster):
             # Replay snapshot, then live tail.
             n = broadcaster.snapshot_len()
             try:
-                self._send_batch("append", broadcaster.slice(0, n))
+                self._send_append_batches(broadcaster.slice(0, n))
                 while True:
                     has_more = broadcaster.wait_for_more(n, timeout=1.0)
                     if not has_more:
@@ -142,16 +155,20 @@ def _build_handler(broadcaster: _Broadcaster):
                         return
                     new_end = broadcaster.snapshot_len()
                     if new_end > n:
-                        self._send_batch("append", broadcaster.slice(n, new_end))
+                        self._send_append_batches(broadcaster.slice(n, new_end))
                         n = new_end
             except (BrokenPipeError, ConnectionResetError):
                 return
+
+        def _send_append_batches(self, events: list) -> None:
+            for batch in _event_batches(events):
+                self._send_event("append_batch", batch)
 
         def _send_batch(self, kind: str, events: list) -> None:
             for ev in events:
                 self._send_event(kind, ev)
 
-        def _send_event(self, kind: str, payload: dict) -> None:
+        def _send_event(self, kind: str, payload) -> None:
             data = json.dumps(payload, separators=(",", ":"))
             chunk = f"event: {kind}\ndata: {data}\n\n".encode("utf-8")
             self.wfile.write(chunk)

@@ -103,6 +103,28 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         self.assertIn("/work/a.txt", out["hiddenPaths"])
         self.assertIn("/secret/a.txt", out["shownPaths"])
 
+    def test_append_and_append_batch_ingestion_helpers_preserve_order(self):
+        script = r"""
+        const h = require('./src/ai_observe/viewer/static/index.js');
+        const eventBuffer = [];
+        const ingested = [];
+        const agg = {ingest(ev){ ingested.push(ev.path); }};
+        const singleCount = h.ingestAppendData(JSON.stringify({path:'/one'}), eventBuffer, agg);
+        const batchCount = h.ingestAppendBatchData(JSON.stringify([{path:'/two'}, {path:'/three'}]), eventBuffer, agg);
+        const invalidBatchCount = h.ingestAppendBatchData(JSON.stringify({path:'/not-array'}), eventBuffer, agg);
+        const malformedBatchCount = h.ingestAppendBatchData('{not json', eventBuffer, agg);
+        const malformedSingleCount = h.ingestAppendData('{not json', eventBuffer, agg);
+        process.stdout.write(JSON.stringify({
+          counts: [singleCount, batchCount, invalidBatchCount, malformedBatchCount, malformedSingleCount],
+          buffered: eventBuffer.map(ev => ev.path),
+          ingested
+        }));
+        """
+        out = self._run_node(script)
+        self.assertEqual(out["counts"], [1, 2, 0, 0, 0])
+        self.assertEqual(out["buffered"], ["/one", "/two", "/three"])
+        self.assertEqual(out["ingested"], ["/one", "/two", "/three"])
+
     def test_filter_editor_helpers_validate_dedupe_and_reset(self):
         script = r"""
         const h = require('./src/ai_observe/viewer/static/index.js');
@@ -134,6 +156,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
     def test_item_action_helpers_build_preview_patterns_and_prune_selection(self):
         script = r"""
         const h = require('./src/ai_observe/viewer/static/index.js');
+        const throwingTree = {get path(){ throw new Error('walked empty selection tree'); }};
         const tree = {path:'/', children:[
           {path:'/work', isDir:true, children:[
             {path:'/work/a.log', isDir:false, children:[]},
@@ -145,6 +168,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
           dir: h.filterPatternProposals({path:'/work', isDir:true}),
           file: h.filterPatternProposals({path:'/work/a.log', isDir:false}),
           exact: h.exactPatternsForSelection(['/work/a.log','/work/a.log','/work/b.log']),
+          emptyPruned: h.pruneSelectedPaths([], throwingTree),
           pruned: h.pruneSelectedPaths(['/work/a.log','/missing'], tree),
           toggled: h.togglePathSelection(['/work/a.log'], '/work/a.log'),
           range: h.selectVisibleRange(['/work/a.log'], '/work/a.log', '/tmp', ['/work/a.log','/work/b.log','/tmp']),
@@ -160,6 +184,7 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         )
         self.assertEqual([p["pattern"] for p in out["file"]], ["/work/a.log"])
         self.assertEqual(out["exact"], ["/work/a.log", "/work/b.log"])
+        self.assertEqual(out["emptyPruned"], [])
         self.assertEqual(out["pruned"], ["/work/a.log"])
         self.assertEqual(out["toggled"], [])
         self.assertEqual(out["range"], ["/work/a.log", "/work/b.log", "/tmp"])
@@ -168,6 +193,13 @@ class ViewerIndexRuntimeJsTests(unittest.TestCase):
         self.assertEqual(out["onState"]["selectedPath"], "/work/a.log")
         self.assertEqual(out["rangeState"]["selectedPaths"], ["/work/a.log", "/work/b.log", "/tmp"])
         self.assertEqual(out["rangeState"]["selectedPath"], "/tmp")
+
+    def test_runtime_prune_selections_has_empty_selection_fast_path(self):
+        index_js = (self.root / "src/ai_observe/viewer/static/index.js").read_text()
+        self.assertIn(
+            "if(state.selectedPaths.size===0){state.selectionAnchorPath=null;return;}",
+            index_js,
+        )
 
 
 if __name__ == "__main__":

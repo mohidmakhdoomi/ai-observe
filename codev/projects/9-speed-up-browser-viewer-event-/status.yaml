@@ -1,0 +1,31 @@
+id: '9'
+title: speed-up-browser-viewer-event-
+protocol: aspir
+phase: verify
+plan_phases:
+  - id: phase-1-linear-tailer
+    status: complete
+  - id: phase-2-sse-browser-batching
+    status: complete
+  - id: phase-3-selection-pruning-fast-path
+    status: complete
+  - id: phase-4-docs-regression
+    status: complete
+current_plan_phase: null
+gates:
+  pr:
+    status: approved
+    requested_at: '2026-05-16T03:04:02.335Z'
+    approved_at: '2026-05-16T03:09:17.107Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-15T20:26:38.061Z'
+updated_at: '2026-05-16T03:09:26.326Z'
+pr_history:
+  - phase: review
+    pr_number: 10
+    branch: builder/aspir-9
+    created_at: '2026-05-15T21:03:42.254Z'

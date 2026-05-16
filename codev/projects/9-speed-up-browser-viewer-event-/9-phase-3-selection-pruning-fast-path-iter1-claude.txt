@@ -1,0 +1,65 @@
+I'll start by reading the key implementation files for this phase — the JavaScript source and the test file — along with any relevant existing code for context.Let me check the git state and the server file to understand what work has been done across phases and whether the phase 3 changes are present.Now let me run the phase-3-specific tests to verify they pass:All tests pass. Let me now look at the actual changed lines in `pruneSelectedPaths` and the `pruneSelections` browser function one more time to make sure the logic is complete:Wait — I need to make sure I'm reading files from the correct worktree, not the main repo. Let me verify:Good — now I can see the actual worktree code. Let me also verify the test file in the worktree:Now I have a complete picture. Let me synthesize my review.
+
+---
+
+## Review: Phase 3 — Selection-Pruning Fast Path
+
+### What was done
+
+**`pruneSelectedPaths` helper** (line 76 in worktree `index.js`): Added an early-return guard:
+```javascript
+if(!paths||paths.length===0)return [];
+```
+This short-circuits before `collectTreePaths(tree, [])` — the expensive recursive tree walk — when there are no selected paths. The downstream `paths.filter(...)` also no longer needs the `(paths||[])` null guard since the early return handles both `null` and empty.
+
+**`pruneSelections` wrapper** (line 258): Unchanged. It still calls `pruneSelectedPaths(selectedPathList(), tree)`, which now returns `[]` immediately when `state.selectedPaths` is empty, effectively skipping the tree walk.
+
+**Tests** (`test_viewer_index_js.py`): Added a `throwingTree` with a getter on `path` that throws — proving the tree is never accessed when called with an empty paths array. Both `emptyPruned` (new) and `pruned` (existing) assertions are present in the same test method.
+
+### 1. Spec Adherence
+
+✅ **Fast no-op path**: The spec says "MUST add a fast no-op path for selection pruning when no paths are selected." Achieved — `collectTreePaths` is not called when paths are empty.
+
+✅ **Existing behavior preserved**: When selections exist, the function behaves identically to before (same `allowed` set construction, same filter).
+
+✅ **Anchor cleanup preserved**: The `pruneSelections` wrapper still clears the anchor when the anchor path is no longer in the pruned set.
+
+✅ **Tests required by spec**: The spec says "MUST add or update tests for the no-selection fast path and existing selected-path behavior." Both are present.
+
+### 2. Code Quality
+
+The implementation is clean and minimal. Putting the guard in `pruneSelectedPaths` (the testable helper) rather than `pruneSelections` (the browser-only wrapper) is a reasonable choice — it protects all callers, not just the render path, and it's directly testable via Node without needing browser state.
+
+The plan says "add a no-selected-paths fast path to `pruneSelections()`" while the builder put it in `pruneSelectedPaths()` instead. This is a trivial structural deviation — the performance outcome is identical since the tree walk is avoided either way.
+
+Minor: the cosmetic reformatting in the commit (compressing whitespace on the `nodeAggregator`/`FILTER_STORAGE_KEY`/`STABLE_FILTER_ORIGIN` lines) is unnecessary noise, but harmless.
+
+### 3. Test Coverage
+
+✅ The `throwingTree` technique is clever — it provides a hard guarantee that the tree isn't walked, without relying on timing. If the fast path regressed, the test would throw rather than silently pass.
+
+✅ The existing non-empty-paths pruning test (`pruned: h.pruneSelectedPaths(['/work/a.log','/missing'], tree)`) is preserved in the same test method.
+
+✅ All 6 `test_viewer_index_js` tests pass. All 38 regression tests (aggregator, breadcrumb, table, treemap) pass.
+
+One minor gap: there's no explicit test for `pruneSelectedPaths(null, tree)` (null paths rather than empty array). The code handles it (`!paths` check), but it's only tested indirectly. This is very minor since `selectedPathList()` always returns an array.
+
+### 4. Error Handling
+
+The guard handles both `null`/`undefined` and empty arrays. No new error surfaces introduced.
+
+### 5. Plan Alignment
+
+The deliverables match the plan's phase 3 scope:
+- ✅ Fast path in selection pruning
+- ✅ Node-backed tests for no-selection behavior
+- ✅ Existing pruning tests preserved
+- ✅ No changes to filter semantics, event buffer, rendering, or SSE behavior
+
+---
+VERDICT: APPROVE
+SUMMARY: Selection-pruning fast path correctly skips tree walk when no paths are selected, with a well-designed throwingTree test proving the optimization.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

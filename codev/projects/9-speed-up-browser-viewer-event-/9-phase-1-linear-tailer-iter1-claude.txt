@@ -1,0 +1,99 @@
+I'll start by reading all the relevant files to understand the implementation.Now let me see the actual diff for the tailer to understand what changed, and check for previous iteration context:Let me check the commit history to understand the changes better:Good. Now let me run the tests to verify they pass:Hmm, only 8 tests ran but I see 10 test methods including the 2 new ones. Let me check the correct location:All 10 tests pass (including both new tests). Now let me verify the full test suite still passes:All 125 tests pass. Let me now do a careful analysis of the code change itself:Now I have a thorough understanding of the implementation. Let me deliver my review.
+
+---
+
+## Review: Phase 1 — Linear JSONL tailer chunk processing
+
+### 1. Spec Adherence ✅
+
+The implementation directly addresses the spec's core requirement: **"MUST process large startup chunks in linear time relative to bytes read plus number of lines, avoiding repeated copies of the unprocessed remainder."**
+
+The old code:
+```python
+self._buf += chunk           # O(buf + chunk) copy
+while True:
+    nl = self._buf.find(b"\n")
+    if nl < 0: break
+    line, self._buf = self._buf[:nl], self._buf[nl + 1:]   # O(remaining) per line → quadratic
+```
+
+The new code:
+```python
+data = self._buf + chunk if self._buf else chunk   # One concat (or zero if buf empty)
+start = 0
+while True:
+    nl = data.find(b"\n", start)                   # Starts search from cursor
+    if nl < 0: break
+    self._handle_line(data[start:nl])              # Slice per-line only
+    start = nl + 1
+self._buf = data[start:] if start < len(data) else b""  # One final trailing slice
+```
+
+This is textbook linear-scan-with-cursor. Total work is O(bytes + lines), not O(bytes × lines). The `if self._buf else chunk` optimization avoids a gratuitous concat when the buffer is empty (the common startup case for a large complete file). Good.
+
+The spec also requires preserving:
+- ✅ Partial trailing line buffering (still works — `data[start:]` captures it)
+- ✅ Malformed-line, non-object, unsupported-schema skipping (unchanged `_handle_line`)
+- ✅ Truncation, disappearance, inode-rotation (unchanged detection block above)
+- ✅ Shutdown warning for incomplete fragments (unchanged `stop()`)
+- ✅ Event ordering within a chunk (maintained by the cursor scan)
+
+### 2. Code Quality ✅
+
+The change is minimal (10 lines touched), surgical, and easy to reason about. The variable names (`data`, `start`) are clear. The conditional `if self._buf else chunk` is a nice touch — it avoids allocating a new bytes object for the common case where `self._buf` is empty (which is every startup read from offset 0 and every poll where the previous poll ended on a newline boundary).
+
+One minor observation: the `data[start:nl]` slice inside the loop creates a new bytes object per line, which is fine — that's inherent to how `_handle_line` decodes and parses each line. The important thing is that the *remainder* isn't being re-sliced on every iteration, and it's not.
+
+### 3. Test Coverage ✅
+
+Two new tests added, both well-designed:
+
+**`test_large_startup_chunk_processed_in_order_without_trailing_buffer`**: Writes 5,000 complete JSONL lines, calls `_poll_once()` directly (deterministic, no timing), and asserts:
+- Correct count (5,000 events)
+- First and last event ordering
+- `self._buf == b""` (no trailing fragment)
+- No warnings
+
+This is a good structural test. With the old quadratic code, 5,000 lines would do ~5,000 buffer slices each copying decreasing amounts of the remaining data. The test doesn't assert timing (correct per spec: "avoid brittle absolute time limits"), but it exercises the hot path.
+
+**`test_large_chunk_keeps_only_final_partial_line_until_completion`**: Writes 1,000 lines + a partial line, asserts:
+- 1,000 events delivered
+- Partial line retained in `self._buf`
+- Second poll completes the partial line → 1,001 total events
+- `self._buf == b""` after completion
+
+This covers the critical partial-line-across-polls edge case at scale.
+
+Both tests call `_poll_once()` directly rather than relying on the background thread, making them deterministic and CI-friendly.
+
+### 4. Error Handling ✅
+
+All existing error handling is preserved unchanged:
+- `FileNotFoundError` during `os.stat` and `open` 
+- Malformed JSON, non-object JSON, unsupported schema in `_handle_line`
+- Defensive `except Exception` around `_poll_once` in `_run`
+- Shutdown fragment warning in `stop()`
+
+### 5. Plan Alignment ✅
+
+The plan for Phase 1 specifies:
+- **Files**: `tailer.py` and `test_viewer_tailer.py` — ✅ exactly these two files were changed
+- **Objective**: Linear chunk splitting preserving trailing partial-line semantics — ✅ implemented
+- **Success Criteria**: All checked above — ✅ met
+- **Tests**: `python3 -m unittest tests.test_viewer_tailer` — ✅ all 10 tests pass
+- **No other phases' work was done** — ✅ no SSE batching, no browser changes, no selection pruning
+
+### Minor Note (not blocking)
+
+The 5,000-line test count is a reasonable middle ground — large enough to be meaningful but small enough to not slow CI. If the team wants to validate that the old code would have been noticeably worse, they could also add a structural assertion (e.g., monkeypatching to count buffer concatenations), but the plan says "Where practical, use a monkeypatch/wrapper or bench-style assertion" — this is optional and not required for Phase 1 approval.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, minimal, correct linearization of the tailer hot path with good deterministic test coverage
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

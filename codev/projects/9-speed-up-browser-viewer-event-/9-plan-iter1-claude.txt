@@ -1,0 +1,103 @@
+I'll review this plan by first verifying the actual codebase structure and files referenced in the plan.Let me verify a few more details about the existing server batch code and test patterns.Now let me check the browser-side pruneSelections and the existing test structure to confirm the plan's claims about the no-selection fast path opportunity.Good — I've confirmed `pruneSelections(lastSnap.tree)` is called on every render. Now I have everything I need for a thorough review.
+
+---
+
+## Plan Review: Spec 9 — Speed up browser viewer event processing
+
+### 1. Spec Coverage
+
+**All spec requirements are covered:**
+
+| Spec Requirement | Plan Phase |
+|---|---|
+| Linear tailer chunk processing | Phase 1 |
+| SSE batching (`append_batch`) | Phase 2 |
+| Browser batch ingestion | Phase 3 |
+| Selection pruning fast path | Phase 3 |
+| Preserve all Spec 7 semantics | Cross-phase notes |
+| Security posture preserved | Cross-phase notes |
+| Documentation & review | Phase 4 |
+| Targeted performance tests | Each phase |
+
+**No gaps found.** The spec's "Non-goals" are respected — no schema changes, no server-side filtering, no removal of `eventBuffer`, no weakening of Spec 7 behavior. The spec's open questions about batch size tuning and sparse live event delivery are acknowledged and deferred to implementation with sensible defaults.
+
+### 2. Phase Breakdown & Sequencing
+
+**The four-phase breakdown is logical and well-ordered:**
+
+- **Phase 1 → Phase 2**: Correct dependency. The tailer must produce events efficiently before batching delivery matters.
+- **Phase 2 → Phase 3**: Correct. Browser must handle `append_batch` frames that the server emits.
+- **Phase 4** as a docs/regression pass is appropriate.
+
+**Phase sizing is reasonable.** Each phase touches 1-2 implementation files plus their corresponding test files. No phase is too large to reason about or too small to justify isolation.
+
+**One observation on Phase 2's dependency on Phase 1:** The server already has `_send_batch("append", ...)` that loops over individual events (line 150-152 of `server.py`). Phase 2 could technically be implemented independently of Phase 1 since the SSE batching work is in the server/delivery layer, not the tailer. However, the declared dependency is conservative and harmless — a builder won't be blocked by it, and testing end-to-end is easier with the tailer fix already in place.
+
+### 3. Technical Approach
+
+**Phase 1 — Linear tailer:** The plan correctly identifies the quadratic behavior in `_poll_once()`:
+```python
+self._buf += chunk
+while True:
+    nl = self._buf.find(b"\n")
+    ...
+    line, self._buf = self._buf[:nl], self._buf[nl + 1:]
+```
+Each iteration slices the remainder of `self._buf`, creating a new bytes object. For an 80k-line / 409MB chunk, this is O(n²) in total bytes copied. The plan's approach — splitting complete lines in one pass and retaining only the final incomplete fragment — is the right fix. A straightforward implementation would use `bytes.split(b'\n')` or `memoryview` to avoid repeated copies.
+
+**Phase 2 — SSE batching:** The plan correctly targets the existing `_send_batch` → `_send_event` loop that flushes per event. Introducing `append_batch` as a new SSE event type carrying a JSON array with one flush per batch is sound. The plan wisely notes:
+- Empty batches should not be emitted
+- Sparse live events should not be delayed to fill a batch
+- Batch size should be bounded to avoid blocking browser `JSON.parse`
+
+The existing server architecture (snapshot watermark + slice + loop) maps cleanly to batched delivery — `broadcaster.slice(n, new_end)` already returns arrays.
+
+**Phase 3 — Browser:** The plan correctly identifies that `pruneSelections` calls `collectTreePaths` which recursively walks the entire snapshot tree on every render, even when `state.selectedPaths.size === 0`. The fast-path check is trivially correct and safe. The `append_batch` listener is straightforward — parse JSON array, loop, push to `eventBuffer`, ingest into aggregator. The existing `scheduleRender()` 250ms debounce handles coalescing.
+
+**No obvious better approaches are missed.** The plan aligns with Approach B from the spec, which is well-justified by measurements.
+
+### 4. Testability
+
+Each phase has clear, deterministic test criteria:
+
+- **Phase 1**: Large-chunk tests asserting event order and empty trailing buffer; partial-fragment tests; regression coverage for existing malformed/schema/truncation behavior. The plan wisely avoids wall-clock timing assertions.
+- **Phase 2**: SSE frame parsing for both `append` and `append_batch`; exact-once backlog/live delivery; low test-only batch size for forcing multiple batches. This is testable without timing — just parse frame sequences.
+- **Phase 3**: Node-backed pure helper tests for ingestion and pruning; regression runs against existing aggregator/breadcrumb/table/treemap tests.
+- **Phase 4**: Full suite regression pass.
+
+**The Defend step will be feasible.** All critical behaviors are structurally testable.
+
+### 5. Risk Assessment
+
+The plan identifies the right risks and mitigations:
+
+| Risk | Mitigation | Assessment |
+|---|---|---|
+| Batching changes delivery semantics | Exact-once tests | ✅ Adequate |
+| Large JSON.parse blocks browser | Bounded batch size | ✅ Adequate |
+| Sparse live latency worsens | Immediate flush for available events | ✅ Adequate |
+| Duplicate/reorder events | Pure helper tests | ✅ Adequate |
+| Partial-line regression | Existing + new tests | ✅ Adequate |
+| Pruning fast-path skips cleanup | Only applied when no selections | ✅ Adequate |
+| Flaky perf tests | Avoid strict timing in CI | ✅ Adequate |
+
+**One nuance worth noting:** The `pruneSelectedPaths` fast path in Phase 3 should check both `state.selectedPaths.size === 0` *and* `state.selectionAnchorPath === null` (or equivalently, check in `pruneSelections` before calling `pruneSelectedPaths`). The plan describes this at the `pruneSelections` level ("returns before collecting tree paths when `state.selectedPaths.size === 0`"), which is the right place, but a builder should also consider that `selectedPathList()` (which feeds into `pruneSelectedPaths`) may include `state.selectedPath` as a single selection. This is minor — the builder will see it when reading the code.
+
+### 6. Minor Observations
+
+- **Cross-phase notes are solid** — explicit about not touching `status.yaml`, not using `git add .`, keeping additive compatibility, and avoiding hard timing assertions.
+- **The plan correctly preserves the existing `_send_batch` method name** for internal use while adding `append_batch` as a new SSE event type. This avoids confusion — the builder will need to rename or distinguish the internal helper from the SSE event name. The plan could be slightly more explicit here, but it's not a blocker.
+- **Phase 3's file list mentions `tests/test_viewer_index_js.py`** for Node-backed tests, which exists. Good.
+
+---
+
+**Would a builder be able to follow this plan successfully?** Yes. The plan is specific about which files to modify, what behavior to preserve, what to test, and what to avoid. Each phase is independently committable and testable. The technical approach directly targets the measured bottlenecks with the right tools.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-sequenced plan that directly targets measured bottlenecks with sound technical approaches and deterministic test strategies.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

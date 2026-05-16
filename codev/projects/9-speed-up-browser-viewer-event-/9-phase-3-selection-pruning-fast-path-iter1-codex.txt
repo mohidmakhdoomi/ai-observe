@@ -1,0 +1,10 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3’s intended `pruneSelections()` fast path and matching coverage are not fully implemented; the current code only retains a helper-level fast path.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `src/ai_observe/viewer/static/index.js:258-261` does not add the phase-planned early return in `pruneSelections()` when `state.selectedPaths.size === 0`; it always calls `pruneSelectedPaths(selectedPathList(), tree)`. While `pruneSelectedPaths()` has its own empty-input guard at `src/ai_observe/viewer/static/index.js:76`, that is not the scoped implementation the plan called for, and it leaves Phase 3 only partially realized.
+- `tests/test_viewer_index_js.py:167-188` only verifies the helper `pruneSelectedPaths([], tree)` avoids walking the tree. It does not test `pruneSelections()`’s no-selection fast path or anchor-handling behavior at the integration point this phase targeted.
+

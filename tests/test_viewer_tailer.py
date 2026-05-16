@@ -105,6 +105,50 @@ class JsonlTailerTests(unittest.TestCase):
         self.assertEqual(evs[0]["path"], "/x")
         self.assertEqual(evs[1]["result"], 20)
 
+    def test_large_startup_chunk_processed_in_order_without_trailing_buffer(self):
+        count = 5000
+        with open(self.path, "ab") as fh:
+            for i in range(count):
+                fh.write(json.dumps(_event(path=f"/bulk/{i}", result=i)).encode("utf-8"))
+                fh.write(b"\n")
+
+        self.tailer._poll_once()
+
+        evs, warns = self.col.snapshot()
+        self.assertEqual(len(evs), count)
+        self.assertEqual(evs[0]["path"], "/bulk/0")
+        self.assertEqual(evs[-1]["path"], f"/bulk/{count - 1}")
+        self.assertEqual(evs[-1]["result"], count - 1)
+        self.assertEqual(self.tailer._buf, b"")
+        self.assertEqual(warns, [])
+
+    def test_large_chunk_keeps_only_final_partial_line_until_completion(self):
+        count = 1000
+        partial = json.dumps(_event(path="/partial", result=9999)).encode("utf-8")
+        with open(self.path, "ab") as fh:
+            for i in range(count):
+                fh.write(json.dumps(_event(path=f"/bulk/{i}", result=i)).encode("utf-8"))
+                fh.write(b"\n")
+            fh.write(partial[:-2])
+
+        self.tailer._poll_once()
+
+        evs, _ = self.col.snapshot()
+        self.assertEqual(len(evs), count)
+        self.assertEqual(evs[-1]["path"], f"/bulk/{count - 1}")
+        self.assertEqual(self.tailer._buf, partial[:-2])
+
+        with open(self.path, "ab") as fh:
+            fh.write(partial[-2:])
+            fh.write(b"\n")
+        self.tailer._poll_once()
+
+        evs, _ = self.col.snapshot()
+        self.assertEqual(len(evs), count + 1)
+        self.assertEqual(evs[-1]["path"], "/partial")
+        self.assertEqual(evs[-1]["result"], 9999)
+        self.assertEqual(self.tailer._buf, b"")
+
     def test_partial_line_buffered_then_completed(self):
         self._start()
         with open(self.path, "ab") as fh:

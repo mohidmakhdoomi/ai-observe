@@ -1,0 +1,98 @@
+I'll review this specification by first examining the actual codebase to verify the claims and assess feasibility.Let me verify a few specific claims in the spec against the actual code.Now I have a thorough understanding of the codebase. Let me finalize my review.
+
+---
+
+## Specification Review: Spec 9 — Speed up browser viewer event processing
+
+### 1. Completeness ✅
+
+**Strong points:**
+- Problem statement is grounded in specific, verifiable code paths with concrete measurements (80k events / 409MB).
+- Requirements are clearly partitioned into MUST/SHOULD/MAY with good layering.
+- Non-goals are explicit and well-reasoned — they prevent scope creep into schema changes, server-side filtering, or browser workers.
+- Open questions are honest and appropriately scoped.
+
+**Minor gaps:**
+
+- **Batch size guidance for backlog vs. live delivery**: The spec flags batch size as an open question but gives the builder no guardrails. During backlog, the server could theoretically send all 80k events in one `append_batch` SSE frame. That's a multi-MB `JSON.parse()` call on the browser side that could block the main thread. Consider adding a SHOULD constraint like: *"Backlog batches SHOULD be bounded to a maximum event count to avoid blocking browser JSON parsing."* This gives the builder enough direction without over-specifying.
+
+- **Live delivery guidance**: The second open question ("Should live events be sent immediately as single-event frames when traffic is sparse?") could be promoted to a SHOULD recommendation. The latency difference matters for the "live" badge UX — single-event `append` frames for sparse live traffic would keep the badge responsive. The spec already says "Either is acceptable" which is fine, but a stated preference would help the builder make a faster decision.
+
+### 2. Correctness ✅
+
+I verified every technical claim against the actual source:
+
+- **Quadratic buffer slicing** (tailer.py:143): Confirmed. `line, self._buf = self._buf[:nl], self._buf[nl + 1:]` in a `while True` loop creates a new bytes copy of the shrinking remainder on every line. For 80k lines in a 409MB chunk, total bytes copied ≈ `N × avg_remainder ≈ 80k × 200MB ≈ 16TB` of memory copying. The "effectively quadratic" characterization is accurate.
+
+- **Per-event flush** (server.py:154-158): Confirmed. `_send_event()` calls `self.wfile.flush()` after every single frame. The existing `_send_batch()` (server.py:150-152) just loops `_send_event`, so backlog of 80k events = 80k flushes.
+
+- **Selection pruning walks full tree unconditionally** (index.js:77-79): Confirmed. `pruneSelectedPaths` calls `collectTreePaths(tree, [])` to build a `Set` of all tree paths, even when the input `paths` array is empty. Fast no-op check is trivially correct.
+
+- **Render coalescing already exists** (index.js:283): `scheduleRender` debounces at 250ms via `setTimeout`. Renders are already coalesced. The spec's wording "batched delivery or render coalescing SHOULD produce bounded render work" is slightly misleading — renders are already bounded. What's unbounded is the 80k individual `EventSource` callbacks and `JSON.parse` calls (index.js:300). The spec implicitly addresses this via batching, but could be more precise about *what* browser work is actually reduced.
+
+- **Full buffer replay on filter change** (index.js:152): Confirmed. `rebuildAggregator()` creates a fresh aggregator and loops over every event in `eventBuffer`. This is correctly deferred to a future spec per the "Preferred strategy" section.
+
+### 3. Feasibility ✅
+
+All proposed changes are technically straightforward:
+
+| Change | Complexity | Risk |
+|--------|-----------|------|
+| Linear tailer splitting (`bytes.split(b"\n")` or index-tracking) | Low | Very low — pure refactor of internal buffering |
+| Selection pruning no-op | Trivial | None — additive guard clause |
+| SSE `append_batch` frames | Medium | Low — additive event type, existing `append` preserved |
+| Browser batch ingestion | Medium | Low — new `addEventListener("append_batch", ...)` alongside existing |
+| Reduced flush count | Low | Very low — move flush outside the per-event loop |
+
+No blockers. The cross-layer change (SSE batching) is the most complex piece, but the spec's compatibility requirements (support both `append` and `append_batch`) make it safe to introduce incrementally.
+
+### 4. Clarity ✅
+
+The spec reads well as a builder brief. Approach comparison (A/B/C) with tradeoffs is helpful. The preferred strategy section gives a clear implementation sequence.
+
+**One ambiguity**: The "Required behavior → Server delivery semantics" section says *"MAY introduce `append_batch` SSE frames"* but the "Preferred strategy" section says *"Batch server-to-browser delivery with an `append_batch` SSE event."* A builder might wonder whether batching is actually required or optional. Since the preferred strategy is clear, this is low-risk, but changing the MAY to a SHOULD in the requirements section would remove the ambiguity.
+
+### 5. Security ✅
+
+Security requirements are explicit, conservative, and consistent with existing posture:
+- Loopback binding preserved
+- SSE payloads limited to sanitized fields
+- No server-side filter persistence or path logging
+- Browser uses text APIs (no `innerHTML`)
+- Filter persistence browser-local and stable-origin-only
+
+Batch frames introduce no new attack surface — they're the same sanitized payloads in array form over the same loopback connection.
+
+### 6. Testing Strategy ✅
+
+The test strategy is sound and grounded in the existing test infrastructure:
+
+- Deterministic tailer tests for large-chunk splitting are straightforward.
+- SSE frame parsing tests via `_open_sse()` / `_read_sse_frames()` (in test_viewer_server.py) will need updates to parse `append_batch` frames — this is implied but not explicitly called out.
+- Node-based browser helper tests are the right approach for batch ingestion logic.
+- The suggestion of "monkeypatch/wrapper or bench-style assertion" for detecting quadratic behavior is creative but could be fragile. A simpler approach: assert that after processing N lines, `self._buf` was not copied N times — or just verify the implementation uses `split()` or equivalent. This is a minor test design detail, not a spec-level issue.
+
+### 7. Edge Cases
+
+Most edge cases are well-covered. A few to note:
+
+- **Empty batches**: Spec says "empty batches SHOULD NOT be emitted" ✅
+- **Single-event batches**: Not explicitly addressed but trivially correct (array of one)
+- **Browser reconnection during backlog**: Existing behavior — client reconnects, gets fresh backlog. Batching doesn't change this.
+- **Partial trailing line across batch boundary**: Already handled by tailer — trailing bytes stay buffered. Spec explicitly preserves this ✅
+
+---
+
+```
+VERDICT: APPROVE
+SUMMARY: Thorough, well-grounded performance spec; correctly identifies bottlenecks, proposes sound incremental fixes, and preserves all existing behavior
+CONFIDENCE: HIGH
+```
+
+**KEY_ISSUES: None**
+
+**Minor suggestions (non-blocking):**
+1. Add a SHOULD constraint on maximum batch size to prevent browser main-thread blocking on large `JSON.parse` during backlog
+2. Promote the `append_batch` MAY → SHOULD in the requirements section to match the preferred strategy's clear intent
+3. Clarify that the primary browser benefit of batching is reducing EventSource callback + JSON.parse overhead (renders are already coalesced via `scheduleRender`)
+4. Note that existing test helpers (`_read_sse_frames` in test_viewer_server.py) will need updates to parse the new frame type

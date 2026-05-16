@@ -134,14 +134,16 @@ class JsonlTailer:
             return
 
         self._offset += len(chunk)
-        self._buf += chunk
+        data = self._buf + chunk if self._buf else chunk
 
+        start = 0
         while True:
-            nl = self._buf.find(b"\n")
+            nl = data.find(b"\n", start)
             if nl < 0:
                 break
-            line, self._buf = self._buf[:nl], self._buf[nl + 1 :]
-            self._handle_line(line)
+            self._handle_line(data[start:nl])
+            start = nl + 1
+        self._buf = data[start:] if start < len(data) else b""
 
     def _handle_line(self, line_bytes: bytes) -> None:
         line = line_bytes.decode("utf-8", errors="replace").strip()
