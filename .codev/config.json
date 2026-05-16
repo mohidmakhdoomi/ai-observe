@@ -10,7 +10,7 @@
       "tests": { "command": "python3 -m unittest discover -s tests" }
     },
     "consultation": {
-      "models": ["codex", "claude"]
+      "models": ["gemini", "codex", "claude"]
     }
   }
 }
