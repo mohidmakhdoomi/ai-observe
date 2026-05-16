@@ -18,13 +18,14 @@ gates:
     requested_at: '2026-05-16T03:04:02.335Z'
     approved_at: '2026-05-16T03:09:17.107Z'
   verify-approval:
-    status: pending
+    status: approved
     requested_at: '2026-05-16T03:10:25.067Z'
+    approved_at: '2026-05-16T03:11:10.979Z'
 iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-15T20:26:38.061Z'
-updated_at: '2026-05-16T03:11:10.032Z'
+updated_at: '2026-05-16T03:11:10.979Z'
 pr_history:
   - phase: review
     pr_number: 10
