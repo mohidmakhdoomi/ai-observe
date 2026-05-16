@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 adds useful generic/Claude integration coverage, but the compatibility regression matrix is still incomplete against the phase plan.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- Phase 3 explicitly requires preferred-vs-legacy compatibility coverage for shared vars including strict parse, include-log-writes, symlink-dir allowance, and signal grace (`codev/plans/11-generalize-observer-for-claude.md:96-97`), but the added tests only cover session/dir/disable/live knobs plus one quiet-path check (`tests/test_observe_env.py:13-80`, `tests/test_observe_cli.py:66-198`). Those missing cases should be exercised before calling this phase complete.
+- The phase also requires Codex workflow regression coverage with both `AI_OBSERVE_REAL_CODEX` and legacy `CODEV_OBSERVE_REAL_CODEX` (`codev/plans/11-generalize-observer-for-claude.md:93`), but the end-to-end Codex subprocess tests still use only the legacy variable (`tests/test_codex_observe.py:138-240`). There is a resolver-only preferred-path test (`tests/test_observe_env.py:66-79`), but not an actual wrapper execution test for `bin/codex` with `AI_OBSERVE_REAL_CODEX`.
