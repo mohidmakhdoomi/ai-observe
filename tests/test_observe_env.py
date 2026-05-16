@@ -63,6 +63,43 @@ class ObserveEnvAliasTests(unittest.TestCase):
             "CODEV_OBSERVE_LIVE_JOIN_TIMEOUT": "600",
         }), 0.5)
 
+    def test_additional_shared_aliases_prefer_ai_observe_over_legacy(self):
+        env = {
+            "AI_OBSERVE_STRICT_PARSE": "1",
+            "CODEV_OBSERVE_STRICT_PARSE": "0",
+            "AI_OBSERVE_INCLUDE_LOG_WRITES": "1",
+            "CODEV_OBSERVE_INCLUDE_LOG_WRITES": "0",
+            "AI_OBSERVE_SIGNAL_GRACE": "0.25",
+            "CODEV_OBSERVE_SIGNAL_GRACE": "9",
+        }
+        self.assertTrue(codex_observe.env_flag(env, "STRICT_PARSE"))
+        self.assertTrue(codex_observe.env_flag(env, "INCLUDE_LOG_WRITES"))
+        self.assertEqual(codex_observe.env_value(env, "SIGNAL_GRACE"), "0.25")
+
+    def test_symlink_dir_allowance_prefers_ai_observe_over_legacy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target"
+            target.mkdir()
+            link = root / "link"
+            link.symlink_to(target, target_is_directory=True)
+
+            allowed = codex_observe.prepare_logs({
+                "AI_OBSERVE_DIR": str(link),
+                "AI_OBSERVE_ALLOW_SYMLINK_DIR": "1",
+                "CODEV_OBSERVE_ALLOW_SYMLINK_DIR": "0",
+                "AI_OBSERVE_SESSION_ID": "allowed",
+            })
+            self.assertEqual(allowed.observe_dir, target.resolve())
+
+            with self.assertRaises(codex_observe.ObserveError):
+                codex_observe.prepare_logs({
+                    "AI_OBSERVE_DIR": str(link),
+                    "AI_OBSERVE_ALLOW_SYMLINK_DIR": "0",
+                    "CODEV_OBSERVE_ALLOW_SYMLINK_DIR": "1",
+                    "AI_OBSERVE_SESSION_ID": "blocked",
+                })
+
     def test_resolve_real_codex_prefers_ai_real_over_legacy(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

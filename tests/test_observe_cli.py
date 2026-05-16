@@ -135,6 +135,45 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             events = [json.loads(line) for line in (root / "obs" / "claude-run.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertEqual(events[0]["command"], [str(real.resolve()), "-p", "hello"])
 
+    def test_codex_shim_runs_with_preferred_ai_real_codex(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.make_fake_strace(root)
+            real = self.make_fake_tool(root / "real-codex")
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_REAL_CODEX": str(real),
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "codex-ai",
+                "AI_OBSERVE_QUIET": "1",
+            })
+            proc = self.run_bin("codex", env, "hello")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual((root / "obs" / "codex-ai.jsonl").read_text(encoding="utf-8"), "")
+
+    def test_strict_parse_prefers_ai_observe_over_legacy_in_wrapper(self):
+        trace = '123 1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.make_fake_strace(root)
+            real = self.make_fake_tool(root / "real-tool")
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "strict",
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "AI_OBSERVE_TEST_FAIL_AFTER": "1",
+                "AI_OBSERVE_STRICT_PARSE": "1",
+                "CODEV_OBSERVE_STRICT_PARSE": "0",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(real))
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertTrue((root / "obs" / "strict.jsonl.partial").exists())
+
     def test_ai_observe_disable_bypasses_named_and_generic_without_strace(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
