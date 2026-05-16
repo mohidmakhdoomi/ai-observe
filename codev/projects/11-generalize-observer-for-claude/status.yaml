@@ -27,6 +27,18 @@ gates:
     status: pending
 iteration: 1
 build_complete: true
-history: []
+history:
+  - iteration: 1
+    plan_phase: phase-1-generic-core
+    build_output: ''
+    reviews:
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-1-generic-core-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-1-generic-core-iter1-claude.txt
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-16T17:46:47.830Z'
+updated_at: '2026-05-16T17:51:02.869Z'
