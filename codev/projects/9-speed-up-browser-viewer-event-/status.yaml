@@ -1,7 +1,7 @@
 id: '9'
 title: speed-up-browser-viewer-event-
 protocol: aspir
-phase: verify
+phase: verified
 plan_phases:
   - id: phase-1-linear-tailer
     status: complete
@@ -25,7 +25,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-15T20:26:38.061Z'
-updated_at: '2026-05-16T03:11:10.979Z'
+updated_at: '2026-05-16T03:11:12.009Z'
 pr_history:
   - phase: review
     pr_number: 10
