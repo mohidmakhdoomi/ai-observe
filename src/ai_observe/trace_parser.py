@@ -235,6 +235,21 @@ class TraceParser:
                 if name == "creat" or flags_writable(flags):
                     state.writable_fds.add(result_value)
             return
+        if name in {"dup", "dup2", "dup3"} and result_value is not None and result_value >= 0 and args:
+            old_fd = fd_number(args[0])
+            if old_fd is None:
+                return
+            new_fd = result_value
+            path = result_path or state.fds.get(old_fd) or fd_path_annotation(args[0])
+            if path:
+                state.fds[new_fd] = path
+            else:
+                state.fds.pop(new_fd, None)
+            if old_fd in state.writable_fds:
+                state.writable_fds.add(new_fd)
+            else:
+                state.writable_fds.discard(new_fd)
+            return
         if name == "close" and args:
             fd = fd_number(args[0])
             if fd is not None:
@@ -277,6 +292,15 @@ class TraceParser:
                 return None
             op = "modify"
             path = state.fds.get(fd) or fd_path_annotation(args[0])
+        elif name == "splice":
+            if result_value is None or result_value <= 0 or len(args) < 3:
+                return None
+            fd = fd_number(args[2])
+            state = self._state(pid)
+            if fd is None or fd not in state.writable_fds:
+                return None
+            op = "modify"
+            path = state.fds.get(fd) or fd_path_annotation(args[2])
         elif name in {"truncate", "truncate64"}:
             op = "modify"
             path = self._path_from_arg(pid, args[0]) if args else None
@@ -331,7 +355,11 @@ class TraceParser:
 
         if op is None:
             return None
-        return self._make_event(pid, ts, op, path, old_path, new_path, raw_syscall, result_value if result_value is not None else result_text)
+        event_result: Any = result_value if result_value is not None else result_text
+        if name in {"open", "openat", "openat2"} and op == "modify":
+            # An O_TRUNC open reports the returned file descriptor, not bytes.
+            event_result = 0
+        return self._make_event(pid, ts, op, path, old_path, new_path, raw_syscall, event_result)
 
     def _make_event(
         self,
