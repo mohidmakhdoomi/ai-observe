@@ -23,6 +23,7 @@ gates:
     approved_at: '2026-05-16T17:43:39.743Z'
   pr:
     status: pending
+    requested_at: '2026-05-16T22:10:52.758Z'
   verify-approval:
     status: pending
 iteration: 1
@@ -65,4 +66,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-3-integration-compatibility-tests-iter1-claude.txt
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-16T22:05:28.288Z'
+updated_at: '2026-05-16T22:10:52.758Z'
