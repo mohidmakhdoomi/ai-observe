@@ -26,10 +26,11 @@ gates:
     requested_at: '2026-05-16T22:10:52.758Z'
     approved_at: '2026-05-16T22:11:40.132Z'
   verify-approval:
-    status: pending
+    status: approved
     requested_at: '2026-05-16T22:12:38.515Z'
+    approved_at: '2026-05-16T22:13:43.993Z'
 iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-16T22:13:43.007Z'
+updated_at: '2026-05-16T22:13:43.993Z'
