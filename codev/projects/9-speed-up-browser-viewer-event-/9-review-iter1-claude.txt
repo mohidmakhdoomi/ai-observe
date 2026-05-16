@@ -1,0 +1,124 @@
+I'll start by reading the diff file and key project files in parallel to understand the full scope of changes.Now let me read the actual implementation files and tests:Now let me read the test files and the remaining diff content:Let me check the remaining changed files and run the tests:Let me check the diff for the actual code changes (the remaining part of the diff I haven't read):Let me read the actual source code diffs from the diff file to see the precise changes:Now let me see the index.js and server.py changes in the diff:I now have a thorough understanding of the entire PR. Let me compile my review.
+
+---
+
+## PR #10 Review: [Spec 9] Speed up browser viewer event processing
+
+### Overview
+
+This PR implements performance improvements for the `ai_observe.viewer` targeting large JSONL backlogs (~80k events / 409MB). It was executed through a well-structured 4-phase ASPIR protocol: linear tailer, SSE+browser batching, selection pruning fast path, and documentation/regression.
+
+### 1. Code Quality and Correctness ✅
+
+**Tailer (tailer.py):** The core fix is clean and correct. The old quadratic `while True: line, self._buf = self._buf[:nl], self._buf[nl+1:]` loop is replaced by a linear index-cursor scan:
+```python
+data = self._buf + chunk if self._buf else chunk
+start = 0
+while True:
+    nl = data.find(b"\n", start)
+    if nl < 0: break
+    self._handle_line(data[start:nl])
+    start = nl + 1
+self._buf = data[start:] if start < len(data) else b""
+```
+The `if self._buf else chunk` optimization avoids a gratuitous concat when the buffer is empty — the common case on startup. Total work is O(bytes + lines). Partial trailing line behavior, error handling, and all rotation/truncation paths are unchanged.
+
+**Server (server.py):** `_event_batches()` is a clean module-scope generator with input validation (`batch_size > 0`). `_send_append_batches()` routes through it into `append_batch` SSE frames. The broadcaster watermark model is unchanged — batching is purely a delivery optimization.
+
+**Browser (index.js):** The `ing1`/`ingN`/`ingestAppendData`/`ingestAppendBatchData` helpers are well-factored, testable, and exported for Node. `ingN` guards with `Array.isArray`. Both frame listeners share `onIngested(n)` which only updates timestamp/schedules render when events were actually ingested. The `pruneSelections` fast path correctly clears `selectionAnchorPath` on empty selection.
+
+**Minor issues (non-blocking):**
+- `_send_batch()` (server.py:167-169) is dead code — the server exclusively uses `_send_append_batches()`. The review document acknowledges this as a follow-up.
+- `_send_event` lost its `payload: dict` type hint (now accepts both `dict` and `list`). A `Union[dict, list]` annotation would be clearer.
+- Some cosmetic minification in index.js (e.g., collapsing `liveBadgeState`, `parentPath`, `isInScope` onto fewer lines) creates unnecessary diff noise. This was done to stay under a 50KB smoke-test budget, which is documented in the review.
+
+### 2. Alignment with Spec/Plan ✅
+
+Every spec requirement is addressed:
+
+| Spec Requirement | Implementation |
+|---|---|
+| Linear tailer processing | Index-cursor scan in `_poll_once()` |
+| SSE batching (`append_batch`) | `_event_batches()` generator, `_APPEND_BATCH_SIZE=512` |
+| Browser batch+legacy support | `append` + `append_batch` listeners with shared helpers |
+| No-selection pruning fast path | Guard in both `pruneSelections()` and `pruneSelectedPaths()` |
+| Preserve Spec 7 filter semantics | Unchanged — filter replay, localStorage, tombstone behavior all intact |
+| Security posture | Loopback-only, sanitized fields only, text APIs, no new endpoints |
+| Documentation | `docs/viewer.md` updated, `codev/reviews/9-*.md` complete |
+
+The plan called for the fast path in `pruneSelections()` — the implementation puts it in both `pruneSelections()` and the helper `pruneSelectedPaths()`. This is a sensible defensive deviation documented in the review.
+
+### 3. Test Coverage and Quality ✅
+
+**128 tests pass, 0 failures, 0 skips.**
+
+New tests are well-designed:
+- **Tailer**: `test_large_startup_chunk_processed_in_order_without_trailing_buffer` (5000 lines, deterministic `_poll_once()` call), `test_large_chunk_keeps_only_final_partial_line_until_completion` (1000 lines + partial fragment)
+- **Server**: `test_sse_append_batch_replay_and_live_exactly_once_across_boundaries` patches `_APPEND_BATCH_SIZE=2` to force boundary crossings, verifies batch sizes [2,2,1], sanitized fields, and live event delivery
+- **Browser JS**: `test_append_and_append_batch_ingestion_helpers_preserve_order` covers single, batch, invalid batch, malformed JSON for both frame types. `throwingTree` technique proves empty-selection pruning doesn't walk the tree. `test_runtime_prune_selections_has_empty_selection_fast_path` verifies the runtime guard via source inspection.
+
+All existing tests (malformed JSON, schema mismatch, truncation, inode replacement, shutdown, concurrent clients, empty JSONL, etc.) are preserved and passing.
+
+### 4. Edge Cases and Error Handling ✅
+
+- Empty batches: `_event_batches` generator yields nothing for empty input — no empty frames emitted
+- Malformed JSON: Browser `try/catch` returns 0 for both single and batch frames
+- Non-array batch payloads: `Array.isArray` guard returns 0
+- `BrokenPipeError`/`ConnectionResetError`: caught in `_serve_events`
+- Tailer file disappearance, truncation, inode rotation: all unchanged and covered by existing tests
+- Partial trailing line across poll boundaries: covered by new and existing tests
+- `batch_size <= 0`: raises `ValueError`
+
+### 5. Documentation ✅
+
+- `docs/viewer.md`: "Replay and memory envelope" section updated with the performance strategy and nuanced envelope guidance (`10^4` for filter replay, `8×10^4` for startup)
+- `codev/reviews/9-*.md`: Comprehensive 141-line document covering strategy, compliance, tests, consultation feedback, deviations, technical debt, and follow-up items
+- `codev/resources/arch.md`: New "Browser viewer large-backlog delivery" section
+- `codev/resources/lessons-learned.md`: Two relevant general lessons added
+
+### 6. Security ✅
+
+- Server still binds only to `127.0.0.1`
+- No new endpoints
+- `append_batch` payloads contain only sanitized fields (tested)
+- No `innerHTML` or dynamic HTML — text APIs only
+- No server-side filter/path persistence or logging
+- Filter localStorage persistence unchanged (stable origin only)
+
+### 7. Commit History
+
+Clean, well-structured commits following the `[Spec 9][Phase: X]` format. Each phase is atomic with consultation review artifacts.
+
+---
+
+**Minor observations (all non-blocking):**
+
+1. **Dead code**: `_send_batch()` in server.py is never called. Acknowledged in review as follow-up item.
+2. **Type annotation**: `_send_event` payload parameter lost its type hint.
+3. **Minification noise**: Some index.js lines were cosmetically compressed to stay under 50KB budget. This makes future diffs slightly harder to read but is documented.
+4. **`test_runtime_prune_selections_has_empty_selection_fast_path`** uses source-level string matching rather than behavioral testing. This is fragile to formatting changes but is documented as a pragmatic choice since the runtime function can't be directly invoked from Node.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Well-executed performance PR with correct algorithmic fixes, thorough cross-layer test coverage, and clean spec compliance — ready to merge
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES: None
+
+PR_SUMMARY: |
+  ## Summary
+  Speed up browser viewer event processing for large JSONL backlogs (~80k events) while preserving Spec 7 client-side filter semantics and loopback-only sanitized serving. Addresses quadratic tailer behavior, excessive per-event SSE flushes, and unnecessary tree walks on empty selections.
+
+  ## Key Changes
+  - Make `JsonlTailer` chunk processing linear (index-cursor scan replacing repeated buffer slicing)
+  - Add bounded `append_batch` SSE delivery (512 events/batch) with browser compatibility for both `append` and `append_batch` frames
+  - Add no-selection fast path for selection pruning
+  - Document performance strategy, remaining client-side replay envelope, and architecture notes
+
+  ## Test Plan
+  - `python3 -m unittest discover -s tests` — 128 tests pass, 0 failures, 0 skips
+  - New tailer tests cover 5000-line chunks and partial-line completion across polls
+  - New server test forces batch boundary crossings with patched batch size of 2
+  - New browser tests cover single/batch ingestion, malformed payloads, and throwing-tree pruning verification
