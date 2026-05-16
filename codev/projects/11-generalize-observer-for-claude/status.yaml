@@ -4,14 +4,14 @@ protocol: spir
 phase: implement
 plan_phases:
   - id: phase-1-generic-core
-    status: in_progress
+    status: complete
   - id: phase-2-entrypoints-resolvers
-    status: pending
+    status: in_progress
   - id: phase-3-integration-compatibility-tests
     status: pending
   - id: phase-4-docs-review-regression
     status: pending
-current_plan_phase: phase-1-generic-core
+current_plan_phase: phase-2-entrypoints-resolvers
 gates:
   spec-approval:
     status: approved
@@ -26,7 +26,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-generic-core
@@ -41,4 +41,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-1-generic-core-iter1-claude.txt
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-16T17:51:02.869Z'
+updated_at: '2026-05-16T17:51:03.817Z'
