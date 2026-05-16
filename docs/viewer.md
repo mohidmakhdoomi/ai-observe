@@ -1,6 +1,6 @@
 # Browser viewer for observer JSONL
 
-`ai_observe.viewer` is a local, browser-based visualizer for the filesystem-event `.jsonl` streams produced by the Codex filesystem observer. It is modeled on WinDirStat / TreeSize: a hierarchical treemap shows where activity concentrates, and an indented table shows the same tree with sortable columns.
+`ai_observe.viewer` is a local, browser-based visualizer for the filesystem-event `.jsonl` streams produced by ai-observe command wrappers. It is modeled on WinDirStat / TreeSize: a hierarchical treemap shows where activity concentrates, and an indented table shows the same tree with sortable columns.
 
 The viewer is read-only. It never writes to the source JSONL.
 
@@ -33,8 +33,10 @@ There is intentionally no `--host` flag. The viewer is local-only.
 Live mode is the primary workflow:
 
 ```bash
-# Terminal A: run Codex through the observer wrapper
-codex "implement feature"
+# Terminal A: run any command through an observer wrapper
+claude -p "summarize this repo"
+# or: codex "implement feature"
+# or: bin/ai-observe -- command args...
 
 # Terminal B: visualize the in-flight stream
 PYTHONPATH=src python3 -m ai_observe.viewer .codev/observe/<session-id>.jsonl
