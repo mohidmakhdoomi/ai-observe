@@ -1,7 +1,7 @@
 id: '11'
 title: generalize-observer-for-claude
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase-1-generic-core
     status: complete
@@ -28,43 +28,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
-history:
-  - iteration: 1
-    plan_phase: phase-1-generic-core
-    build_output: ''
-    reviews:
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-1-generic-core-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-1-generic-core-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase-2-entrypoints-resolvers
-    build_output: ''
-    reviews:
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-2-entrypoints-resolvers-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-2-entrypoints-resolvers-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase-3-integration-compatibility-tests
-    build_output: ''
-    reviews:
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-3-integration-compatibility-tests-iter1-codex.txt
-      - model: claude
-        verdict: COMMENT
-        file: >-
-          /home/user/code/ai-observe/.builders/spir-11/codev/projects/11-generalize-observer-for-claude/11-phase-3-integration-compatibility-tests-iter1-claude.txt
+build_complete: false
+history: []
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-16T22:11:40.132Z'
+updated_at: '2026-05-16T22:11:50.600Z'
