@@ -1,0 +1,13 @@
+---
+VERDICT: APPROVE
+SUMMARY: The specification is well-considered, clearly defined, and safely layers new inferred provenance on top of existing direct mechanisms without breaking privacy or legacy expectations.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+**Consultant Notes & Suggestions for the Plan Phase:**
+
+1. **Symlink Traversal:** While the spec correctly mandates recording the symlink file type without following loops, ensure the implementation does not traverse symlinks that point *outside* of the `AI_OBSERVE_ROOTS`. Accidentally hashing or snapshotting an external root (e.g., a symlink to `/`) could lead to severe performance issues.
+2. **Start Snapshot Race Conditions:** The open question regarding background snapshot capture vs. blocking the child launch is critical. It is highly recommended to block the child launch until the start manifest is captured. If it runs in the background, a fast command could create and delete a file before the snapshot reaches that directory, completely missing the net change while violating the "net changes" promise. Since `AI_OBSERVE_ROOTS` bounds the work, a synchronous baseline traversal is generally safer and less flaky. 
+3. **Partial Trace Recovery:** You mentioned rebuilding partial traces if the live parser times out. Keep in mind that `strace` output may end mid-line or mid-syscall if the process is hard-killed. The recovery logic will need to tolerate truncated lines gracefully to avoid throwing an unhandled parser exception during recovery.

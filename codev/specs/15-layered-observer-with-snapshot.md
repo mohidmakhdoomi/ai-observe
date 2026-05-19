@@ -142,11 +142,12 @@ Optional kernel backends are explicitly deferred.
 - Preserve existing strace-based command execution, signal forwarding, logging, and schema-v1-compatible behavior until schema-v2 is deliberately emitted.
 - Parse successful `copy_file_range` and `sendfile` syscalls as file modification events when the destination fd/path can be resolved safely.
 - Preserve or improve existing `splice` handling; add coverage only where the destination can be identified safely.
-- Represent successful `open`, `openat`, `openat2`, and `creat` calls with `O_CREAT` as creates when the parser can confidently determine creation, including non-`O_EXCL` cases, while avoiding duplicate/confusing events.
+- Represent successful `creat` and `open`/`openat`/`openat2` with `O_CREAT|O_EXCL` as direct create events when the target path is known. For non-`O_EXCL` `O_CREAT`, do **not** emit a direct create from strace alone unless implementation has a reliable pre-open existence signal; otherwise rely on snapshot reconciliation to emit an inferred create when the start/end manifests show absent→present. This avoids false-positive direct creates for opens of existing files.
 - Parse extended attribute metadata operations (`setxattr`, `lsetxattr`, `fsetxattr`, `removexattr`, `lremovexattr`, `fremovexattr`) as metadata events when the target path/fd is known.
 - If live parsing times out or otherwise fails in a recoverable way and the full `.trace` exists, rebuild a recoverable JSONL artifact from the full `.trace` instead of leaving only an opaque partial stream.
-- Make partial/rebuilt parser artifacts discoverable to the viewer and documentation.
-- Add a safe nested shim escape hatch: when an outer observed session sets `AI_OBSERVE_NESTED=1`, an inner `ai-observe`/shim invocation should direct-exec the resolved real binary rather than launching another nested strace, so the outer `strace -f` can observe descendants.
+- Use a concrete artifact contract: `<session>.jsonl` is the canonical live/post-hoc event file; `<session>.jsonl.partial` contains parser-failure partial events; `<session>.jsonl.rebuilt` contains a full-trace rebuild when the live parser timed out after leaving `<session>.jsonl` potentially partial; `<session>.meta.json` records warnings, skipped roots, cap exceedance, and artifact relationships. Non-timeout live parser errors may still rebuild and replace canonical `<session>.jsonl` if no partial live stream should be preserved.
+- Make partial/rebuilt parser artifacts discoverable to the viewer and documentation via sibling-file detection and/or `<session>.meta.json`.
+- Add a safe nested shim escape hatch: the outer observer MUST set `AI_OBSERVE_NESTED=1` in the environment passed to the traced child. If an inner `ai-observe`/shim sees `AI_OBSERVE_NESTED=1`, it should direct-exec the resolved real binary rather than launching another nested strace, so the outer `strace -f` can observe descendants. This differs from user-facing `AI_OBSERVE_DISABLE=1`: `NESTED` is an internal recursion guard for child environments, not a user request to disable observation for the whole outer session.
 
 #### SHOULD
 
@@ -166,7 +167,7 @@ Optional kernel backends are explicitly deferred.
 - Strace-derived events MUST use `source: "strace"` and `confidence: "direct"`.
 - Snapshot-derived events MUST use `source: "snapshot"` and `confidence: "inferred"` unless a more specific documented confidence is introduced.
 - Keep existing v1 fields and meanings where applicable: `timestamp`, `session_id`, `invocation_id`, `operation`, `path`, `old_path`, `new_path`, `command`, `raw_syscall`, `result`, `pid`, and `process` for strace events.
-- Preserve v1 ingestion compatibility in Python tailer/server and browser aggregation by treating missing `schema_version`, `source`, and `confidence` as `schema_version: 1`, `source: "strace"`, `confidence: "direct"`.
+- Preserve v1 ingestion compatibility in Python tailer/server and browser aggregation by treating missing `schema_version`, `source`, and `confidence` as `schema_version: 1`, `source: "strace"`, `confidence: "direct"`. The current viewer tailer must explicitly accept `schema_version: 2` events instead of rejecting every non-1 event.
 - Be forward-compatible with higher schema versions by warning/skipping only when a consumer cannot safely normalize the event.
 - Do not send sensitive fields to the browser page. The sanitized browser event may include `schema_version`, `source`, and `confidence`, but must not include raw syscall, command argv, PID, process tree, or unsanitized attribution details.
 
@@ -182,8 +183,8 @@ Optional kernel backends are explicitly deferred.
 
 - Add explicit watched-root configuration via `AI_OBSERVE_ROOTS`, using a platform-appropriate path-list separator for the current platform. On Linux this is colon-separated, e.g. `/repo:/tmp/agent-work`.
 - If `AI_OBSERVE_ROOTS` is unset or empty, default the watched roots sensibly to the launch cwd.
-- Resolve watched roots to absolute paths. Missing roots should produce a clear warning and be skipped, not crash the observed command, unless no root remains.
-- Capture a start manifest before or at session start and an end manifest after the child exits.
+- Resolve watched roots to absolute paths, canonicalize them without following arbitrary symlink subtrees, and de-duplicate overlaps. If both `/repo` and `/repo/src` are configured, keep the ancestor root once, skip the descendant root, and record a warning in `<session>.meta.json`. Missing roots should produce a clear warning and be skipped, not crash the observed command, unless no root remains.
+- Capture the start manifest synchronously before launching the child command. This avoids races where fast commands mutate files before a background baseline reaches them. Capture the end manifest after the child exits.
 - Reconcile net creates, modifies, and deletes under configured roots.
 - Include per-entry data sufficient for diffing and event construction:
   - absolute path;
@@ -194,18 +195,11 @@ Optional kernel backends are explicitly deferred.
   - optional `dev`/`ino` object identity;
   - optional content hash for regular files when enabled.
 - Provide `AI_OBSERVE_SNAPSHOT_HASH=1` to opt into content hashing.
-- Provide `AI_OBSERVE_SNAPSHOT_EXCLUDE` for additional user excludes.
-- Provide `AI_OBSERVE_SNAPSHOT_MAX_FILES` as a safety cap. When the cap is exceeded, snapshot reconciliation should degrade with an explicit warning and provenance/status event or metadata rather than silently claiming completeness.
-- Apply built-in excludes for high-noise/high-cost paths, including at least:
-  - `.git/`
-  - `node_modules/`
-  - `__pycache__/`
-  - `.codev/observe/`
-  - `*.pyc`
-  - common swap/temp files such as `*.swp`, `*.swo`, and editor backup files
-  - lock files where excluding them does not hide primary user work artifacts
-- Synthesize snapshot JSONL events using schema-v2 with `source: "snapshot"`, `confidence: "inferred"`, and no invented process attribution.
-- Deduplicate/correlate snapshot events with direct strace events conservatively. If a direct strace event already covers the same operation/path during the session, the strace event should normally win; if the snapshot indicates a net change not represented directly, keep the snapshot event.
+- Provide `AI_OBSERVE_SNAPSHOT_EXCLUDE` for additional user excludes. Exclude syntax for this release is newline- or colon-separated glob patterns matched against normalized root-relative paths plus basename/segment patterns. `foo/**` matches a root-relative subtree, `**/*.pyc` matches suffixes across the root, and a bare segment such as `node_modules` matches any path segment with that name. The exact parser must be documented and unit-tested.
+- Provide `AI_OBSERVE_SNAPSHOT_MAX_FILES` as a safety cap. When the cap is exceeded, snapshot reconciliation should stop or skip the over-cap root according to the documented policy, record the condition in `<session>.meta.json`, print a warning, and avoid claiming completeness for that root.
+- Apply concrete built-in excludes for high-noise/high-cost paths. Required defaults are path segments `.git`, `node_modules`, `__pycache__`; root-relative subtree `.codev/observe/**`; suffix globs `**/*.pyc`, `**/*.pyo`, `**/*.swp`, `**/*.swo`, `**/*~`; and basenames `.DS_Store`, `.nfs*`. Do **not** exclude package or project lockfiles such as `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `Pipfile.lock`, or generic `*.lock` by default because those are often primary project artifacts.
+- Synthesize snapshot JSONL events using schema-v2 with `source: "snapshot"`, `confidence: "inferred"`, and no invented process attribution. Snapshot content changes emit `operation: "modify"` when size, mtime_ns, or enabled content hash differs. Snapshot metadata-only changes emit `operation: "metadata"` when type, mode, symlink target, or comparable non-content stat fields differ. `ctime` alone is not sufficient to emit an event unless paired with a known metadata/content field change.
+- Deduplicate/correlate snapshot events with direct strace events conservatively and deterministically. Build a direct-event index by absolute normalized path and operation group. Suppress a snapshot `create`, `delete`, or `metadata` only when a direct event with the same operation and same path exists. Suppress a snapshot `modify` when a direct `modify` or direct `create` exists for the same path. Suppress a snapshot `rename` only when a direct rename with the same old/new paths exists. Do not suppress snapshot delete because of direct modify/create, and do not suppress delete/create pairs as a rename unless strong object identity or a direct rename supports it.
 - Avoid watching the observer’s own trace/JSONL artifacts by default.
 
 #### SHOULD
@@ -213,8 +207,8 @@ Optional kernel backends are explicitly deferred.
 - Detect renames as paired delete/create or as `rename` events when object identity (`dev`/`ino`) supports a conservative match.
 - Make hashing streaming and opt-in to avoid large memory use.
 - Support symlink entries without following symlink loops.
-- Expose warnings or status metadata for skipped roots, unreadable paths, cap exceedance, or hash errors.
-- Keep start snapshot overhead from delaying child launch more than necessary, while not compromising correctness of the baseline. If background capture is used, it must be clear how races before baseline completion are handled.
+- Expose warnings/status metadata for skipped roots, unreadable paths, overlapping roots, cap exceedance, hash errors, and parser artifact state in `<session>.meta.json`; the viewer should read this sidecar when present and show a non-sensitive banner.
+- Keep start snapshot overhead bounded through excludes and max-files limits, but correctness takes priority: the baseline is synchronous in this release. If a future release revisits background capture, it needs a separate race-handling design.
 
 ### Viewer provenance UX
 
@@ -226,7 +220,7 @@ Optional kernel backends are explicitly deferred.
 - Render event provenance clearly enough that users can distinguish `strace/direct` from `snapshot/inferred`.
 - Add source filtering or equivalent visibility controls for at least `strace` and `snapshot` events.
 - Include source/confidence in tooltips, row badges, event details, or another visible local-only UI affordance without exposing sensitive trace fields.
-- Make parser partial/rebuilt artifact state discoverable when viewing a session artifact, e.g. a banner if sibling `.partial` or rebuilt files exist.
+- Make parser partial/rebuilt artifact state discoverable when viewing a session artifact. The viewer should detect sibling `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, and `<session>.meta.json` and show a non-sensitive banner or controls to open the appropriate artifact.
 
 #### SHOULD
 
@@ -239,14 +233,14 @@ Optional kernel backends are explicitly deferred.
 #### MUST
 
 - Introduce the backend abstraction only after both strace and snapshot behavior are implemented.
-- Define a small protocol around lifecycle, event production, stop/drain behavior, and capabilities. Candidate shape: `start(session)`, `events()`, `stop(timeout)`, `capabilities`.
+- Define a small protocol around lifecycle, event production, stop/drain behavior, and capabilities. Candidate shape: `start(session)`, `events()`, `stop(timeout)`, `capabilities`. Public backend selection for this release, if exposed, should use `AI_OBSERVE_BACKENDS` first; adding a CLI `--backend` flag may be deferred to avoid destabilizing existing CLI parsing.
 - Keep default behavior low-friction and no-root.
 - Refactor without changing user-visible behavior except for documented backend selection/configuration.
 - Make future fanotify, inotify, or eBPF sources pluggable without rewriting the viewer/event pipeline.
 
 #### SHOULD
 
-- Provide backend selection/configuration only if it is simple and tested. Acceptable forms include an environment variable or CLI option such as `AI_OBSERVE_BACKENDS=strace,snapshot` / `--backend strace,snapshot`.
+- Provide backend selection/configuration only if it is simple and tested. The preferred first public surface is `AI_OBSERVE_BACKENDS=strace,snapshot`; a CLI `--backend` option is not required for acceptance and may be deferred.
 - Support strace-only and snapshot-only modes for troubleshooting, but keep the default layered mode once snapshot is available.
 
 ### Documentation
@@ -299,13 +293,13 @@ Snapshot-inferred event:
   "confidence": "inferred",
   "object": { "dev": 2049, "ino": 123456 },
   "snapshot": {
-    "before": { "size": 1200 },
-    "after": { "size": 1250 }
+    "before": { "type": "file", "size": 1200, "mtime_ns": 1779195600000000000, "mode": 33188 },
+    "after": { "type": "file", "size": 1250, "mtime_ns": 1779195900000000000, "mode": 33188 }
   }
 }
 ```
 
-The exact `snapshot` metadata shape may be refined in the plan, but raw JSONL must remain structured, parseable, and safe for downstream consumers that ignore unknown fields.
+The exact `snapshot` metadata shape may be refined in the plan, but it must preserve the before/after typed-stat concept shown above. Raw JSONL must remain structured, parseable, and safe for downstream consumers that ignore unknown fields. Session-wide diagnostics belong in `<session>.meta.json`, not as fake filesystem mutation events.
 
 ## Configuration
 
@@ -314,18 +308,18 @@ The exact `snapshot` metadata shape may be refined in the plan, but raw JSONL mu
 | `AI_OBSERVE_ROOTS` | Watched roots for snapshot reconciliation; Linux examples use colon-separated absolute or relative paths. Defaults to launch cwd. |
 | `AI_OBSERVE_SNAPSHOT_HASH=1` | Opt into content hashing for regular files. |
 | `AI_OBSERVE_SNAPSHOT_EXCLUDE` | Additional exclude patterns. Pattern syntax must be documented and tested. |
-| `AI_OBSERVE_SNAPSHOT_MAX_FILES` | Maximum number of manifest entries before snapshot reconciliation degrades with warning/status. |
+| `AI_OBSERVE_SNAPSHOT_MAX_FILES` | Maximum number of manifest entries before snapshot reconciliation degrades with warnings in `<session>.meta.json`. |
 | `AI_OBSERVE_NESTED=1` | Internal/direct-exec escape hatch for nested observed sessions. |
-| `AI_OBSERVE_BACKENDS` or `--backend` | Optional backend selection if included after abstraction; default should be layered strace+snapshot. |
+| `AI_OBSERVE_BACKENDS` | Optional backend selection after abstraction. Default should be `strace,snapshot`; supported troubleshooting values should include `strace` and `snapshot`. A CLI `--backend` flag is deferred unless the plan explicitly accepts the extra CLI surface. |
 
 Existing `AI_OBSERVE_*` and `CODEV_OBSERVE_*` compatibility variables must keep their documented behavior unless explicitly updated.
 
 ## Deduplication and correlation requirements
 
 - Deduplication must be conservative. It is better to show both a direct and inferred event than to suppress a real user-visible change.
-- Minimum suppression rule: if a schema-v2 `strace/direct` event exists for the same normalized operation/path during the session, a matching `snapshot/inferred` event may be suppressed.
-- A snapshot `modify` should not be suppressed solely because any strace event touched the same path if the operation class differs materially or the net snapshot state suggests a later unobserved change.
-- Rename detection should require strong object-identity evidence; otherwise represent as delete/create.
+- Normalized paths are absolute, lexically normalized paths after watched-root resolution; symlink traversal is not used to collapse paths outside roots. Operation groups are `create`, `modify`, `delete`, `metadata`, and `rename`.
+- Suppress snapshot events only by the deterministic rules in the Snapshot reconciliation section; otherwise keep both direct and inferred evidence.
+- Rename detection should require strong object-identity evidence (`dev`/`ino` match within the same root) or a matching direct rename; otherwise represent as delete/create.
 - Deduplication should be testable independently of live strace.
 
 ## Non-functional requirements
@@ -339,7 +333,7 @@ Existing `AI_OBSERVE_*` and `CODEV_OBSERVE_*` compatibility variables must keep 
 ### Security and privacy
 
 - Do not weaken artifact permissions or symlink protections.
-- Keep the severe sensitive-data warnings for `.trace` and `.jsonl` artifacts.
+- Keep the severe sensitive-data warnings for `.trace`, `.jsonl`, `.jsonl.partial`, `.jsonl.rebuilt`, `<session>.meta.json`, and any manifest-derived artifacts because they can reveal paths, file metadata, and command context.
 - Keep the browser viewer local-only.
 - Do not expose raw syscall, command argv, PID, process tree, or raw attribution metadata in the browser page.
 
@@ -357,8 +351,8 @@ Existing `AI_OBSERVE_*` and `CODEV_OBSERVE_*` compatibility variables must keep 
 
 - Unit tests show `copy_file_range`, `sendfile`, covered `splice`, `O_CREAT`, and xattr traces produce expected operations where target paths are known.
 - Tests show ambiguous syscalls are skipped safely rather than producing misleading paths.
-- Tests show live parser timeout/recoverable failure produces a discoverable rebuilt or partial artifact according to the documented behavior.
-- Tests show `AI_OBSERVE_NESTED=1` causes direct execution of the resolved real command and avoids recursive tracing.
+- Tests show live parser timeout/recoverable failure produces the documented `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, and/or `<session>.meta.json` state. Full-trace rebuild must tolerate truncated final lines or unfinished syscalls safely.
+- Tests show the outer observer injects `AI_OBSERVE_NESTED=1` into the traced child environment and that an inner shim seeing it direct-execs the resolved real command, avoiding recursive tracing.
 
 ### Schema and compatibility
 
@@ -370,10 +364,10 @@ Existing `AI_OBSERVE_*` and `CODEV_OBSERVE_*` compatibility variables must keep 
 ### Snapshot reconciliation
 
 - Tests show create, modify, delete, and conservative rename/delete-create behavior from manifest diffs.
-- Tests show external writes under `AI_OBSERVE_ROOTS` that are not in the traced process tree appear as `snapshot/inferred` events.
+- Tests show external writes under `AI_OBSERVE_ROOTS` that are not in the traced process tree appear as `snapshot/inferred` events. Prefer deterministic unit tests of manifest diff/event synthesis for this requirement; live external-writer integration tests may be added but should not be the only coverage.
 - Tests show changes outside configured roots do not appear and are documented as out of scope.
-- Tests show built-in and user excludes suppress expected paths, including `.codev/observe/` artifacts.
-- Tests show max-files cap and unreadable/missing root warnings are surfaced without false completeness claims.
+- Tests show built-in and user excludes suppress expected paths, including `.codev/observe/` artifacts, and do not suppress project lockfiles such as `package-lock.json`/`Cargo.lock` by default.
+- Tests show max-files cap, overlapping roots, and unreadable/missing root warnings are surfaced through `<session>.meta.json` and viewer banners without false completeness claims.
 - Tests show optional hashing can distinguish content changes where metadata-only diff would otherwise be insufficient, when enabled.
 
 ### Viewer
@@ -403,16 +397,12 @@ None. The issue provides enough direction to specify the layered architecture.
 
 ### Important
 
-- Exact snapshot exclude pattern syntax: gitignore-like, glob-like absolute paths, or both.
-- Exact raw JSONL shape for snapshot-specific metadata and warnings/status records.
-- Whether snapshot baseline must complete before child launch for maximum correctness, or whether an explicitly documented background baseline trade-off is acceptable.
-- Whether backend selection should be CLI, environment variable, or both in the first abstraction phase.
+- Whether source composition should be shown per aggregate row, per tooltip, or in a separate event detail panel.
+- Whether docs should recommend hashing in CI or only for small/high-trust roots.
 
 ### Nice-to-know
 
-- Whether source composition should be shown per aggregate row, per tooltip, or in a separate event detail panel.
 - Whether future snapshot-only mode should be positioned as an experimental non-Linux stepping stone.
-- Whether docs should recommend hashing in CI or only for small/high-trust roots.
 
 ## Test scenarios
 
