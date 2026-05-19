@@ -4,9 +4,9 @@ protocol: spir
 phase: implement
 plan_phases:
   - id: phase-1-strace-parser-reliability
-    status: in_progress
+    status: complete
   - id: phase-2-schema-v2-provenance-core
-    status: pending
+    status: in_progress
   - id: phase-3-snapshot-manifest-diff
     status: pending
   - id: phase-4-snapshot-observe-integration
@@ -19,7 +19,7 @@ plan_phases:
     status: pending
   - id: phase-8-review-regression
     status: pending
-current_plan_phase: phase-1-strace-parser-reliability
+current_plan_phase: phase-2-schema-v2-provenance-core
 gates:
   spec-approval:
     status: approved
@@ -34,7 +34,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-strace-parser-reliability
@@ -53,4 +53,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-1-strace-parser-reliability-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-19T13:54:15.963Z'
+updated_at: '2026-05-19T13:54:17.326Z'
