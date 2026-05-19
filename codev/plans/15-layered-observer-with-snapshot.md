@@ -62,7 +62,7 @@ The default user experience remains no-root and low-friction. `strace` remains t
 - **Objective**: Improve the existing strace parser and live recovery behavior without introducing snapshot yet.
 - **Files**:
   - `src/ai_observe/trace_parser.py` — add parser coverage for `copy_file_range`, `sendfile`, xattr metadata operations, safe `O_CREAT|O_EXCL`/`creat` create events, and truncated/unfinished-line tolerance during rebuild; preserve safe false negatives for ambiguous inputs.
-  - `src/ai_observe/observe.py` — implement the concrete artifact contract for recovery paths, write/read `<session>.meta.json` warnings, rebuild `<session>.jsonl.rebuilt` on live timeout, and inject `AI_OBSERVE_NESTED=1` into traced child environments while direct-execing inner shims that see it.
+  - `src/ai_observe/observe.py` — implement the concrete artifact contract for recovery paths, extend `LogPaths` with `<session>.jsonl.rebuilt` and `<session>.meta.json`, write/read `<session>.meta.json` warnings, rebuild `<session>.jsonl.rebuilt` on live timeout, protect all new artifact writes with the same containment/symlink/permission checks used for trace/jsonl/partial artifacts, and inject `AI_OBSERVE_NESTED=1` into traced child environments while direct-execing inner shims that see it.
   - `tests/test_trace_parser.py` and `tests/test_live_trace.py` — add parser fixtures/tests and recovery/nested-regression tests.
 - **Dependencies**: None.
 - **Success Criteria**:
@@ -71,12 +71,13 @@ The default user experience remains no-root and low-friction. `strace` remains t
   - `creat` and `open`/`openat`/`openat2` with `O_CREAT|O_EXCL` emit direct create events when target path is known.
   - Non-`O_EXCL` `O_CREAT` does not produce false direct create events from strace alone.
   - Live parser timeout produces discoverable `<session>.jsonl.rebuilt` and `<session>.meta.json` state instead of silently leaving only partial canonical output.
+  - Recovery precedence is explicit in `<session>.meta.json`: normal and successful non-timeout rebuilds use `<session>.jsonl` as the authoritative complete stream; live-timeout rebuilds use `<session>.jsonl.rebuilt` as the authoritative complete stream while `<session>.jsonl` remains the non-authoritative partial live stream; parser-failure sessions use `<session>.jsonl.partial` as the partial direct-event artifact and `<session>.jsonl` only for any safe inferred snapshot events or an empty placeholder.
   - Parser failure still writes `<session>.jsonl.partial` according to existing strict/non-strict semantics.
   - Full-trace rebuild tolerates truncated final lines and unfinished syscalls safely.
   - Outer observed sessions set `AI_OBSERVE_NESTED=1`; inner shims seeing it direct-exec the resolved real command rather than launching nested strace.
 - **Tests**:
   - Add trace fixture unit tests for `copy_file_range`, `sendfile`, xattrs, `creat`, `O_CREAT|O_EXCL`, and non-`O_EXCL` `O_CREAT`.
-  - Add live/recovery tests for timeout rebuild, partial artifact naming, meta sidecar contents, and truncated trace rebuild tolerance.
+  - Add live/recovery tests for timeout rebuild, partial artifact naming, authoritative-file precedence in the meta sidecar, safe-write/permission behavior for `.rebuilt` and `.meta.json`, symlink attack rejection for new artifacts, and truncated trace rebuild tolerance.
   - Add observer tests for `AI_OBSERVE_NESTED=1` injection and inner direct-exec behavior.
   - Run `python3 -m unittest tests.test_trace_parser tests.test_live_trace tests.test_observe_cli tests.test_observe_env`.
 
@@ -92,12 +93,12 @@ The default user experience remains no-root and low-friction. `strace` remains t
   - New strace-derived raw JSONL events are schema-v2 with `source: "strace"` and `confidence: "direct"`.
   - Existing schema-v1 fixture files remain accepted by the viewer tailer and are normalized as `strace/direct` in sanitized output.
   - Schema-v2 events are accepted by the current tailer/server path and no longer skipped for version mismatch.
-  - Browser-sanitized events include provenance fields but still exclude sensitive fields.
+  - Browser-sanitized events include provenance fields but still exclude sensitive fields. Because `sanitize_event` is a whitelist, Phase 2 explicitly updates that whitelist and runs aggregation/oracle tests to ensure additional safe provenance fields are ignored or propagated intentionally.
   - Unknown future schema versions are warned/skipped only when they cannot be safely normalized.
 - **Tests**:
   - Assert parser-emitted events contain `schema_version: 2`, `source`, and `confidence`.
   - Add tailer tests for missing `schema_version`, explicit `schema_version: 1`, explicit `schema_version: 2`, and unsupported future versions.
-  - Run `python3 -m unittest tests.test_trace_parser tests.test_viewer_tailer tests.test_viewer_server`.
+  - Run `python3 -m unittest tests.test_trace_parser tests.test_viewer_tailer tests.test_viewer_server tests.test_viewer_aggregator` to catch early sanitizer/oracle effects from new safe provenance fields.
 
 ### Phase 3: Snapshot manifest capture, diff, excludes, and diagnostics (`phase-3-snapshot-manifest-diff`)
 
@@ -126,7 +127,7 @@ The default user experience remains no-root and low-friction. `strace` remains t
 
 - **Objective**: Wire synchronous snapshot reconciliation into the observer lifecycle and merge inferred events with direct strace events conservatively.
 - **Files**:
-  - `src/ai_observe/observe.py` — parse snapshot env vars, capture start manifest synchronously before child launch, capture end manifest after child exit, call snapshot diff, append/safely merge snapshot events into canonical/rebuilt JSONL, write `<session>.meta.json`, and preserve exit-code/strict-parse behavior.
+  - `src/ai_observe/observe.py` — parse snapshot env vars, capture start manifest synchronously before child launch, capture end manifest after child exit, call snapshot diff, append/safely merge snapshot events into the authoritative event artifact identified by the recovery contract, write `<session>.meta.json` with the final artifact roles, and preserve exit-code/strict-parse behavior.
   - `src/ai_observe/snapshot.py` — add wrapper-facing helpers for deduplication/correlation against direct events and final event ordering/timestamping if not completed in Phase 3.
   - `tests/test_observe_cli.py` and `tests/test_snapshot.py` — add integration tests for default cwd roots, explicit roots, external/out-of-tree helper writes simulated through manifest diffs or deterministic subprocess orchestration, snapshot-only inferred events, and deduplication.
 - **Dependencies**: Phase 3.
@@ -137,12 +138,12 @@ The default user experience remains no-root and low-friction. `strace` remains t
   - External or untraced writes under watched roots appear as `source: "snapshot"`, `confidence: "inferred"` events.
   - Changes outside configured roots do not appear.
   - Deduplication uses deterministic operation/path rules from the spec: direct strace events win only for matching operations/paths, and snapshot deletes are not hidden by direct modifies/creates.
-  - Snapshot diagnostics appear in `<session>.meta.json` and stderr warnings where appropriate without changing the observed command exit code unless existing strict parse semantics require it.
+  - Snapshot diagnostics appear in `<session>.meta.json` and stderr warnings where appropriate without changing the observed command exit code unless existing strict parse semantics require it. Snapshot events are merged into `<session>.jsonl` for normal/recovered sessions, into `<session>.jsonl.rebuilt` for live-timeout rebuilt sessions, and into `<session>.jsonl` as inferred-only data for parser-failure sessions while partial direct events remain in `<session>.jsonl.partial`.
   - No false completeness claim is made when roots are skipped or max-files cap is exceeded.
 - **Tests**:
   - Add fake-strace integration tests that run a command mutating a temp watched root and verify merged JSONL includes direct and inferred provenance as expected.
   - Prefer deterministic unit tests for external-writer scenarios through manifest diff/event synthesis; add live subprocess orchestration only where stable.
-  - Add tests for explicit roots, default cwd, excludes, cap warnings, missing roots, no remaining roots, and artifact exclusion.
+  - Add tests for explicit roots, default cwd, excludes, cap warnings, missing roots, no remaining roots, artifact exclusion, and snapshot merge target selection for normal, timeout/rebuilt, and parser-failure modes.
   - Run `python3 -m unittest tests.test_observe_cli tests.test_snapshot tests.test_live_trace tests.test_observe_env`.
 
 ### Phase 5: Viewer provenance rendering, source filters, and artifact banners (`phase-5-viewer-provenance-ux`)
@@ -158,12 +159,12 @@ The default user experience remains no-root and low-friction. `strace` remains t
   - `strace/direct` and `snapshot/inferred` are visibly distinguishable in rows, tooltips, badges, or equivalent UI.
   - Source filters can hide/show `strace` and `snapshot` events without breaking existing path filters, factory filters, metric controls, SSE backlog delivery, or live batching.
   - Sanitized SSE/browser payloads include only safe provenance and artifact status fields, not raw syscall, command argv, PID, process tree, raw attribution, or full unsanitized manifests.
-  - Sibling `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, and `<session>.meta.json` are detected and displayed through a non-sensitive banner/control.
+  - Sibling `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, and `<session>.meta.json` are detected and displayed through a non-sensitive banner/control. Viewer precedence follows `<session>.meta.json`: if it marks `.rebuilt` as authoritative, the viewer clearly offers/switches to the rebuilt stream; if parser failure produced `.partial`, the viewer labels it as partial direct evidence and does not silently merge it with inferred canonical data.
   - Existing viewer treemap/table/filter tests remain passing.
 - **Tests**:
   - Add fixtures for mixed v1/v2 strace/snapshot JSONL streams and golden aggregation output.
   - Add JavaScript/unit tests for source filter state, badges/tooltips, and table/treemap compatibility.
-  - Add server/tailer tests for meta sidecar detection and sanitized artifact banner data.
+  - Add server/tailer tests for meta sidecar detection, authoritative artifact precedence, rebuilt/partial banner behavior, and sanitized artifact banner data.
   - Run `python3 -m unittest tests.test_viewer_tailer tests.test_viewer_server tests.test_viewer_aggregator tests.test_viewer_index_js tests.test_viewer_table_js tests.test_viewer_treemap tests.test_viewer_smoke_e2e`.
 
 ### Phase 6: Concrete backend protocol and backend selection (`phase-6-backend-abstraction`)
@@ -235,11 +236,11 @@ The default user experience remains no-root and low-friction. `strace` remains t
 - Avoid false-positive direct events; prefer safe false negatives that snapshot can backstop.
 - Treat snapshot events as inferred net session changes, not process attribution.
 - Keep snapshot baseline synchronous before child launch in this release.
-- Store session diagnostics in `<session>.meta.json`, not fake filesystem mutation events.
+- Store session diagnostics in `<session>.meta.json`, not fake filesystem mutation events. The sidecar must include artifact roles/precedence so normal, timeout-rebuilt, and parser-failure sessions are interpreted consistently by both CLI diagnostics and the viewer.
 - Keep hashing opt-in and streaming.
 - Ensure built-in excludes suppress observer artifacts and high-cost caches but not project lockfiles.
 - Use pure helper functions for parser classification, snapshot diffing, exclude matching, deduplication, and backend selection so most behavior is unit-testable without real `strace` or third-party AI CLIs.
-- Existing internal test knobs may remain undocumented, but parser-failure and live-timeout tests need deterministic hooks.
+- Existing internal test knobs may remain undocumented, but parser-failure and live-timeout tests need deterministic hooks. All new artifacts (`.jsonl.rebuilt`, `.meta.json`, and any future manifest-derived files) must use explicit safe-write helpers with containment checks, no-follow/symlink protection, restrictive permissions, and tests matching the existing trace/jsonl safety posture.
 
 ## Risk Assessment
 
@@ -249,7 +250,8 @@ The default user experience remains no-root and low-friction. `strace` remains t
 - **Over-suppression during deduplication**: Mitigate with deterministic conservative rules that keep inferred evidence unless a direct same-operation/path event covers it.
 - **Viewer privacy regression**: Mitigate by only sanitizing provenance and non-sensitive artifact status to the browser; never send raw syscall, command argv, PID/process, raw attribution, or full manifests.
 - **Schema-v2 breaks existing viewer fixtures**: Mitigate with explicit v1 normalization, mixed v1/v2 tests, and updates to `tests/_aggregator_oracle.py` in lock-step with `aggregator.js`.
-- **Recovery artifact confusion**: Mitigate with a documented naming contract and `<session>.meta.json` sidecar consumed by the viewer.
+- **Recovery artifact confusion**: Mitigate with a documented naming contract, explicit authoritative-file precedence for normal/timeout/parser-failure modes, and `<session>.meta.json` sidecar consumed by the viewer.
+- **Security regression in new artifacts**: Mitigate by extending existing safe path/write helpers to `.jsonl.rebuilt` and `.meta.json`, enforcing containment and symlink protections, keeping restrictive file modes, and adding regression tests for unsafe paths/symlinks.
 - **Backend refactor churn**: Mitigate by delaying abstraction until after snapshot integration and by adding behavior-preserving backend tests before moving code.
 - **Flaky live integration tests**: Prefer parser fixtures, manifest-diff unit tests, fake strace, and deterministic temp-dir tests; if a pre-existing flaky test blocks progress, skip it with a clear annotation and document it in the review as required.
 - **Scope creep into kernel backends or cross-platform ports**: Keep those as explicit non-goals and future backend opportunities only.

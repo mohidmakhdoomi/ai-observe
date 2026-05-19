@@ -1,0 +1,109 @@
+I'll review this plan thoroughly by first checking the actual codebase to verify file paths, existing code structure, and test infrastructure.Good — file paths in the plan check out. Let me now examine the key source files to understand the current architecture.Now let me check the existing test structure and the `codev/resources/arch.md` file:Good. Now let me check the existing tailer `sanitize_event` more closely and the spec for schema_version handling:I now have a thorough understanding of the codebase. Let me compile my review.
+
+---
+
+## Plan Review: 15-layered-observer-with-snapshot
+
+### 1. Spec Coverage
+
+**Strong alignment.** I mapped every MUST in the spec to a plan phase and found comprehensive coverage:
+
+| Spec Requirement | Plan Phase |
+|---|---|
+| Parser hygiene (copy_file_range, sendfile, xattr, O_CREAT|O_EXCL, creat) | Phase 1 |
+| Recovery artifacts (.rebuilt, .meta.json, .partial) | Phase 1 |
+| AI_OBSERVE_NESTED=1 injection | Phase 1 |
+| Schema-v2 provenance fields | Phase 2 |
+| V1/V2 tailer normalization | Phase 2 |
+| Snapshot manifest/diff/excludes | Phase 3 |
+| Snapshot observe integration + dedup | Phase 4 |
+| Viewer provenance UX | Phase 5 |
+| Backend abstraction | Phase 6 |
+| Docs | Phase 7 |
+| Review/regression | Phase 8 |
+
+No spec MUST requirement is uncovered. No phase goes beyond spec scope.
+
+### 2. Phase Breakdown & Ordering
+
+**Well-structured.** The dependency chain is sound:
+
+- Phase 1 (parser) → Phase 2 (schema-v2) makes sense — fix the parser before changing its output format.
+- Phase 3 (snapshot engine) before Phase 4 (integration) is the right decomposition — build it pure then wire it in.
+- Phase 5 (viewer) after Phase 4 ensures real mixed data exists to drive UI.
+- Phase 6 (backend abstraction) after both backends exist is exactly what the spec recommends — "introduce abstraction only after both strace and snapshot behavior make the seam concrete."
+- Phase 7-8 (docs/review) last is standard.
+
+Each phase is independently committable and testable. The sizes are reasonable — Phase 4 and Phase 5 are the largest but appropriately so given the integration complexity.
+
+### 3. Technical Approach
+
+**Verified against actual code.** Key observations:
+
+- **Tailer schema_version gate (Phase 2)**: The plan correctly identifies that `tailer.py` line 161 does `if sv != SCHEMA_VERSION` which will reject schema-v2 events. The plan says to "explicitly stop rejecting `schema_version: 2`" — this is correct and essential.
+
+- **`sanitize_event` needs updating (Phase 2/5)**: Currently `_SANITIZED_FIELDS = ("timestamp", "operation", "path", "old_path", "new_path", "result")`. Phase 2 says schema-v2 provenance (`source`, `confidence`) should pass through to the browser. The plan mentions this at Phase 2 ("sanitize `schema_version`, `source`, and `confidence` to the browser") — good, this needs to actually update `_SANITIZED_FIELDS` in the tailer.
+
+- **`SCHEMA_VERSION = 1` in trace_parser.py (line 17)**: Phase 2 plan says "bump emitted events to `schema_version: 2`" — confirmed this constant drives `_make_event()` at line 377. This is the right place to change.
+
+- **No existing `src/ai_observe/backends/` directory**: Confirmed — Phase 6 creates this from scratch, which is correct.
+
+- **No existing `src/ai_observe/snapshot.py`**: Confirmed — Phase 3 creates this from scratch.
+
+- **Existing test infrastructure**: Uses `unittest`, fixture files in `tests/fixtures/strace/`, and a helper pattern of `self.parse(text)`. The plan's test commands match the existing test module names.
+
+### 4. Potential Issues
+
+**Issue A — Phase 2 `_make_event` compatibility concern**: When Phase 2 bumps `SCHEMA_VERSION` to 2 and adds `source`/`confidence` to `_make_event()`, the `tests/_aggregator_oracle.py` (Python mirror of `aggregator.js`) may break if it checks for `schema_version: 1`. The plan mentions Phase 5 updates `tests/_aggregator_oracle.py` but Phase 2's schema change will land first. A builder needs to know: either (a) the aggregator oracle must tolerate v2 events from Phase 2 onward, or (b) Phase 2 must update the oracle minimally for passthrough.
+
+Looking at this more carefully, the aggregator oracle tests in Phase 5 are explicitly listed as updating `tests/_aggregator_oracle.py` "in lock-step with `aggregator.js`" — but the aggregator only sees *sanitized* events from the tailer, which currently strip `schema_version`. So this is actually fine as long as Phase 2 updates the sanitizer to pass through `source`/`confidence` but NOT `schema_version` (which the spec says should be included in sanitized output). The plan says "sanitize `schema_version`, `source`, and `confidence` to the browser" — this will flow through the aggregator. **A builder would benefit from an explicit note that Phase 2 must verify aggregator tests still pass after adding these new fields to sanitized output, or that Phase 2 should update the oracle to ignore unknown fields.**
+
+This is a minor gap, not a blocker — a competent builder will run the test suite and fix forward.
+
+**Issue B — `<session>.meta.json` write safety**: Phase 1 introduces `<session>.meta.json` writes. The existing `safe_write_jsonl()` and `verify_log_path_safe()` enforce symlink safety and path containment. The plan says to write meta.json but doesn't explicitly say to use the same safe-write infrastructure. This is implicit but worth calling out — a builder should use the same safety primitives.
+
+**Issue C — Phase 3/4 boundary for dedup helpers**: The plan says Phase 3 SHOULD include dedup/correlation helpers, and Phase 4 says "add wrapper-facing helpers for deduplication/correlation... if not completed in Phase 3." This is deliberately flexible, which is good for builder autonomy, but the builder must ensure Phase 3 is independently testable without dedup — which the plan's Phase 3 tests confirm (they only test manifest diff, not dedup). Clean.
+
+### 5. Testing Strategy
+
+**Thorough and realistic.**
+
+- Phase 1: Fixture-based parser tests + live recovery tests. Matches existing test patterns (`test_trace_parser.py` uses `self.parse(text)` with fixture strings).
+- Phase 2: Emission and normalization tests. Tests both parser output AND tailer v1/v2 handling.
+- Phase 3: Pure unit tests with synthetic manifests and temp directories. No live strace needed.
+- Phase 4: Integration tests with fake strace and temp roots. The plan wisely says "Prefer deterministic unit tests for external-writer scenarios through manifest diff/event synthesis."
+- Phase 5: Viewer tests including existing JS test infrastructure (`test_viewer_aggregator.py`, `test_viewer_index_js.py`, etc.).
+- Phase 6: Protocol conformance and behavior-preserving tests.
+- Phase 8: Full regression run.
+
+The test commands reference real test modules I confirmed exist. The strategy of preferring deterministic fixture tests over live integration is sound for maintainability.
+
+### 6. Risk Assessment
+
+The risk section is comprehensive. The identified risks match real concerns:
+
+- **False create from O_CREAT**: Correctly mitigated by only emitting direct creates for `creat`/`O_CREAT|O_EXCL`.
+- **Snapshot race**: Correctly mitigated by synchronous baseline.
+- **Large-root perf**: Correctly mitigated by excludes, opt-in hashing, max-files cap.
+- **Schema-v2 breaks viewer**: Correctly mitigated by v1 normalization — I confirmed the tailer currently hard-rejects non-v1 events.
+
+One risk I'd add: **The `_SANITIZED_FIELDS` tuple is a whitelist** — any new field (like `source`, `confidence`, `schema_version`) must be explicitly added. This is the right security posture but a builder could miss it. The plan does mention this ("sanitize... to the browser") but could be more explicit about it being a whitelist addition.
+
+### 7. Minor Suggestions
+
+- The plan says Phase 3 depends on Phase 2, but the snapshot engine's only dependency on Phase 2 is that it emits schema-v2 events. In principle Phase 3 could start as soon as the schema-v2 event format is defined (even before Phase 2's tailer work). The linear dependency is fine for a single builder but slightly conservative.
+- Phase 7 lists `codev/resources/arch.md` which I confirmed exists and currently describes only the generic observer and viewer filter architecture. The plan's additions are appropriate.
+
+---
+
+```
+VERDICT: APPROVE
+SUMMARY: Comprehensive, well-sequenced plan with verified file paths and sound technical approach; minor aggregator-oracle test ordering note is non-blocking.
+CONFIDENCE: HIGH
+```
+
+---
+
+KEY_ISSUES:
+- None critical. Minor: Phase 2's addition of `source`/`confidence`/`schema_version` to `_SANITIZED_FIELDS` may require a minimal `_aggregator_oracle.py` update before Phase 5; a builder should run full test suite after Phase 2 to catch this early.
+- Minor: Phase 1's `<session>.meta.json` writes should use the same path-safety primitives (`verify_log_path_safe`, `safe_write_jsonl` or equivalent) — implicit in the plan but worth a builder noting explicitly.
