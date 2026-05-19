@@ -8,9 +8,9 @@ plan_phases:
   - id: phase-2-schema-v2-provenance-core
     status: complete
   - id: phase-3-snapshot-manifest-diff
-    status: in_progress
+    status: complete
   - id: phase-4-snapshot-observe-integration
-    status: pending
+    status: in_progress
   - id: phase-5-viewer-provenance-ux
     status: pending
   - id: phase-6-backend-abstraction
@@ -19,7 +19,7 @@ plan_phases:
     status: pending
   - id: phase-8-review-regression
     status: pending
-current_plan_phase: phase-3-snapshot-manifest-diff
+current_plan_phase: phase-4-snapshot-observe-integration
 gates:
   spec-approval:
     status: approved
@@ -34,7 +34,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-strace-parser-reliability
@@ -85,4 +85,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-3-snapshot-manifest-diff-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-19T22:30:52.316Z'
+updated_at: '2026-05-19T22:30:53.448Z'
