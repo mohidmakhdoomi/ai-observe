@@ -143,7 +143,9 @@ class TraceParserTests(unittest.TestCase):
         events = self.parse('1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n')
         self.assertEqual(len(events), 1)
         e = events[0]
-        self.assertEqual(e["schema_version"], 1)
+        self.assertEqual(e["schema_version"], 2)
+        self.assertEqual(e["source"], "strace")
+        self.assertEqual(e["confidence"], "direct")
         self.assertTrue(e["timestamp"].endswith("Z"))
         self.assertEqual(e["session_id"], "s1")
         self.assertEqual(e["invocation_id"], "s1")

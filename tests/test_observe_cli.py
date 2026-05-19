@@ -91,7 +91,9 @@ class ObserveCliIntegrationTests(unittest.TestCase):
                 for line in (root / "preferred-obs" / "generic.jsonl").read_text(encoding="utf-8").splitlines()
             ]
             self.assertEqual(len(events), 1)
-            self.assertEqual(events[0]["schema_version"], 1)
+            self.assertEqual(events[0]["schema_version"], 2)
+            self.assertEqual(events[0]["source"], "strace")
+            self.assertEqual(events[0]["confidence"], "direct")
             self.assertEqual(events[0]["operation"], "create")
             self.assertEqual(events[0]["command"], [str(real.resolve()), "arg"])
             self.assertEqual(json.loads(argv_out.read_text(encoding="utf-8")), [str(real.resolve()), "arg"])

@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -419,6 +419,8 @@ class TraceParser:
             "path": path,
             "old_path": old_path,
             "new_path": new_path,
+            "source": "strace",
+            "confidence": "direct",
             "command": self.command,
             "raw_syscall": raw_syscall,
             "result": result,

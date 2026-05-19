@@ -1,0 +1,9 @@
+Using direct file reads to review phase-2 implementation against the spec/plan.Reading the specific code paths that implement phase-2 behavior in full.Checking the viewer server path to verify schema-v2 events aren’t still filtered before they reach the browser.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 2 mostly lands schema-v2 emission and v1/v2 normalization, but the tailer still rejects all future schema versions unconditionally instead of normalizing when safe.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `src/ai_observe/viewer/tailer.py:25-26,182-185` hard-codes `SUPPORTED_SCHEMA_VERSIONS = {1, 2}` and skips every other `schema_version`. The spec/plan for this phase requires forward compatibility: warn/skip only when an event cannot be safely normalized. As written, a schema-v3 event with the same safe fields would be dropped unnecessarily.
+- `tests/test_viewer_tailer.py:211-219` codifies that incorrect behavior by asserting unsupported future versions are skipped outright, so the tests currently enforce a phase-2 spec violation.

@@ -153,8 +153,20 @@ class ViewerServerTests(unittest.TestCase):
             for f in backlog:
                 self.assertEqual(
                     sorted(f.keys()),
-                    sorted(["timestamp", "operation", "path", "old_path", "new_path", "result"]),
+                    sorted([
+                        "schema_version",
+                        "timestamp",
+                        "operation",
+                        "path",
+                        "old_path",
+                        "new_path",
+                        "result",
+                        "source",
+                        "confidence",
+                    ]),
                 )
+                self.assertEqual(f["source"], "strace")
+                self.assertEqual(f["confidence"], "direct")
             # Now append new events and read them live.
             _append_events(self.path, [_make_event(path="/live", idx=9)])
             live = _read_sse_frames(fh, 1, timeout=3.0)
@@ -176,7 +188,17 @@ class ViewerServerTests(unittest.TestCase):
                 for f in backlog:
                     self.assertEqual(
                         sorted(f.keys()),
-                        sorted(["timestamp", "operation", "path", "old_path", "new_path", "result"]),
+                        sorted([
+                            "schema_version",
+                            "timestamp",
+                            "operation",
+                            "path",
+                            "old_path",
+                            "new_path",
+                            "result",
+                            "source",
+                            "confidence",
+                        ]),
                     )
 
                 _append_events(self.path, [_make_event(path="/live", idx=9)])

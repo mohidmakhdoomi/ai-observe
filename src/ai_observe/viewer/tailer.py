@@ -3,8 +3,8 @@
 Reads a `.jsonl` file forward, polling for appended bytes. Buffers partial
 trailing lines until a newline arrives. On truncation or inode change,
 reopens from offset 0 with a stderr warning. Skips malformed JSON lines and
-lines with `schema_version != 1`, with stderr warnings. Empty-file startup
-is supported (zero-byte file is not an error).
+schema-version events that cannot be safely normalized, with stderr warnings.
+Empty-file startup is supported (zero-byte file is not an error).
 
 Unlike `codex_observe.LiveTracer`, this tailer does NOT flush a pending
 fragment on stop. A non-newline-terminated fragment is held silently
@@ -22,19 +22,61 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
-_SANITIZED_FIELDS = ("timestamp", "operation", "path", "old_path", "new_path", "result")
+_SANITIZED_FIELDS = (
+    "schema_version",
+    "timestamp",
+    "operation",
+    "path",
+    "old_path",
+    "new_path",
+    "result",
+    "source",
+    "confidence",
+)
 
 
 def sanitize_event(raw: dict) -> dict:
     """Return the public, page-safe subset of a JSONL event.
 
     Excludes `raw_syscall`, `command`, `pid`, `process`, `session_id`,
-    `invocation_id`, `schema_version` per the spec's security posture.
+    and `invocation_id` per the spec's security posture. Missing v1
+    provenance is normalized as strace/direct.
     """
-    return {k: raw.get(k) for k in _SANITIZED_FIELDS}
+    normalized = normalize_event(raw)
+    return {k: normalized.get(k) for k in _SANITIZED_FIELDS}
+
+
+def normalize_event(raw: dict) -> dict:
+    """Normalize accepted schema events for viewer consumers.
+
+    Missing schema/provenance fields are interpreted as schema-v1 strace
+    events. Future schema versions are normalized through the same public
+    whitelist when they retain the known viewer-safe fields.
+    """
+    out = dict(raw)
+    out["schema_version"] = raw.get("schema_version", 1)
+    out["source"] = raw.get("source") or "strace"
+    out["confidence"] = raw.get("confidence") or "direct"
+    return out
+
+
+def _schema_version_can_normalize(raw: dict) -> bool:
+    """Return whether a JSONL object can be represented by the public v2 view."""
+    sv = raw.get("schema_version", 1)
+    if isinstance(sv, bool) or not isinstance(sv, int) or sv < 1:
+        return False
+    if sv <= SCHEMA_VERSION:
+        return True
+
+    # Forward compatibility: accept higher schema versions only when the event
+    # still carries the known viewer fields needed by current aggregation/UI.
+    # The sanitizer below will continue to exclude any new raw/sensitive fields.
+    if "operation" not in raw:
+        return False
+    return any(raw.get(k) is not None for k in ("path", "old_path", "new_path"))
 
 
 class JsonlTailer:
@@ -157,8 +199,8 @@ class JsonlTailer:
         if not isinstance(raw, dict):
             self._warn("ai_observe.viewer: skipping non-object JSONL line")
             return
-        sv = raw.get("schema_version")
-        if sv != SCHEMA_VERSION:
+        sv = raw.get("schema_version", 1)
+        if not _schema_version_can_normalize(raw):
             self._warn(f"ai_observe.viewer: skipping event with schema_version={sv!r}")
             return
         try:

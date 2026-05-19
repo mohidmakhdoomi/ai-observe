@@ -178,6 +178,17 @@ class CustomFilterTests(unittest.TestCase):
         self.assertIsNotNone(_find_node(filtered["tree"], "/work/a.txt"))
         self.assertIsNotNone(_find_node(shown["tree"], "/secret/a.txt"))
 
+    def test_v2_provenance_fields_do_not_change_core_aggregation(self):
+        agg = Aggregator()
+        ev = self._event("/work/v2.txt", idx=0, result=7)
+        ev.update({"schema_version": 2, "source": "strace", "confidence": "direct"})
+        agg.ingest(ev)
+        snap = agg.snapshot(include_noise=False)
+        node = _find_node(snap["tree"], "/work/v2.txt")
+        self.assertIsNotNone(node)
+        self.assertEqual(node["events"], 1)
+        self.assertEqual(node["bytes"], 7)
+
     def test_custom_event_filtering_uses_all_paths_match_rule(self):
         secret_rx = [compile_filter_pattern("/secret/**")]
         self.assertTrue(event_matches_filters(self._event("/secret/a"), secret_rx))
