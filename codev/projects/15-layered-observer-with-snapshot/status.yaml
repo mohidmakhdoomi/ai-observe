@@ -34,7 +34,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: false
+build_complete: true
 history:
   - iteration: 1
     plan_phase: phase-1-strace-parser-reliability
@@ -85,4 +85,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-3-snapshot-manifest-diff-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-19T22:30:53.448Z'
+updated_at: '2026-05-19T22:41:02.045Z'
