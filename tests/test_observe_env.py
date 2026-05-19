@@ -43,6 +43,8 @@ class ObserveEnvAliasTests(unittest.TestCase):
             self.assertEqual(logs.observe_dir, (root / "preferred-obs").resolve())
             self.assertEqual(logs.session_id, "preferred-session")
             self.assertTrue(logs.jsonl_path.exists())
+            self.assertEqual(logs.rebuilt_path.name, "preferred-session.jsonl.rebuilt")
+            self.assertEqual(logs.meta_path.name, "preferred-session.meta.json")
             self.assertFalse((root / "legacy-obs").exists())
 
     def test_live_knobs_prefer_ai_observe_over_legacy(self):
@@ -114,6 +116,41 @@ class ObserveEnvAliasTests(unittest.TestCase):
                 "CODEV_OBSERVE_REAL_CODEX": str(legacy),
             }
             self.assertEqual(codex_observe.resolve_real_codex(env, shim), preferred.resolve())
+
+    def test_nested_shim_direct_execs_resolved_real_without_strace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            shim = root / "codex"
+            real = root / "real-codex"
+            for path in (shim, real):
+                path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                path.chmod(0o755)
+            calls = []
+            original_execvpe = codex_observe.os.execvpe
+
+            def fake_execvpe(file, argv, env):
+                calls.append((file, list(argv), dict(env)))
+                raise RuntimeError("exec intercepted")
+
+            codex_observe.os.execvpe = fake_execvpe
+            try:
+                with self.assertRaises(RuntimeError):
+                    codex_observe.run_shim(
+                        "codex",
+                        ["arg"],
+                        {
+                            "PATH": "",
+                            "AI_OBSERVE_NESTED": "1",
+                            "AI_OBSERVE_REAL_CODEX": str(real),
+                        },
+                        wrapper_argv0=shim,
+                        error_prefix="codex-observe",
+                    )
+            finally:
+                codex_observe.os.execvpe = original_execvpe
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0], str(real.resolve()))
+            self.assertEqual(calls[0][1], [str(real.resolve()), "arg"])
 
 
 if __name__ == "__main__":

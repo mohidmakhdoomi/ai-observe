@@ -1,0 +1,102 @@
+I'll read the implementation files and tests to review this phase. Let me start with the core source files and tests.Let me check the git diff to understand what was actually changed in this phase, and look at test fixtures:The actual diff is quite small. Let me see exactly what was changed:Let me also run the tests to verify they pass, and check the status.yaml update:Let me check the builder's worktree specifically:Good, now I have the full picture. Let me run the tests in the builder worktree:All 49 tests pass (43 in main, 6 new). Let me also quickly verify the `copy_file_range` parser doesn't accidentally use `writable_fds` (since the spec says "when destination fd/path can be resolved safely"):Let me verify the observe.py changes in the worktree for the nested behavior:Now I have all the information needed. Let me compile my review.
+
+---
+
+## Phase 1 Review: Strace Parser Hygiene and Recovery Contract
+
+### Summary of Changes
+
+The implementation adds:
+
+**trace_parser.py** (+35 lines):
+1. `copy_file_range` → `modify` events (destination fd via args[2])
+2. `sendfile` → `modify` events (destination fd via args[0])
+3. `splice` → `modify` events (destination fd via args[2], requires writable fd)
+4. `dup`/`dup2`/`dup3` fd tracking (propagates path & writable status)
+5. xattr operations (`setxattr`, `lsetxattr`, `fsetxattr`, `removexattr`, `lremovexattr`, `fremovexattr`) → `metadata` events
+6. Fixed `O_TRUNC` open result to report `0` instead of the raw fd number
+
+**observe.py** (+155 lines):
+1. `LogPaths` extended with `rebuilt_path` and `meta_path`
+2. `AI_OBSERVE_NESTED=1` injection into child env + direct-exec when NESTED is set
+3. Live-timeout path now rebuilds from full `.trace` into `.jsonl.rebuilt`
+4. `<session>.meta.json` sidecar written at end of every session with parser status, artifact roles, and warnings
+5. `safe_write_meta()` helper with same symlink/containment/permissions protections
+6. `build_session_meta()` with explicit authoritative-file precedence logic for normal, timeout-rebuilt, and parser-failure sessions
+7. `prepare_logs` now checks and verifies all new artifact paths
+
+**Tests** (+125 lines):
+- `test_copy_file_range_and_sendfile_modify_known_destination` 
+- `test_xattr_operations_emit_metadata_when_target_known`
+- `test_splice_to_dup_writable_fd_counts_bytes` (with dup2 → writable fd tracking)
+- `test_truncated_final_lines_are_safe_false_negatives`
+- `test_new_artifact_safe_writes_reject_symlink_and_use_private_mode`
+- `test_traced_child_receives_nested_env`
+- `test_nested_shim_direct_execs_resolved_real_without_strace`
+- Extended timeout test to verify `.rebuilt` creation, `.meta.json` content, and artifact precedence
+- Extended `prepare_logs` test to verify new path names
+
+All 49 tests pass.
+
+### Spec Adherence
+
+| Phase 1 Requirement | Status | Notes |
+|---|---|---|
+| `copy_file_range` → modify | ✅ | Destination fd from args[2]; requires known fd, path not None |
+| `sendfile` → modify | ✅ | Destination fd from args[0]; requires known fd, path not None |
+| `splice` → modify (improved) | ✅ | Destination via args[2]; requires writable fd |
+| `creat` → create | ✅ | Pre-existing |
+| `O_CREAT\|O_EXCL` → create | ✅ | Pre-existing |
+| Non-`O_EXCL` `O_CREAT` ≠ create | ✅ | Pre-existing |
+| xattr ops → metadata | ✅ | All 6 variants covered |
+| `<session>.jsonl.rebuilt` on timeout | ✅ | Full-trace rebuild, safe write |
+| `<session>.meta.json` sidecar | ✅ | Written every session with status/roles/warnings |
+| Artifact precedence in meta | ✅ | Normal/timeout/parser-failure modes documented |
+| `AI_OBSERVE_NESTED=1` injection | ✅ | Set in child_env before Popen |
+| Inner shim direct-exec on NESTED | ✅ | Early exit via `os.execvpe` |
+| Truncated trace tolerance | ✅ | Test shows truncated lines become safe errors |
+| Safe-write helpers for new artifacts | ✅ | `safe_write_meta` with O_NOFOLLOW, containment, 0o600 |
+| Symlink rejection for new artifacts | ✅ | Tested explicitly |
+
+### Code Quality Issues
+
+**1. Minor: `copy_file_range` doesn't check `writable_fds` (Low severity)**
+
+`splice` requires `fd not in state.writable_fds` → return None, but `copy_file_range` and `sendfile` only check that the fd/path is known, not that the fd is writable. This is a deliberate design choice since `copy_file_range` writes to the output fd regardless of open flags, and `sendfile` similarly writes to its `out_fd`. Both syscalls will succeed even if the fd was only opened for writing (and wouldn't have been opened otherwise). The spec says "when destination fd/path can be resolved safely" — and the implementation correctly requires `path is not None` as the safety check. This is fine.
+
+**2. Minor: `sendfile` argument index (Correct but worth noting)**
+
+`sendfile(out_fd, in_fd, offset, count)` — the implementation uses `args[0]` as the destination fd, which is correct per the Linux `sendfile(2)` signature where the first argument is the output fd.
+
+**3. Good: `copy_file_range` skips unknown fds safely**
+
+When fd is unknown (args[2] = 99 with no path annotation), the test `test_copy_file_range_and_sendfile_modify_known_destination` line 5 shows it's silently skipped — safe false negative as required.
+
+**4. Good: Meta sidecar design is solid**
+
+The `build_session_meta` function cleanly maps the three session modes (normal, timeout-rebuilt, parser-failure) to artifact roles, and the test verifies the rebuilt timeout path end-to-end.
+
+### Test Coverage Assessment
+
+Tests cover the main requirements well:
+- ✅ Parser fixtures for `copy_file_range`, `sendfile`, xattrs
+- ✅ Splice with dup2 fd tracking
+- ✅ Truncated/unfinished trace line tolerance
+- ✅ Timeout → `.rebuilt` → `.meta.json` with correct status and artifact roles
+- ✅ Symlink rejection and 0o600 mode for new artifacts
+- ✅ NESTED env injection to child process
+- ✅ NESTED flag causes direct-exec (skipping strace)
+
+**One gap**: No dedicated test for `copy_file_range`/`sendfile` with zero-byte result (`result_value <= 0`) being skipped. The conditional is there, but untested. This is a minor gap since the existing `splice` and `write` tests already exercise the same pattern.
+
+### Plan Alignment
+
+The implementation closely follows the Phase 1 plan. All files listed in the plan (`trace_parser.py`, `observe.py`, `test_trace_parser.py`, `test_live_trace.py`) received the expected changes. The `test_observe_env.py` changes are a bonus (testing nested shim behavior from the env-alias perspective).
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers all planned parser extensions (copy_file_range, sendfile, xattrs, splice+dup), recovery contract (.rebuilt, .meta.json), nested shim escape hatch, and truncated trace tolerance with solid test coverage.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

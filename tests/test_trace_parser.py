@@ -84,6 +84,34 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual([e["result"] for e in file_events], [0, 7, 5])
         self.assertEqual(sum(e["result"] for e in file_events if e["result"] > 0), 12)
 
+    def test_copy_file_range_and_sendfile_modify_known_destination(self):
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "src", O_RDONLY) = 3</tmp/work/src>
+123 1714932000.000002 openat(AT_FDCWD, "dst", O_WRONLY|O_CREAT, 0666) = 4</tmp/work/dst>
+123 1714932000.000003 copy_file_range(3</tmp/work/src>, NULL, 4</tmp/work/dst>, NULL, 11, 0) = 11
+123 1714932000.000004 sendfile(4</tmp/work/dst>, 3</tmp/work/src>, NULL, 7) = 7
+123 1714932000.000005 copy_file_range(3</tmp/work/src>, NULL, 99, NULL, 11, 0) = 11
+""")
+        self.assertEqual(self.ops(events), ["modify", "modify"])
+        self.assertEqual([e["path"] for e in events], ["/tmp/work/dst", "/tmp/work/dst"])
+        self.assertEqual([e["result"] for e in events], [11, 7])
+
+    def test_xattr_operations_emit_metadata_when_target_known(self):
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "x", O_RDWR) = 3</tmp/work/x>
+123 1714932000.000002 setxattr("x", "user.k", "v", 1, 0) = 0
+123 1714932000.000003 lsetxattr("link", "user.k", "v", 1, 0) = 0
+123 1714932000.000004 fsetxattr(3</tmp/work/x>, "user.k", "v", 1, 0) = 0
+123 1714932000.000005 removexattr("x", "user.k") = 0
+123 1714932000.000006 lremovexattr("link", "user.k") = 0
+123 1714932000.000007 fremovexattr(3</tmp/work/x>, "user.k") = 0
+""")
+        self.assertEqual(self.ops(events), ["metadata"] * 6)
+        self.assertEqual(
+            [e["path"] for e in events],
+            ["/tmp/work/x", "/tmp/work/link", "/tmp/work/x", "/tmp/work/x", "/tmp/work/link", "/tmp/work/x"],
+        )
+
     def test_delete_rename_chmod_metadata(self):
         events = self.parse("""
 123 1714932000.000001 unlink("gone.txt") = 0
@@ -132,6 +160,17 @@ class TraceParserTests(unittest.TestCase):
 123 1714932000.000002 <... openat resumed> , 0600) = 3</tmp/work/u.txt>
 """)
         self.assertEqual(self.ops(events), ["create"])
+
+    def test_truncated_final_lines_are_safe_false_negatives(self):
+        parser = self._new_parser()
+        result = parser.parse_lines([
+            '123 1714932000.000001 creat("ok", 0600) = 3</tmp/work/ok>\n',
+            '123 1714932000.000002 openat(AT_FDCWD, "unfinished", O_WRONLY|O_CREAT|O_EXCL <unfinished ...>\n',
+            '123 1714932000.000003 creat("truncated"',
+        ])
+        self.assertEqual(self.ops(result.events), ["create"])
+        self.assertEqual(result.events[0]["path"], "/tmp/work/ok")
+        self.assertTrue(any("unparsed body" in err for err in result.errors))
 
     def test_chdir_fchdir_relative_and_dirfd_at(self):
         events = self.parse("""

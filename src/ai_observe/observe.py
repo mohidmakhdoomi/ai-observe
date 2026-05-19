@@ -29,6 +29,8 @@ class LogPaths:
     trace_path: Path
     jsonl_path: Path
     partial_path: Path
+    rebuilt_path: Path
+    meta_path: Path
 
 
 class ObserveError(RuntimeError):
@@ -167,6 +169,9 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
     if env_flag(env, "DISABLE"):
         os.execvpe(str(real_command), real_argv, env)
         raise AssertionError("execvpe returned")
+    if env_flag(env, "NESTED"):
+        os.execvpe(str(real_command), real_argv, env)
+        raise AssertionError("execvpe returned")
 
     if sys.platform.startswith("linux") is False:
         raise ObserveError("Linux required for strace backend", 1)
@@ -200,6 +205,8 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
         *real_argv,
     ]
     command = list(real_argv)
+    child_env = dict(env)
+    child_env["AI_OBSERVE_NESTED"] = "1"
     proc = None
     interrupted: int | None = None
     forced_terminated = False
@@ -211,7 +218,10 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
         fail_after_n = None
     include_log_writes = env_flag(env, "INCLUDE_LOG_WRITES")
     initial_cwd = str(Path(os.getcwd()).resolve())
-    active_artifacts = {str(Path(p).resolve()) for p in (logs.trace_path, logs.jsonl_path, logs.partial_path)}
+    active_artifacts = {
+        str(Path(p).resolve())
+        for p in (logs.trace_path, logs.jsonl_path, logs.partial_path, logs.rebuilt_path, logs.meta_path)
+    }
 
     live_parser: TraceParser | None = None
     live_tracer: LiveTracer | None = None
@@ -281,7 +291,7 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
     try:
         try:
             verify_log_path_safe(logs.trace_path, logs.observe_dir)
-            proc = subprocess.Popen(trace_cmd, stdin=None, stdout=None, stderr=None, env=env, start_new_session=True)
+            proc = subprocess.Popen(trace_cmd, stdin=None, stdout=None, stderr=None, env=child_env, start_new_session=True)
             forced_terminated = wait_for_process(proc, lambda: interrupted, float(env_value(env, "SIGNAL_GRACE", "2")))
         except PermissionError as exc:
             raise ObserveError(f"failed to start strace: {exc}", 1) from exc
@@ -298,17 +308,63 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
         print(f"{error_prefix}: strace failed; ptrace may be denied by sandbox/seccomp/Yama", file=sys.stderr)
 
     parse_failed = False
+    parser_status = "ok"
+    authoritative_path: Path | None = logs.jsonl_path
+    meta_warnings: list[str] = []
     if live_tracer is not None:
         live_tracer.request_stop()
         timed_out, live_error, live_pf = live_tracer.join(_live_join_timeout(env))
         if timed_out:
             parse_failed = True
+            parser_status = "live_timeout"
+            meta_warnings.append("live parser did not exit before timeout; rebuilt artifact may be authoritative")
             print(
-                f"{error_prefix}: live parser did not exit within join timeout; leaving partial .jsonl; original exit {codex_code}",
+                f"{error_prefix}: live parser did not exit within join timeout; rebuilding full trace to {logs.rebuilt_path}; original exit {codex_code}",
                 file=sys.stderr,
             )
+            try:
+                result = parse_trace_file(
+                    logs.trace_path,
+                    None,
+                    session_id=logs.session_id,
+                    invocation_id=logs.session_id,
+                    command=command,
+                    initial_cwd=initial_cwd,
+                    active_artifacts=active_artifacts,
+                    include_log_writes=include_log_writes,
+                )
+                safe_write_jsonl(logs.rebuilt_path, result.events, logs.observe_dir)
+                parser_status = "live_timeout_rebuilt"
+                authoritative_path = logs.rebuilt_path
+                parse_failed = False
+            except ParserFailure as exc:
+                parser_status = "live_timeout_rebuild_parser_failure"
+                authoritative_path = None
+                try:
+                    safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
+                except Exception as inner:
+                    print(
+                        f"{error_prefix}: timeout rebuild parser failed; could not write {logs.partial_path}; original exit {codex_code}: {inner}",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"{error_prefix}: timeout rebuild parser failed; wrote {logs.partial_path}; original exit {codex_code}",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                parser_status = "live_timeout_rebuild_failed"
+                authoritative_path = None
+                meta_warnings.append(f"full-trace rebuild failed: {type(exc).__name__}: {exc}")
+                print(
+                    f"{error_prefix}: timeout rebuild failed; leaving partial .jsonl; original exit {codex_code}: {exc}",
+                    file=sys.stderr,
+                )
         elif live_pf is not None:
             parse_failed = True
+            parser_status = "parser_failure_partial"
+            authoritative_path = None
+            meta_warnings.append("live parser failed; partial direct events are in .jsonl.partial")
             try:
                 safe_write_jsonl(logs.partial_path, live_pf.events, logs.observe_dir)
             except Exception as exc:
@@ -327,6 +383,8 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
                 pass
         elif live_error is not None:
             parse_failed = True
+            parser_status = "live_error"
+            meta_warnings.append(f"live parser raised {type(live_error).__name__}; rebuilt canonical .jsonl post hoc")
             print(
                 f"{error_prefix}: warning: live parser raised {type(live_error).__name__}: {live_error}; falling back to post-hoc rebuild; original exit {codex_code}",
                 file=sys.stderr,
@@ -344,8 +402,12 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
                     fail_after_events=fail_after_n,
                 )
                 safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
+                parser_status = "live_error_rebuilt"
+                authoritative_path = logs.jsonl_path
             except ParserFailure as exc:
                 parse_failed = True
+                parser_status = "live_error_rebuild_parser_failure"
+                authoritative_path = None
                 try:
                     safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
                 except Exception as inner:
@@ -364,6 +426,9 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
                     pass
             except Exception as exc:
                 parse_failed = True
+                parser_status = "live_error_rebuild_failed"
+                authoritative_path = None
+                meta_warnings.append(f"post-hoc rebuild failed: {type(exc).__name__}: {exc}")
                 try:
                     safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
                     print(
@@ -394,14 +459,27 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
                 fail_after_events=fail_after_n,
             )
             safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
+            parser_status = "ok"
+            authoritative_path = logs.jsonl_path
         except ParserFailure as exc:
             parse_failed = True
+            parser_status = "parser_failure_partial"
+            authoritative_path = None
+            meta_warnings.append("post-hoc parser failed; partial direct events are in .jsonl.partial")
             safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
             print(f"{error_prefix}: parser failed; wrote {logs.partial_path}; original exit {codex_code}", file=sys.stderr)
         except Exception as exc:  # safe wrapper behavior
             parse_failed = True
+            parser_status = "parser_failure_empty_partial"
+            authoritative_path = None
+            meta_warnings.append(f"post-hoc parser failed: {type(exc).__name__}: {exc}")
             safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
             print(f"{error_prefix}: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}", file=sys.stderr)
+
+    try:
+        safe_write_meta(logs.meta_path, build_session_meta(logs, parser_status, authoritative_path, meta_warnings), logs.observe_dir)
+    except Exception as exc:
+        print(f"{error_prefix}: warning: could not write {logs.meta_path}: {exc}", file=sys.stderr)
 
     if parse_failed and env_flag(env, "STRICT_PARSE"):
         return 1
@@ -467,6 +545,72 @@ def safe_write_jsonl(path: Path, events, observe_dir: Path) -> None:
         os.chmod(path, 0o600)
     except OSError:
         pass
+
+
+def safe_write_meta(path: Path, data: dict, observe_dir: Path) -> None:
+    verify_log_path_safe(path, observe_dir)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise ObserveError(f"cannot safely write log path {path}: {exc}", 1) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        import json
+        json.dump(data, fh, sort_keys=True, separators=(",", ":"))
+        fh.write("\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def build_session_meta(
+    logs: LogPaths,
+    parser_status: str,
+    authoritative_path: Path | None,
+    warnings: list[str],
+) -> dict:
+    def artifact(path: Path, role: str) -> dict:
+        return {
+            "path": path.name,
+            "role": role,
+            "exists": True if path == logs.meta_path else path.exists(),
+        }
+
+    if authoritative_path == logs.rebuilt_path:
+        jsonl_role = "partial_live"
+        rebuilt_role = "authoritative_complete"
+        partial_role = "absent_or_parser_failure_partial"
+    elif authoritative_path == logs.jsonl_path:
+        jsonl_role = "authoritative_complete"
+        rebuilt_role = "absent"
+        partial_role = "absent_or_parser_failure_partial"
+    else:
+        if parser_status.startswith("live_timeout") or parser_status.startswith("live_error"):
+            jsonl_role = "partial_live"
+        else:
+            jsonl_role = "inferred_or_empty_placeholder"
+        rebuilt_role = "absent"
+        partial_role = "partial_direct"
+
+    return {
+        "schema_version": 1,
+        "session_id": logs.session_id,
+        "parser": {
+            "status": parser_status,
+            "source": "strace",
+        },
+        "artifacts": {
+            "authoritative_event_path": authoritative_path.name if authoritative_path is not None else None,
+            "trace": artifact(logs.trace_path, "trace"),
+            "jsonl": artifact(logs.jsonl_path, jsonl_role),
+            "partial": artifact(logs.partial_path, partial_role),
+            "rebuilt": artifact(logs.rebuilt_path, rebuilt_role),
+            "meta": artifact(logs.meta_path, "metadata"),
+        },
+        "warnings": warnings,
+    }
 
 
 def safe_append_jsonl_handle(path: Path, observe_dir: Path):
@@ -830,11 +974,16 @@ def prepare_logs(env: dict[str, str]) -> LogPaths:
         trace_path = observe_dir / f"{session}.trace"
         jsonl_path = observe_dir / f"{session}.jsonl"
         partial_path = observe_dir / f"{session}.jsonl.partial"
-        if trace_path.exists() or jsonl_path.exists() or partial_path.exists():
+        rebuilt_path = observe_dir / f"{session}.jsonl.rebuilt"
+        meta_path = observe_dir / f"{session}.meta.json"
+        if trace_path.exists() or jsonl_path.exists() or partial_path.exists() or rebuilt_path.exists() or meta_path.exists():
             continue
         try:
             verify_parent(trace_path, observe_dir)
             verify_parent(jsonl_path, observe_dir)
+            verify_parent(partial_path, observe_dir)
+            verify_parent(rebuilt_path, observe_dir)
+            verify_parent(meta_path, observe_dir)
             exclusive_touch(trace_path)
             try:
                 exclusive_touch(jsonl_path)
@@ -844,7 +993,7 @@ def prepare_logs(env: dict[str, str]) -> LogPaths:
                 except OSError:
                     pass
                 raise
-            return LogPaths(observe_dir, session, trace_path, jsonl_path, partial_path)
+            return LogPaths(observe_dir, session, trace_path, jsonl_path, partial_path, rebuilt_path, meta_path)
         except OSError as exc:
             raise ObserveError(f"cannot create observe log files in {observe_dir}: {exc}", 1) from exc
     raise ObserveError("unable to allocate unique observe log names", 1)

@@ -1,0 +1,10 @@
+Using direct file reads to review the phase-1 implementation against the spec/plan.Running the phase-1 test targets to verify behavior, not just inspect code.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 1 is close, but the recovery contract is still inconsistent in a couple of important failure/rebuild branches.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- `src/ai_observe/observe.py:317-338,483-484` — a live-parser join timeout sets `parse_failed = True` before the full-trace rebuild, and that flag is never cleared after a successful `.jsonl.rebuilt` recovery. In `STRICT_PARSE` mode this turns a recoverable timeout into exit code 1 even when an authoritative rebuilt artifact exists, which does not match the phase’s “recovery contract” intent.
+- `src/ai_observe/observe.py:580-591` — `build_session_meta()` misclassifies all `authoritative_path is None` cases as `jsonl: "inferred_or_empty_placeholder"`. That is wrong for timeout/fallback branches where `.jsonl` can still contain a partial live stream, so the artifact relationships are not explicit/accurate in exactly the scenarios this phase is supposed to clarify.
+- Tests cover the happy timeout-rebuild path, but I don’t see coverage for the mislabelled meta branches above (for example `live_timeout_rebuild_failed` / `live_timeout_rebuild_parser_failure`), so the contract gap is currently unguarded.

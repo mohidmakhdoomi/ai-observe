@@ -301,6 +301,26 @@ class TraceParser:
                 return None
             op = "modify"
             path = state.fds.get(fd) or fd_path_annotation(args[2])
+        elif name == "copy_file_range":
+            if result_value is None or result_value <= 0 or len(args) < 3:
+                return None
+            fd = fd_number(args[2])
+            if fd is None:
+                return None
+            path = self._state(pid).fds.get(fd) or fd_path_annotation(args[2])
+            if path is None:
+                return None
+            op = "modify"
+        elif name == "sendfile":
+            if result_value is None or result_value <= 0 or not args:
+                return None
+            fd = fd_number(args[0])
+            if fd is None:
+                return None
+            path = self._state(pid).fds.get(fd) or fd_path_annotation(args[0])
+            if path is None:
+                return None
+            op = "modify"
         elif name in {"truncate", "truncate64"}:
             op = "modify"
             path = self._path_from_arg(pid, args[0]) if args else None
@@ -338,6 +358,21 @@ class TraceParser:
                 path = self._state(pid).fds.get(fd) if fd is not None else None
             elif name in {"fchownat", "utimensat", "futimesat"}:
                 path = self._at_path(pid, args, 1, 0)
+            else:
+                path = self._path_from_arg(pid, args[0]) if args else None
+        elif name in {
+            "setxattr",
+            "lsetxattr",
+            "removexattr",
+            "lremovexattr",
+            "fsetxattr",
+            "fremovexattr",
+        }:
+            op = "metadata"
+            if name.startswith("f"):
+                fd = fd_number(args[0]) if args else None
+                if fd is not None:
+                    path = self._state(pid).fds.get(fd) or fd_path_annotation(args[0])
             else:
                 path = self._path_from_arg(pid, args[0]) if args else None
         elif name in {"mkdir", "mkdirat", "mknod", "mknodat"}:
