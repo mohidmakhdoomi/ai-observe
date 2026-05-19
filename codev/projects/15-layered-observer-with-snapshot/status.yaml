@@ -68,5 +68,21 @@ history:
         verdict: REQUEST_CHANGES
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-2-schema-v2-provenance-core-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase-3-snapshot-manifest-diff
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-3-snapshot-manifest-diff-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-3-snapshot-manifest-diff-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-3-snapshot-manifest-diff-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-19T14:07:14.886Z'
+updated_at: '2026-05-19T22:30:52.316Z'
