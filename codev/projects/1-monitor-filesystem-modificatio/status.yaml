@@ -1,7 +1,7 @@
 id: '1'
 title: monitor-filesystem-modificatio
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-05T17:54:20.241Z'
-updated_at: '2026-05-20T15:21:01.724Z'
+updated_at: '2026-05-20T15:21:02.866Z'
 pr_history:
   - phase: specify
     pr_number: 2
