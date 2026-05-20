@@ -39,6 +39,7 @@ class SnapshotBackend:
             session.active_artifacts,
             error_prefix=session.error_prefix,
         )
+        session.watched_roots = tuple(getattr(self._plan, "roots", ()) or ())
         if getattr(self._plan, "roots", None):
             return
 

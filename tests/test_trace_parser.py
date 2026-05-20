@@ -198,6 +198,22 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual(events[0]["new_path"], "/tmp/work/new")
         self.assertEqual(events[0]["path"], "/tmp/work/new")
 
+    def test_watched_roots_drop_outside_and_cross_boundary_direct_events(self):
+        events = self.parse("""
+123 1714932000.000001 creat("/tmp/work/inside/keep.txt", 0600) = 3</tmp/work/inside/keep.txt>
+123 1714932000.000002 creat("/tmp/work/outside/drop.txt", 0600) = 4</tmp/work/outside/drop.txt>
+123 1714932000.000003 rename("/tmp/work/inside/move-out.txt", "/tmp/work/outside/move-out.txt") = 0
+123 1714932000.000004 rename("/tmp/work/outside/move-in.txt", "/tmp/work/inside/move-in.txt") = 0
+123 1714932000.000005 rename("/tmp/work/inside/old.txt", "/tmp/work/inside/new.txt") = 0
+""", watched_roots=["/tmp/work/inside"])
+        self.assertEqual(
+            [(event["operation"], event["path"]) for event in events],
+            [
+                ("create", "/tmp/work/inside/keep.txt"),
+                ("rename", "/tmp/work/inside/new.txt"),
+            ],
+        )
+
     def test_artifact_exclusion_only_active_paths(self):
         events = self.parse("""
 123 1714932000.000001 creat("/tmp/work/.codev/observe/session.trace", 0600) = 3</tmp/work/.codev/observe/session.trace>

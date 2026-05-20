@@ -48,6 +48,7 @@ class BackendSession:
     error_prefix: str
     include_log_writes: bool
     fail_after_events: int | None
+    watched_roots: tuple[Path, ...] = field(default_factory=tuple)
     state: BackendState = field(default_factory=BackendState)
 
 

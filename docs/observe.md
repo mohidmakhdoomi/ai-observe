@@ -86,6 +86,10 @@ Use `strace` or `snapshot` mainly for troubleshooting. The supported low-frictio
 
 Snapshot reconciliation runs only under explicit watched roots.
 
+In the default layered mode, those watched roots are also the visibility
+boundary for direct `strace` events: direct events outside the watched roots are
+not emitted into the session JSONL.
+
 - `AI_OBSERVE_ROOTS` is a path list; on Linux use `:` separators, for example:
 
   ```bash

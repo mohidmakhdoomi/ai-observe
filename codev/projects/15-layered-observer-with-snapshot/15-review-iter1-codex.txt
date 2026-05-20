@@ -1,0 +1,23 @@
+Using direct file reads and targeted test execution to verify PR readiness against the spec/plan.Running the suite the PR claims, plus checking the browser smoke command, to verify readiness rather than trusting the description.---
+VERDICT: COMMENT
+SUMMARY: Implementation looks broadly aligned with the spec/plan, but the snapshot completeness flag is a bit too pessimistic and I could not fully re-run the tempdir-heavy suite in this sandbox.
+CONFIDENCE: MEDIUM
+---
+KEY_ISSUES:
+- `build_snapshot_summary()` marks `snapshot.complete = false` for any diagnostic, including `duplicate_root` / `overlapping_root`. Those cases do not necessarily reduce coverage when the kept ancestor still fully covers the skipped root, so the banner/meta can overstate incompleteness.
+- Commit hygiene is a little off the documented `[Spec 15][Phase]` format because the branch includes multiple `chore(porch): ...` commits.
+- Full `python3 -m unittest discover -s tests` could not be independently validated in this read-only sandbox because `tempfile` has no usable temp directory here; targeted non-temp suites I ran did pass.
+
+PR_SUMMARY: |
+  ## Summary
+  This PR upgrades ai-observe from a strace-only observer into a layered observer that combines direct strace events with watched-root snapshot reconciliation and schema-v2 provenance. It also updates the viewer to handle mixed direct/inferred evidence and adds a concrete backend abstraction for strace/snapshot modes.
+
+  ## Key Changes
+  - Add schema-v2 provenance (`source`, `confidence`) and preserve schema-v1 viewer compatibility.
+  - Implement snapshot manifest capture/diff, conservative deduplication, meta sidecars, and backend selection via `AI_OBSERVE_BACKENDS`.
+  - Surface provenance, source filters, and artifact-state banners in the viewer; update docs, architecture notes, and regression coverage.
+
+  ## Test Plan
+  - Run `python3 -m unittest discover -s tests` in a writable environment.
+  - Smoke `AI_OBSERVE_BACKENDS=strace,snapshot`, `strace`, and `snapshot` modes against a temp repo.
+  - Open the viewer on mixed-source fixtures and verify source toggles plus rebuilt/partial artifact banners.

@@ -78,6 +78,7 @@ class StraceBackend:
             active_artifacts=session.active_artifacts,
             include_log_writes=session.include_log_writes,
             fail_after_events=session.fail_after_events,
+            watched_roots=session.watched_roots,
         )
         candidate = self.live_tracer_cls(
             session.logs.trace_path,
@@ -127,6 +128,7 @@ class StraceBackend:
                         initial_cwd=session.initial_cwd,
                         active_artifacts=session.active_artifacts,
                         include_log_writes=session.include_log_writes,
+                        watched_roots=session.watched_roots,
                     )
                     self.safe_write_jsonl(session.logs.rebuilt_path, result.events, session.logs.observe_dir)
                     parser_status = "live_timeout_rebuilt"
@@ -175,6 +177,7 @@ class StraceBackend:
                         active_artifacts=session.active_artifacts,
                         include_log_writes=session.include_log_writes,
                         fail_after_events=session.fail_after_events,
+                        watched_roots=session.watched_roots,
                     )
                     self.safe_write_jsonl(session.logs.jsonl_path, result.events, session.logs.observe_dir)
                     parser_status = "live_error_rebuilt"
@@ -199,6 +202,7 @@ class StraceBackend:
                     active_artifacts=session.active_artifacts,
                     include_log_writes=session.include_log_writes,
                     fail_after_events=session.fail_after_events,
+                    watched_roots=session.watched_roots,
                 )
                 self.safe_write_jsonl(session.logs.jsonl_path, result.events, session.logs.observe_dir)
                 parser_status = "ok"

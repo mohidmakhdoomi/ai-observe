@@ -430,6 +430,48 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             ]
             self.assertEqual([(event["path"], event["source"]) for event in events], [(str(inside / "in.txt"), "snapshot")])
 
+    def test_snapshot_explicit_roots_filter_direct_strace_events_outside_roots(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inside = root / "inside"
+            outside = root / "outside"
+            inside.mkdir()
+            outside.mkdir()
+            inside_path = inside / "in.txt"
+            outside_path = outside / "out.txt"
+            trace = (
+                f'123 1714932000.000001 creat("{inside_path}", 0600) = 3<{inside_path}>\\n'
+                f'123 1714932000.000002 creat("{outside_path}", 0600) = 4<{outside_path}>\\n'
+            )
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path({str(inside_path)!r}).write_text("in", encoding="utf-8")
+                Path({str(outside_path)!r}).write_text("out", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "roots-direct",
+                "AI_OBSERVE_ROOTS": str(inside),
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            events = [
+                json.loads(line)
+                for line in (root / "obs" / "roots-direct.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(
+                [(event["path"], event["source"], event["operation"]) for event in events],
+                [(str(inside_path), "strace", "create")],
+            )
+
     def test_snapshot_missing_roots_fail_when_no_roots_remain(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

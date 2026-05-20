@@ -48,6 +48,16 @@ def _wrapper_env(td: Path, extra: dict | None = None) -> dict:
         "CODEV_OBSERVE_DIR": str(td / "obs"),
         "CODEV_OBSERVE_QUIET": "1",
     })
+    if not extra or not any(
+        key in extra
+        for key in (
+            "AI_OBSERVE_BACKENDS",
+            "CODEV_OBSERVE_BACKENDS",
+            "AI_OBSERVE_ROOTS",
+            "CODEV_OBSERVE_ROOTS",
+        )
+    ):
+        env["AI_OBSERVE_BACKENDS"] = "strace"
     if extra:
         env.update(extra)
     return env
@@ -198,6 +208,30 @@ class LiveTracerUnitTests(unittest.TestCase):
         events = [json.loads(line) for line in self.jsonl_path.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["path"], "/tmp/work/a.txt")
+
+    def test_incremental_emission_filters_events_outside_watched_roots(self):
+        parser = TraceParser(
+            session_id="s",
+            invocation_id="s",
+            command=["/real/codex"],
+            initial_cwd="/tmp/work",
+            active_artifacts=set(),
+            include_log_writes=False,
+            watched_roots=["/tmp/work/inside"],
+        )
+        tracer = codex_observe.LiveTracer(self.trace_path, self.jsonl_path, self.obs, parser, 0.01)
+        tracer.start()
+        try:
+            with self.trace_path.open("a", encoding="utf-8") as fh:
+                fh.write('123 1714932000.000001 creat("/tmp/work/inside/in.txt", 0600) = 3</tmp/work/inside/in.txt>\n')
+                fh.write('123 1714932000.000002 creat("/tmp/work/outside/out.txt", 0600) = 4</tmp/work/outside/out.txt>\n')
+                fh.flush()
+            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
+        finally:
+            tracer.request_stop()
+            tracer.join(2.0)
+        events = [json.loads(line) for line in self.jsonl_path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(e["path"], e["source"]) for e in events], [("/tmp/work/inside/in.txt", "strace")])
 
 
 class LiveModeWrapperTests(unittest.TestCase):
@@ -508,6 +542,66 @@ class LiveModeWrapperTests(unittest.TestCase):
                 {(event["path"], event["source"], event["operation"]) for event in events},
                 {
                     (str(direct), "strace", "create"),
+                    (str(extra), "snapshot", "create"),
+                },
+            )
+
+    def test_join_timeout_rebuilt_filters_direct_events_outside_watched_roots(self):
+        real_run = codex_observe.LiveTracer._run
+
+        def hang_run(self):
+            try:
+                chunk = self._trace_fh.read(64 * 1024)
+                if chunk:
+                    parts = chunk.split("\n")
+                    for line in parts[:-1]:
+                        self._emit(self.parser.feed_line(line))
+                while True:
+                    time.sleep(0.05)
+            except BaseException as exc:
+                self.error = exc
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inside = root / "inside"
+            outside = root / "outside"
+            inside.mkdir()
+            outside.mkdir()
+            direct_inside = inside / "direct.txt"
+            direct_outside = outside / "out.txt"
+            extra = inside / "snapshot.txt"
+            trace = (
+                f'123 1714932000.000001 creat("{direct_inside}", 0600) = 3<{direct_inside}>\\n'
+                f'123 1714932000.000002 creat("{direct_outside}", 0600) = 4<{direct_outside}>\\n'
+            )
+            _install_fake_strace(root, trace)
+            real = _install_real(
+                root,
+                body=(
+                    f"from pathlib import Path\n"
+                    f"Path({str(direct_inside)!r}).write_text('direct', encoding='utf-8')\n"
+                    f"Path({str(direct_outside)!r}).write_text('outside', encoding='utf-8')\n"
+                    f"Path({str(extra)!r}).write_text('snapshot', encoding='utf-8')\n"
+                ),
+            )
+            env = _wrapper_env(root, {
+                "CODEV_OBSERVE_REAL_CODEX": str(real),
+                "CODEV_OBSERVE_SESSION_ID": "toscope",
+                "CODEV_OBSERVE_LIVE_JOIN_TIMEOUT": "0.2",
+                "AI_OBSERVE_ROOTS": str(inside),
+            })
+            codex_observe.LiveTracer._run = hang_run
+            try:
+                rc, stderr = self._run_in_process(env)
+            finally:
+                codex_observe.LiveTracer._run = real_run
+            self.assertEqual(rc, 0, stderr)
+            rebuilt = root / "obs" / "toscope.jsonl.rebuilt"
+            events = [json.loads(line) for line in rebuilt.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(
+                {(event["path"], event["source"], event["operation"]) for event in events},
+                {
+                    (str(direct_inside), "strace", "create"),
                     (str(extra), "snapshot", "create"),
                 },
             )

@@ -1,0 +1,18 @@
+# Claude consultation unavailable for PR review iteration 1
+
+Claude PR consultation was attempted for review iteration 1, but the provider hit an account/tool usage limit before producing a final review artifact.
+
+Observed failure details included:
+
+- `You've hit your limit · resets 12:10pm (America/Toronto)`
+
+No Claude review verdict was available.
+
+---
+VERDICT: COMMENT
+SUMMARY: Claude PR consultation failed because the provider hit a usage limit before a final review artifact could be produced.
+CONFIDENCE: LOW
+---
+
+KEY_ISSUES:
+- Claude review could not be completed because the provider returned a usage-limit error.
