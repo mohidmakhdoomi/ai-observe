@@ -1,0 +1,10 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The phase-8 review doc is present, but the phase is not actually finalized: the worktree is still dirty/uncommitted and the recorded regression state is not in a finalized, verifiable PR-ready state.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- Phase-8 is still incomplete operationally: `codev/projects/15-layered-observer-with-snapshot/status.yaml:20-35` still marks `phase-8-review-regression` as `in_progress` with `pr` and `verify-approval` pending.
+- The repo is not PR-ready or “phase-sized commits” complete. `git status --short` shows a large set of modified and untracked files, including the new review artifact itself (`git status --short:53`), new backend files (`git status --short:54,56`), and many consultation artifacts/helper files (`git status --short:29-52`). `git log --grep='[Spec 15]'` only shows implementation commits for earlier work (`strace parser reliability`, `schema v2 provenance`), not committed later-phase implementation.
+- The review artifact overstates completion. It claims full regression succeeded with “204 tests passed” (`codev/reviews/15-layered-observer-with-snapshot.md:74-105`), but that evidence is not finalized in the current checkout, and the current phase state/file status contradicts the “final regression / PR preparation complete” framing.

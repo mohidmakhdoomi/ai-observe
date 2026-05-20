@@ -42,3 +42,11 @@ When changing an internal streaming protocol, keep every committed phase indepen
 ## Prefer structural performance tests over timing thresholds
 
 For CI-stable performance work, test the algorithmic shape and edge semantics directly: bounded batch sizes, exact-once event delivery, no tree walk for empty selections, or retained partial-line buffers. Use review notes or manual measurements for wall-clock claims instead of brittle hard timing gates.
+
+## Pin legacy tests when a new default backend changes observation scope
+
+When a product gains a second default event source, old tests that were written for a single-source world can become latently flaky even if they still pass most of the time. Tests that are intentionally exercising one backend or one observation scope should pin that backend explicitly (for example `AI_OBSERVE_BACKENDS=strace`) or isolate their watched root/cwd so later architectural defaults do not broaden the assertion surface accidentally.
+
+## Make artifact authority explicit when recovery can yield multiple valid outputs
+
+If a recovery flow can leave behind canonical, partial, rebuilt, and diagnostic artifacts at the same time, encode authority in a machine-readable sidecar rather than relying on filename conventions or UI guesses. A small explicit metadata contract keeps CLI behavior, viewer selection, and follow-on tests aligned even when timeout rebuilds and parser-failure modes differ.

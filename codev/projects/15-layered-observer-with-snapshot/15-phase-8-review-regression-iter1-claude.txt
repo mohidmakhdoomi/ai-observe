@@ -1,0 +1,56 @@
+I'll start by reading the review artifact that Phase 8 is primarily responsible for, then run the test suite to verify regression status.Now let me read the review artifact and run the test suite in parallel:There's a failing test. Let me examine it and understand the root cause:Let me understand the failing test better by checking what events are actually produced:Now let me look at the observe.py integration to understand why the test gets 3 events:Let me get more details on what the 3 events actually are in the failing test, and also check more of the review requirements:The test passes in isolation but fails in the full suite — this is a test-ordering/isolation issue. Let me diagnose:Now let me look at the broader scope. Let me verify that all production code/test files are in good shape for Phase 8's "final regression" responsibility. Let me run the full suite one more time to confirm the flaky status:OK, the failure appeared once in the first run but was not reproducible in 3 subsequent runs. It's a latent flakiness issue. Let me now thoroughly review the Phase 8 deliverables. Let me check the review artifact quality and the targeted smoke tests:Good — the targeted smoke tests all pass. Now let me check the review artifact more closely against the plan requirements, and spot-check some of the uncommitted production code for obvious issues:Let me verify one more thing about the test — whether it has an architectural vulnerability to snapshot noise, even if the failure is rare:Now let me do one final check — verify that the test suite covers the key acceptance criteria from Phase 8's plan, and spot-check the new mixed-source fixture:I've now completed a thorough review of Phase 8. Here's my assessment:
+
+---
+
+## Phase 8 Review: Final regression, review artifact, and PR preparation
+
+### Review Artifact Quality
+
+The review at `codev/reviews/15-layered-observer-with-snapshot.md` is **comprehensive and well-structured**. It covers:
+- ✅ Final product promise (defensible, accurate to spec)
+- ✅ All 8 implemented phases with summaries
+- ✅ Important design decisions (6 items, all correct)
+- ✅ Architecture/implementation notes
+- ✅ Phase commit records with SHAs
+- ✅ Validation section with full and targeted smoke commands
+- ✅ Deferred work (kernel backends, remote agents, mmap attribution, cross-platform)
+
+### Test Regression
+
+204 tests pass. Targeted smoke commands from the review (backend modes: 7 tests, viewer mixed-source: 5 tests) all pass. However:
+
+**Latent flakiness in `test_generic_wrapper_writes_schema_compatible_jsonl_and_preserves_exit`** — During my initial full-suite run, this test failed with `AssertionError: 3 != 1`. The test runs with default backends (strace+snapshot) and inherits the test runner's CWD as the snapshot root, but asserts exactly 1 event. Any concurrent filesystem change under CWD during the ~0.3s window produces extra snapshot events. The failure was not reproducible in 3 subsequent runs, confirming it as a rare timing-dependent issue.
+
+**Root cause:** The test was written for strace-only behavior (pre-Phase 4) but wasn't updated when snapshot became the default. Compare with the well-designed Phase 4+ tests (lines 277-478) that all use `cwd=root` and/or explicit `AI_OBSERVE_BACKENDS` to control the snapshot environment.
+
+**Similarly vulnerable tests** (no `cwd` or `AI_OBSERVE_BACKENDS` control):
+- `test_codex_shim_runs_with_fake_strace_and_records_command` (line 140) — asserts empty JSONL
+- `test_claude_named_shim_runs_with_fake_strace_and_records_command` (line 120) — asserts `events[0]` content
+
+**Recommended fix:** Add `"AI_OBSERVE_BACKENDS": "strace"` to the env dict for these tests, since they are specifically testing strace/shim behavior, not snapshot integration.
+
+### Uncommitted Changes
+
+Phases 1-2 have named implementation commits (`9aacf4a`, `ca8200f`), but Phases 3-8 implementation changes are accumulated as uncommitted working-tree modifications (28 files, 2077 insertions, 1673 deletions). The plan says "Git history contains phase-sized commits." These changes need to be committed before PR creation.
+
+### Review Accuracy
+
+The review's Validation section states "204 tests passed" and Flaky Tests says "None" — the latent flakiness should be documented there, even if the fix is deferred to PR preparation.
+
+### What's Working Well
+
+- The overall test architecture is solid: 204 tests with good separation of unit (parser fixtures, manifest diffs) and integration (fake strace, temp roots) testing
+- The `mixed_sources.jsonl` fixture properly exercises v1/v2 mixed streams
+- E2E smoke tests verify viewer HTML structure, source filter UI presence (`Sources`, `Strace`, `Snapshot`), sanitized artifact endpoints, and documentation consistency
+- Backend smoke tests cover all three modes (strace+snapshot, strace-only, snapshot-only)
+
+---
+VERDICT: COMMENT
+SUMMARY: Review artifact is comprehensive and test suite is solid; flag latent flakiness in 3 pre-snapshot tests that need `AI_OBSERVE_BACKENDS=strace` and note that phases 3-8 changes are uncommitted.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `test_generic_wrapper_writes_schema_compatible_jsonl_and_preserves_exit` and 2 similar pre-Phase-4 tests are latently flaky due to uncontrolled snapshot root — add `"AI_OBSERVE_BACKENDS": "strace"` to their env dicts
+- Phases 3-8 implementation changes (28 files) remain uncommitted in the working tree — need phase-sized commits before PR creation
+- Review Flaky Tests section says "None" but should document the latent flakiness (even if fixed before PR)
