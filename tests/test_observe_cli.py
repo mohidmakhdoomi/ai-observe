@@ -73,6 +73,7 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "AI_OBSERVE_DIR": str(root / "preferred-obs"),
                 "CODEV_OBSERVE_DIR": str(root / "legacy-obs"),
                 "AI_OBSERVE_SESSION_ID": "generic",
@@ -126,6 +127,7 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "AI_OBSERVE_REAL_CLAUDE": str(real),
                 "AI_OBSERVE_DIR": str(root / "obs"),
                 "AI_OBSERVE_SESSION_ID": "claude-run",
@@ -145,6 +147,7 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "AI_OBSERVE_REAL_CODEX": str(real),
                 "AI_OBSERVE_DIR": str(root / "obs"),
                 "AI_OBSERVE_SESSION_ID": "codex-ai",
@@ -237,6 +240,259 @@ class ObserveCliIntegrationTests(unittest.TestCase):
                     self.assertEqual(proc.returncode, 127)
                     self.assertFalse(marker.exists())
                     self.assertIn("strace not found", proc.stderr)
+
+    def test_invalid_backend_name_fails_before_launching_child(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tool = self.make_fake_tool(root / "real-tool")
+            marker = root / "marker"
+            env = os.environ.copy()
+            env.update({
+                "PATH": "",
+                "AI_OBSERVE_BACKENDS": "snapshot,fanotify",
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "invalid-backend",
+                "AI_OBSERVE_QUIET": "1",
+                "FAKE_TOOL_MARKER": str(marker),
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool))
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("unsupported backend name", proc.stderr)
+            self.assertFalse(marker.exists())
+
+    def test_snapshot_only_mode_runs_without_strace_and_emits_inferred_events(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            snap_path = root / "snapshot.txt"
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path("snapshot.txt").write_text("snapshot", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": "",
+                "AI_OBSERVE_BACKENDS": "snapshot",
+                "AI_OBSERVE_SESSION_ID": "snapshot-only",
+                "AI_OBSERVE_QUIET": "1",
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            obs = root / ".codev" / "observe"
+            events = [
+                json.loads(line)
+                for line in (obs / "snapshot-only.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(
+                [(event["path"], event["source"], event["operation"]) for event in events],
+                [(str(snap_path), "snapshot", "create")],
+            )
+            self.assertEqual((obs / "snapshot-only.trace").read_text(encoding="utf-8"), "")
+
+    def test_strace_only_mode_disables_snapshot_reconciliation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            direct_path = root / "direct.txt"
+            trace = f'123 1714932000.000001 creat("direct.txt", 0600) = 3<{direct_path}>\\n'
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path("direct.txt").write_text("direct", encoding="utf-8")
+                Path("snapshot.txt").write_text("snapshot", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
+                "AI_OBSERVE_SESSION_ID": "strace-only",
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            events = [
+                json.loads(line)
+                for line in (root / ".codev" / "observe" / "strace-only.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(
+                [(event["path"], event["source"], event["operation"]) for event in events],
+                [(str(direct_path), "strace", "create")],
+            )
+
+    def test_explicit_strace_snapshot_backend_setting_matches_default_layered_mode(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            direct_path = root / "direct.txt"
+            extra_path = root / "snapshot.txt"
+            trace = f'123 1714932000.000001 creat("direct.txt", 0600) = 3<{direct_path}>\\n'
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path("direct.txt").write_text("direct", encoding="utf-8")
+                Path("snapshot.txt").write_text("snapshot", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace,snapshot",
+                "AI_OBSERVE_SESSION_ID": "explicit-layered",
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            events = [
+                json.loads(line)
+                for line in (root / ".codev" / "observe" / "explicit-layered.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(
+                {(event["path"], event["source"], event["operation"]) for event in events},
+                {
+                    (str(direct_path), "strace", "create"),
+                    (str(extra_path), "snapshot", "create"),
+                },
+            )
+
+    def test_snapshot_default_root_merges_inferred_changes_and_excludes_observer_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            direct_path = root / "direct.txt"
+            extra_path = root / "snapshot.txt"
+            trace = f'123 1714932000.000001 creat("direct.txt", 0600) = 3<{direct_path}>\\n'
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path("direct.txt").write_text("direct", encoding="utf-8")
+                Path("snapshot.txt").write_text("snapshot", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_SESSION_ID": "snap-default",
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            jsonl_path = root / ".codev" / "observe" / "snap-default.jsonl"
+            events = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(
+                {(event["path"], event["source"], event["operation"]) for event in events},
+                {
+                    (str(direct_path), "strace", "create"),
+                    (str(extra_path), "snapshot", "create"),
+                },
+            )
+            self.assertTrue(all("/.codev/observe/" not in event["path"] for event in events))
+
+    def test_snapshot_explicit_roots_ignore_outside_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            inside = root / "inside"
+            outside = root / "outside"
+            inside.mkdir()
+            outside.mkdir()
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path({str(inside / "in.txt")!r}).write_text("in", encoding="utf-8")
+                Path({str(outside / "out.txt")!r}).write_text("out", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "roots",
+                "AI_OBSERVE_ROOTS": str(inside),
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            events = [
+                json.loads(line)
+                for line in (root / "obs" / "roots.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual([(event["path"], event["source"]) for event in events], [(str(inside / "in.txt"), "snapshot")])
+
+    def test_snapshot_missing_roots_fail_when_no_roots_remain(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            missing = root / "missing"
+            self.make_fake_strace(root)
+            tool = self.make_fake_tool(root / "noop")
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_DIR": str(root / "obs"),
+                "AI_OBSERVE_SESSION_ID": "missing-roots",
+                "AI_OBSERVE_ROOTS": str(missing),
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("snapshot missing_root", proc.stderr)
+            self.assertIn("no usable snapshot roots remain", proc.stderr)
+            meta = json.loads((root / "obs" / "missing-roots.meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["parser"]["status"], "snapshot_root_error")
+            self.assertEqual(meta["snapshot"]["complete"], False)
+            codes = {diag["code"] for diag in meta["snapshot"]["diagnostics"]}
+            self.assertEqual(codes, {"missing_root", "no_roots"})
+
+    def test_snapshot_parser_failure_keeps_partial_direct_and_writes_inferred_jsonl(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            direct_path = root / "direct.txt"
+            extra_path = root / "snapshot.txt"
+            trace = f'123 1714932000.000001 creat("direct.txt", 0600) = 3<{direct_path}>\\n'
+            self.make_fake_strace(root)
+            tool = root / "writer"
+            write_exe(tool, f"""
+                #!{sys.executable}
+                from pathlib import Path
+                Path("direct.txt").write_text("direct", encoding="utf-8")
+                Path("snapshot.txt").write_text("snapshot", encoding="utf-8")
+            """)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_SESSION_ID": "pf-snapshot",
+                "AI_OBSERVE_QUIET": "1",
+                "AI_OBSERVE_LIVE_PARSE": "0",
+                "AI_OBSERVE_TEST_FAIL_AFTER": "1",
+                "FAKE_STRACE_TRACE": trace,
+            })
+            proc = self.run_bin("ai-observe", env, "--", str(tool), cwd=root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            obs = root / ".codev" / "observe"
+            partial_events = [
+                json.loads(line)
+                for line in (obs / "pf-snapshot.jsonl.partial").read_text(encoding="utf-8").splitlines()
+            ]
+            jsonl_events = [
+                json.loads(line)
+                for line in (obs / "pf-snapshot.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual([(event["path"], event["source"]) for event in partial_events], [(str(direct_path), "strace")])
+            self.assertTrue(any(event["path"] == str(extra_path) and event["source"] == "snapshot" for event in jsonl_events))
+            self.assertTrue(all(event["source"] == "snapshot" for event in jsonl_events))
 
 
 if __name__ == "__main__":

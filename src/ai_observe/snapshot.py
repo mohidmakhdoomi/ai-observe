@@ -53,6 +53,7 @@ class ManifestEntry:
     mode: int
     mtime_ns: int
     ctime_ns: int
+    root: str | None = None
     size: int | None = None
     dev: int | None = None
     ino: int | None = None
@@ -61,7 +62,7 @@ class ManifestEntry:
 
     def to_public_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        return {k: v for k, v in data.items() if v is not None}
+        return {k: v for k, v in data.items() if k != "root" and v is not None}
 
     @property
     def object_identity(self) -> tuple[int, int] | None:
@@ -289,6 +290,68 @@ def synthesize_events(
     return events
 
 
+def deduplicate_snapshot_events(
+    snapshot_events: Iterable[dict[str, Any]],
+    direct_events: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Suppress snapshot events only when direct strace evidence covers them."""
+    direct_create: set[str] = set()
+    direct_modify_or_create: set[str] = set()
+    direct_delete: set[str] = set()
+    direct_metadata: set[str] = set()
+    direct_renames: set[tuple[str, str]] = set()
+
+    for event in direct_events:
+        source = event.get("source") or "strace"
+        if source != "strace":
+            continue
+        op = event.get("operation")
+        if op == "rename":
+            old_path = _normalize_event_path(event.get("old_path"))
+            new_path = _normalize_event_path(event.get("new_path"))
+            if old_path and new_path:
+                direct_renames.add((old_path, new_path))
+            continue
+        path = _normalize_event_path(event.get("path"))
+        if path is None:
+            continue
+        if op == "create":
+            direct_create.add(path)
+            direct_modify_or_create.add(path)
+        elif op == "modify":
+            direct_modify_or_create.add(path)
+        elif op == "delete":
+            direct_delete.add(path)
+        elif op == "metadata":
+            direct_metadata.add(path)
+
+    filtered: list[dict[str, Any]] = []
+    for event in snapshot_events:
+        op = event.get("operation")
+        if op == "rename":
+            old_path = _normalize_event_path(event.get("old_path"))
+            new_path = _normalize_event_path(event.get("new_path"))
+            if old_path and new_path and (old_path, new_path) in direct_renames:
+                continue
+            filtered.append(event)
+            continue
+
+        path = _normalize_event_path(event.get("path"))
+        if path is None:
+            filtered.append(event)
+            continue
+        if op == "create" and path in direct_create:
+            continue
+        if op == "delete" and path in direct_delete:
+            continue
+        if op == "metadata" and path in direct_metadata:
+            continue
+        if op == "modify" and path in direct_modify_or_create:
+            continue
+        filtered.append(event)
+    return filtered
+
+
 def _walk_root(
     root: Path,
     current: Path,
@@ -356,6 +419,7 @@ def _entry_from_stat(path: Path, st: os.stat_result, *, hash_files: bool, manife
         mtime_ns=st.st_mtime_ns,
         ctime_ns=st.st_ctime_ns,
         mode=mode,
+        root=str(root),
         dev=st.st_dev,
         ino=st.st_ino,
         symlink_target=target,
@@ -387,16 +451,18 @@ def _detect_renames(
     before: dict[str, ManifestEntry],
     after: dict[str, ManifestEntry],
 ) -> list[tuple[str, str]]:
-    deleted_by_id: dict[tuple[int, int], list[str]] = {}
-    created_by_id: dict[tuple[int, int], list[str]] = {}
+    deleted_by_id: dict[tuple[str, int, int], list[str]] = {}
+    created_by_id: dict[tuple[str, int, int], list[str]] = {}
     for path in deleted:
-        ident = before[path].object_identity
-        if ident is not None:
-            deleted_by_id.setdefault(ident, []).append(path)
+        entry = before[path]
+        ident = entry.object_identity
+        if ident is not None and entry.root is not None:
+            deleted_by_id.setdefault((entry.root, ident[0], ident[1]), []).append(path)
     for path in created:
-        ident = after[path].object_identity
-        if ident is not None:
-            created_by_id.setdefault(ident, []).append(path)
+        entry = after[path]
+        ident = entry.object_identity
+        if ident is not None and entry.root is not None:
+            created_by_id.setdefault((entry.root, ident[0], ident[1]), []).append(path)
     pairs: list[tuple[str, str]] = []
     for ident in sorted(set(deleted_by_id) & set(created_by_id)):
         old_paths = sorted(deleted_by_id[ident])
@@ -410,18 +476,20 @@ def _detect_renames(
 
 
 def _changed_operation(old: ManifestEntry, new: ManifestEntry) -> str | None:
+    hash_changed = old.hash is not None and new.hash is not None and old.hash != new.hash
+    hashes_compatible = old.hash == new.hash or old.hash is None or new.hash is None
     if (
         old.type == new.type
         and old.size == new.size
         and old.mtime_ns == new.mtime_ns
-        and old.hash == new.hash
+        and hashes_compatible
         and old.mode == new.mode
         and old.symlink_target == new.symlink_target
     ):
         # ctime alone is intentionally ignored.
         return None
     if old.type == "file" and new.type == "file" and (
-        old.size != new.size or old.mtime_ns != new.mtime_ns or old.hash != new.hash
+        old.size != new.size or old.mtime_ns != new.mtime_ns or hash_changed
     ):
         return "modify"
     if old.type != new.type or old.mode != new.mode or old.symlink_target != new.symlink_target:
@@ -456,3 +524,9 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 def _absolute_path(path: Path) -> str:
     return os.path.abspath(os.fspath(path))
+
+
+def _normalize_event_path(path: Any) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    return os.path.abspath(os.path.normpath(path))

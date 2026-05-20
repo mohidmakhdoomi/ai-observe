@@ -6,6 +6,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -15,6 +16,7 @@ from ai_observe.snapshot import (  # noqa: E402
     ManifestEntry,
     all_exclude_patterns,
     capture_manifest,
+    deduplicate_snapshot_events,
     diff_manifests,
     parse_exclude_patterns,
     parse_roots,
@@ -31,6 +33,7 @@ def entry(
     mtime_ns: int = 10,
     ctime_ns: int = 20,
     mode: int = stat.S_IFREG | 0o644,
+    root: str | None = "/repo",
     dev: int | None = 1,
     ino: int | None = None,
     symlink_target: str | None = None,
@@ -43,6 +46,7 @@ def entry(
         mtime_ns=mtime_ns,
         ctime_ns=ctime_ns,
         mode=mode,
+        root=root,
         dev=dev,
         ino=ino if ino is not None else abs(hash_path(path)),
         symlink_target=symlink_target,
@@ -145,6 +149,40 @@ class SnapshotCaptureTests(unittest.TestCase):
         self.assertEqual(len(manifest.entries), 2)
         self.assertIn("max_files_exceeded", [d.code for d in manifest.diagnostics])
 
+    def test_hash_error_records_diagnostic_without_hash_only_modify_signal(self):
+        file_path = self.root / "keep.txt"
+        file_path.write_text("hello", encoding="utf-8")
+
+        with mock.patch("ai_observe.snapshot._hash_file", side_effect=OSError("boom")):
+            manifest = capture_manifest([self.root], hash_files=True)
+
+        self.assertFalse(manifest.complete)
+        self.assertIn("hash_error", [d.code for d in manifest.diagnostics])
+        self.assertIsNone(manifest.entries[str(file_path)].hash)
+
+        before = {str(file_path): manifest.entries[str(file_path)]}
+        after_entry = ManifestEntry(
+            path=str(file_path),
+            type="file",
+            size=5,
+            mtime_ns=before[str(file_path)].mtime_ns,
+            ctime_ns=before[str(file_path)].ctime_ns,
+            mode=before[str(file_path)].mode,
+            root=str(self.root),
+            dev=before[str(file_path)].dev,
+            ino=before[str(file_path)].ino,
+            hash="sha256:ok",
+        )
+        self.assertEqual(diff_manifests(before, {str(file_path): after_entry}), [])
+
+    def test_unreadable_path_records_diagnostic(self):
+        with mock.patch("ai_observe.snapshot.os.scandir", side_effect=OSError("denied")):
+            manifest = capture_manifest([self.root])
+
+        self.assertFalse(manifest.complete)
+        self.assertEqual(manifest.entries, {})
+        self.assertIn("unreadable_path", [d.code for d in manifest.diagnostics])
+
 
 class SnapshotDiffTests(unittest.TestCase):
     def test_diff_create_modify_delete_metadata_rename_and_ambiguous_pairs(self):
@@ -173,6 +211,21 @@ class SnapshotDiffTests(unittest.TestCase):
         self.assertIn(("rename", None, "/repo/old.txt", "/repo/new.txt"), ops_by_path)
         self.assertIn(("delete", "/repo/ambiguous-old.txt", None, None), ops_by_path)
         self.assertIn(("create", "/repo/ambiguous-new.txt", None, None), ops_by_path)
+
+    def test_rename_detection_does_not_cross_root_boundaries(self):
+        before = {
+            "/repo-a/old.txt": entry("/repo-a/old.txt", root="/repo-a", ino=14),
+        }
+        after = {
+            "/repo-b/new.txt": entry("/repo-b/new.txt", root="/repo-b", ino=14),
+        }
+
+        records = diff_manifests(before, after)
+        ops_by_path = {(r["operation"], r.get("path"), r.get("old_path"), r.get("new_path")) for r in records}
+
+        self.assertIn(("delete", "/repo-a/old.txt", None, None), ops_by_path)
+        self.assertIn(("create", "/repo-b/new.txt", None, None), ops_by_path)
+        self.assertNotIn(("rename", None, "/repo-a/old.txt", "/repo-b/new.txt"), ops_by_path)
 
     def test_ctime_only_does_not_emit_event(self):
         before = {"/repo/a.txt": entry("/repo/a.txt", ctime_ns=20)}
@@ -207,6 +260,29 @@ class SnapshotDiffTests(unittest.TestCase):
             self.assertNotIn(forbidden, event)
 
 
+class SnapshotDedupTests(unittest.TestCase):
+    def test_deduplicate_snapshot_events_uses_spec_operation_rules(self):
+        snapshot_events = [
+            {"operation": "create", "path": "/repo/create.txt", "source": "snapshot"},
+            {"operation": "modify", "path": "/repo/modify.txt", "source": "snapshot"},
+            {"operation": "delete", "path": "/repo/delete.txt", "source": "snapshot"},
+            {"operation": "metadata", "path": "/repo/meta.txt", "source": "snapshot"},
+            {"operation": "rename", "old_path": "/repo/old.txt", "new_path": "/repo/new.txt", "path": "/repo/new.txt", "source": "snapshot"},
+            {"operation": "delete", "path": "/repo/keep-delete.txt", "source": "snapshot"},
+        ]
+        direct_events = [
+            {"operation": "create", "path": "/repo/create.txt"},
+            {"operation": "create", "path": "/repo/modify.txt"},
+            {"operation": "delete", "path": "/repo/delete.txt"},
+            {"operation": "metadata", "path": "/repo/meta.txt"},
+            {"operation": "rename", "old_path": "/repo/old.txt", "new_path": "/repo/new.txt"},
+            {"operation": "modify", "path": "/repo/keep-delete.txt"},
+        ]
+
+        filtered = deduplicate_snapshot_events(snapshot_events, direct_events)
+
+        self.assertEqual(filtered, [{"operation": "delete", "path": "/repo/keep-delete.txt", "source": "snapshot"}])
+
+
 if __name__ == "__main__":
     unittest.main()
-

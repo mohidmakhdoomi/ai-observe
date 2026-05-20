@@ -1,0 +1,54 @@
+I'll start by reading the key files for Phase 6: the backends package, observe.py changes, and backend tests.Good, the expected files exist. Let me read them all plus the updated observe.py.The CWD is in a worktree. Let me find the actual paths.The files are relative to the worktree. Let me read them with the correct base path.Now let me read the updated `observe.py` to see how the backend abstraction is wired in:Now let me run the backend tests to verify they pass:All tests pass. Let me also check the observe.py more closely to verify the backend wiring, and check that `AI_OBSERVE_BACKENDS` strace-only and snapshot-only modes work:Now let me look at the integration tests that specifically test `AI_OBSERVE_BACKENDS` strace-only and snapshot-only modes:Let me also check a few more aspects. Let me verify the Backend Protocol class is truly a Protocol (structural subtyping), and look at how the snapshot-only mode handles the command execution without strace:I see that `session.launch_argv` is initialized as `list(real_argv)` (line 261), and then the strace backend's `prepare()` overrides it to prepend the strace command. In snapshot-only mode, `session.launch_argv` stays as the raw command since the strace backend isn't included. That's correct behavior — the command runs directly without strace wrapping.
+
+Let me verify the ordering logic more carefully — specifically that prepare runs snapshot first (for baseline), then strace, and finalize runs strace first, then snapshot:Good. `PREPARE_ORDER = ("snapshot", "strace")` — snapshot baseline captured before strace sets up the command launch. `FINALIZE_ORDER = ("strace", "snapshot")` — strace finalizes first (parses/rebuilds events, sets authoritative path), then snapshot finalizes (captures end manifest, diffs, merges). This ordering is correct for the spec requirement that the start snapshot is captured before child launch and deduplication uses direct events.
+
+Let me check if there's a `runtime_checkable` decorator or any type-checking for the Protocol:The Protocol is structural but not `runtime_checkable`. That's fine — it's a typing-time check. The test in `test_backends.py` manually verifies the surface (callable attributes, correct types). Let me look at the SnapshotBackend to understand its error handling for missing roots — the spec says "If no root remains" the snapshot backend should raise an error:Let me run the full test suite to see if the backend refactoring broke anything:All 203 tests pass. Let me now check a few final details for completeness — whether the Backend Protocol matches the plan's "lifecycle/capability seams sufficient for future backends":Let me check if `BackendCapabilities` is actually used in the orchestration or just defined:So `capabilities` is defined on each backend but never queried by the orchestration code. The plan says the interface should have "lifecycle/capability seams sufficient for future fanotify/inotify/eBPF" — the seam exists, even though the current two-backend system doesn't need to consult it at runtime. This is acceptable for this phase since the capability flags are a forward-looking extension point.
+
+Let me do a final check — verify the prepare/finalize ordering handles the snapshot-only case where no strace backend mutates `launch_argv`:I've completed my review. Here's my assessment:
+
+---
+
+## Phase 6: Backend Abstraction — Review
+
+### Spec Adherence ✅
+
+The implementation satisfies all MUST requirements for the backend abstraction phase:
+
+- **Backend protocol defined** with clear lifecycle: `prepare(session)`, `stop(session)`, `finalize(session, codex_code)`, plus `name` and `capabilities` attributes. The spec's "candidate shape" of `start/events/stop/capabilities` was adapted pragmatically — since both backends write to files rather than streaming events through a method, `prepare/stop/finalize` fits the actual usage better.
+- **Default is `strace,snapshot`** and remains no-root: `DEFAULT_BACKENDS = ("strace", "snapshot")` in `__init__.py:12`.
+- **`AI_OBSERVE_BACKENDS`** accepts `strace`, `snapshot`, `strace,snapshot` — all tested.
+- **Invalid backend names** produce actionable errors with exit code 2 before child launch (tested: child marker file is never created).
+- **Behavior preserved**: All 203 tests pass, including all pre-existing parser, viewer, snapshot, and CLI tests.
+- **Privacy intact**: No changes to sanitization or viewer posture.
+
+### Code Quality ✅
+
+The refactoring is well-structured:
+- **Dependency injection** pattern for both `StraceBackend` and `SnapshotBackend` makes them unit-testable without real filesystem state or strace binaries.
+- **Ordering constants** (`PREPARE_ORDER`, `FINALIZE_ORDER`) correctly enforce: snapshot baseline before strace sets up launch_argv; strace finalize (parse/rebuild) before snapshot finalize (capture end manifest, diff, merge). This preserves the synchronous-baseline-before-child invariant.
+- **`BackendSession`** cleanly encapsulates shared state, including `BackendState` for cross-backend coordination (e.g., strace sets `authoritative_path` which snapshot later reads during merge).
+- The complex strace recovery branches (live timeout, live error, parser failure, post-hoc) are cleanly extracted into `StraceBackend._handle_*` methods.
+
+### Test Coverage ✅
+
+Tests cover the required scenarios from the plan:
+- `BackendSelectionTests`: default selection, deduplication, invalid names, prepare/finalize ordering.
+- `BackendSurfaceTests`: both concrete backends expose the Protocol surface (name, capabilities, callable methods).
+- Integration in `test_observe_cli.py`: `test_invalid_backend_name_fails_before_launching_child`, `test_snapshot_only_mode_runs_without_strace_and_emits_inferred_events`, `test_strace_only_mode_disables_snapshot_reconciliation`.
+
+### Minor Observations (non-blocking)
+
+1. **Error messages at `observe.py:320-322`** say "failed to start strace" / "failed to run strace" even in snapshot-only mode where the Popen launches the raw command, not strace. A future cleanup could use `error_prefix` or a backend-aware message.
+
+2. **`BackendCapabilities`** fields (`wraps_command`, `direct_events`, `requires_linux`, etc.) are defined and populated on both backends but never queried by orchestration code. This is fine as a forward-looking seam for future backends that may need capability-gated behavior (e.g., a fanotify backend checking `requires_linux`).
+
+3. **Module docstring** at `observe.py:1` still says "Generic command wrapper that traces filesystem mutations with strace" — the phase 7 docs update may address this, so not flagging as a change request.
+
+---
+VERDICT: APPROVE
+SUMMARY: Backend abstraction is cleanly extracted with correct lifecycle ordering, comprehensive tests, and all 203 existing tests passing.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

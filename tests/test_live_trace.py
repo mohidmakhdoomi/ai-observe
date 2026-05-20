@@ -77,10 +77,13 @@ def _install_fake_strace(td: Path, trace_text: str = "", *, sleep_after_write: f
 
 def _install_real(td: Path, body: str = "") -> Path:
     real = td / "real-codex"
+    body_block = textwrap.dedent(body).strip()
+    if body_block:
+        body_block = textwrap.indent(body_block, " " * 8)
     _write_exe(real, f"""
         #!{sys.executable}
         import os, sys
-        {body}
+{body_block}
     """)
     return real
 
@@ -457,6 +460,57 @@ class LiveModeWrapperTests(unittest.TestCase):
                 self.assertEqual(meta["artifacts"]["authoritative_event_path"], f"to{strict}.jsonl.rebuilt")
                 self.assertEqual(meta["artifacts"]["jsonl"]["role"], "partial_live")
                 self.assertEqual(meta["artifacts"]["rebuilt"]["role"], "authoritative_complete")
+
+    def test_join_timeout_rebuilt_merges_snapshot_events_into_rebuilt_artifact(self):
+        real_run = codex_observe.LiveTracer._run
+
+        def hang_run(self):
+            try:
+                chunk = self._trace_fh.read(64 * 1024)
+                if chunk:
+                    parts = chunk.split("\n")
+                    for line in parts[:-1]:
+                        self._emit(self.parser.feed_line(line))
+                while True:
+                    time.sleep(0.05)
+            except BaseException as exc:
+                self.error = exc
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            direct = root / "direct.txt"
+            extra = root / "snapshot.txt"
+            trace = f'123 1714932000.000001 creat("{direct}", 0600) = 3<{direct}>\\n'
+            _install_fake_strace(root, trace)
+            real = _install_real(
+                root,
+                body=(
+                    f"from pathlib import Path\n"
+                    f"Path({str(direct)!r}).write_text('direct', encoding='utf-8')\n"
+                    f"Path({str(extra)!r}).write_text('snapshot', encoding='utf-8')\n"
+                ),
+            )
+            env = _wrapper_env(root, {
+                "CODEV_OBSERVE_REAL_CODEX": str(real),
+                "CODEV_OBSERVE_SESSION_ID": "torebuilt",
+                "CODEV_OBSERVE_LIVE_JOIN_TIMEOUT": "0.2",
+                "AI_OBSERVE_ROOTS": str(root),
+            })
+            codex_observe.LiveTracer._run = hang_run
+            try:
+                rc, stderr = self._run_in_process(env)
+            finally:
+                codex_observe.LiveTracer._run = real_run
+            self.assertEqual(rc, 0, stderr)
+            rebuilt = root / "obs" / "torebuilt.jsonl.rebuilt"
+            events = [json.loads(line) for line in rebuilt.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(
+                {(event["path"], event["source"], event["operation"]) for event in events},
+                {
+                    (str(direct), "strace", "create"),
+                    (str(extra), "snapshot", "create"),
+                },
+            )
 
     def test_join_timeout_rebuild_failure_labels_live_jsonl_as_partial(self):
         trace = self._trace_text()
