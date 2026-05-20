@@ -1,7 +1,7 @@
 id: '11'
 title: generalize-observer-for-claude
 protocol: spir
-phase: verify
+phase: verified
 plan_phases:
   - id: phase-1-generic-core
     status: complete
@@ -32,4 +32,4 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-16T17:33:32.779Z'
-updated_at: '2026-05-20T15:20:53.156Z'
+updated_at: '2026-05-20T15:20:54.220Z'
