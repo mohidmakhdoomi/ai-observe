@@ -1,7 +1,7 @@
 id: '15'
 title: layered-observer-with-snapshot
 protocol: spir
-phase: implement
+phase: review
 plan_phases:
   - id: phase-1-strace-parser-reliability
     status: complete
@@ -18,8 +18,8 @@ plan_phases:
   - id: phase-7-docs-architecture
     status: complete
   - id: phase-8-review-regression
-    status: in_progress
-current_plan_phase: phase-8-review-regression
+    status: complete
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
@@ -34,7 +34,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-strace-parser-reliability
@@ -165,4 +165,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-8-review-regression-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-20T12:30:49.806Z'
+updated_at: '2026-05-20T12:30:50.963Z'
