@@ -1,9 +1,19 @@
 id: '1'
 title: monitor-filesystem-modificatio
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase-1-project-skeleton
+    status: in_progress
+  - id: phase-2-strace-launch
+    status: pending
+  - id: phase-3-trace-parser-core
+    status: pending
+  - id: phase-4-integration-tests
+    status: pending
+  - id: phase-5-docs-review
+    status: pending
+current_plan_phase: phase-1-project-skeleton
 gates:
   spec-approval:
     status: approved
@@ -18,10 +28,10 @@ gates:
     status: approved
     approved_at: '2026-05-20T15:21:01.723Z'
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-05T17:54:20.241Z'
-updated_at: '2026-05-20T15:53:35.877Z'
+updated_at: '2026-05-20T15:54:30.199Z'
 pr_history:
   - phase: specify
     pr_number: 2
