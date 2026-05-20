@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -58,6 +58,7 @@ def parse_trace_file(
     active_artifacts: Iterable[str | os.PathLike[str]] = (),
     include_log_writes: bool = False,
     fail_after_events: int | None = None,
+    watched_roots: Iterable[str | os.PathLike[str]] = (),
 ) -> ParseResult:
     """Parse strace text and optionally write JSONL.
 
@@ -71,6 +72,7 @@ def parse_trace_file(
         active_artifacts={str(Path(p).resolve()) for p in active_artifacts},
         include_log_writes=include_log_writes,
         fail_after_events=fail_after_events,
+        watched_roots=watched_roots,
     )
     with open(trace_path, "r", encoding="utf-8", errors="replace") as fh:
         result = parser.parse_lines(fh)
@@ -100,6 +102,7 @@ class TraceParser:
         active_artifacts: set[str],
         include_log_writes: bool,
         fail_after_events: int | None = None,
+        watched_roots: Iterable[str | os.PathLike[str]] = (),
     ) -> None:
         self.session_id = session_id
         self.invocation_id = invocation_id
@@ -108,6 +111,10 @@ class TraceParser:
         self.active_artifacts = active_artifacts
         self.include_log_writes = include_log_writes
         self.fail_after_events = fail_after_events
+        self.watched_roots = tuple(
+            Path(normalize_abs_path(path))
+            for path in watched_roots
+        )
         self.states: dict[int | None, ProcessState] = {}
         self.unfinished: dict[tuple[int | None, str], tuple[str | None, str]] = {}
         self.events: list[dict[str, Any]] = []
@@ -172,6 +179,8 @@ class TraceParser:
         self._update_process_state(pid, name, args, result_value, result_path)
         event = self._event_for(pid, ts, name, args, result_value, result_text, body, result_path)
         if event is None:
+            return
+        if self._drop_out_of_scope_event(event):
             return
         if self._drop_artifact_event(event):
             return
@@ -301,6 +310,26 @@ class TraceParser:
                 return None
             op = "modify"
             path = state.fds.get(fd) or fd_path_annotation(args[2])
+        elif name == "copy_file_range":
+            if result_value is None or result_value <= 0 or len(args) < 3:
+                return None
+            fd = fd_number(args[2])
+            if fd is None:
+                return None
+            path = self._state(pid).fds.get(fd) or fd_path_annotation(args[2])
+            if path is None:
+                return None
+            op = "modify"
+        elif name == "sendfile":
+            if result_value is None or result_value <= 0 or not args:
+                return None
+            fd = fd_number(args[0])
+            if fd is None:
+                return None
+            path = self._state(pid).fds.get(fd) or fd_path_annotation(args[0])
+            if path is None:
+                return None
+            op = "modify"
         elif name in {"truncate", "truncate64"}:
             op = "modify"
             path = self._path_from_arg(pid, args[0]) if args else None
@@ -338,6 +367,21 @@ class TraceParser:
                 path = self._state(pid).fds.get(fd) if fd is not None else None
             elif name in {"fchownat", "utimensat", "futimesat"}:
                 path = self._at_path(pid, args, 1, 0)
+            else:
+                path = self._path_from_arg(pid, args[0]) if args else None
+        elif name in {
+            "setxattr",
+            "lsetxattr",
+            "removexattr",
+            "lremovexattr",
+            "fsetxattr",
+            "fremovexattr",
+        }:
+            op = "metadata"
+            if name.startswith("f"):
+                fd = fd_number(args[0]) if args else None
+                if fd is not None:
+                    path = self._state(pid).fds.get(fd) or fd_path_annotation(args[0])
             else:
                 path = self._path_from_arg(pid, args[0]) if args else None
         elif name in {"mkdir", "mkdirat", "mknod", "mknodat"}:
@@ -384,6 +428,8 @@ class TraceParser:
             "path": path,
             "old_path": old_path,
             "new_path": new_path,
+            "source": "strace",
+            "confidence": "direct",
             "command": self.command,
             "raw_syscall": raw_syscall,
             "result": result,
@@ -394,6 +440,18 @@ class TraceParser:
             return False
         paths = [event.get("path"), event.get("old_path"), event.get("new_path")]
         return any(p in self.active_artifacts for p in paths if p)
+
+    def _drop_out_of_scope_event(self, event: dict[str, Any]) -> bool:
+        if not self.watched_roots:
+            return False
+        paths = [event.get("path"), event.get("old_path"), event.get("new_path")]
+        resolved = [Path(path) for path in paths if path]
+        if not resolved:
+            return True
+        return any(not self._path_within_watched_roots(path) for path in resolved)
+
+    def _path_within_watched_roots(self, path: Path) -> bool:
+        return any(path == root or path.is_relative_to(root) for root in self.watched_roots)
 
     def _open_path_flags(self, pid: int | None, name: str, args: list[str]) -> tuple[str | None, str]:
         if name == "creat":

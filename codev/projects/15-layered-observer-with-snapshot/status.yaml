@@ -1,0 +1,42 @@
+id: '15'
+title: layered-observer-with-snapshot
+protocol: spir
+phase: verify
+plan_phases:
+  - id: phase-1-strace-parser-reliability
+    status: complete
+  - id: phase-2-schema-v2-provenance-core
+    status: complete
+  - id: phase-3-snapshot-manifest-diff
+    status: complete
+  - id: phase-4-snapshot-observe-integration
+    status: complete
+  - id: phase-5-viewer-provenance-ux
+    status: complete
+  - id: phase-6-backend-abstraction
+    status: complete
+  - id: phase-7-docs-architecture
+    status: complete
+  - id: phase-8-review-regression
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-05-19T13:27:45.518Z'
+    approved_at: '2026-05-19T13:28:29.432Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-05-19T13:37:40.437Z'
+    approved_at: '2026-05-19T13:38:27.722Z'
+  pr:
+    status: approved
+    requested_at: '2026-05-20T12:42:23.215Z'
+    approved_at: '2026-05-20T12:53:17.630Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-19T13:19:07.306Z'
+updated_at: '2026-05-20T12:53:28.396Z'

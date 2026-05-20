@@ -1,0 +1,77 @@
+I'll start by reading the key implementation files for Phase 4. Let me read the primary source files and tests in parallel.Let me check the actual file layout in this worktree — the snapshot module doesn't exist at the expected path.Good — the Phase 4 implementation work is in uncommitted changes. Let me read the actual files from disk.Good, I've read the main implementation files. Let me also check the env tests and run the test suite.All tests pass. Now let me verify the implementation details against the Phase 4 plan more carefully. Let me check how the Popen call now uses `child_env` vs `env`, and verify the snapshot ordering relative to child launch.Let me check one specific test that concerns me — the missing roots behavior.The test name is different from what I read earlier. Let me re-read the current state of the test file from disk.Good — the file content matches the passing tests. The missing-roots test correctly expects returncode 1 (matching the spec's "unless no root remains"). Now let me verify the full test suite hasn't been broken.All 188 tests pass — no regressions. Let me now compile my full review.
+
+---
+
+## Phase 4 Review: Snapshot-Observe Integration
+
+### 1. Spec Adherence
+
+**All Phase 4 success criteria met:**
+
+| Criterion | Status |
+|-----------|--------|
+| Default roots = launch cwd, observer artifacts excluded | ✅ `prepare_snapshot_plan` defaults via `parse_roots(cwd=initial_cwd)` + `_artifact_exclude_patterns` |
+| `AI_OBSERVE_ROOTS/SNAPSHOT_HASH/SNAPSHOT_EXCLUDE/SNAPSHOT_MAX_FILES` honored | ✅ All read in `prepare_snapshot_plan` |
+| Start manifest synchronous before child launch | ✅ `capture_manifest` called in `prepare_snapshot_plan` at line 248, before `Popen` at line 340 |
+| End manifest after child exit | ✅ `finalize_snapshot_plan` at line 339, after `wait_for_process` returns |
+| External writes appear as `snapshot/inferred` | ✅ `synthesize_events` produces correct provenance |
+| Changes outside configured roots absent | ✅ `capture_manifest` only walks configured roots |
+| Deduplication follows spec operation/path rules | ✅ `deduplicate_snapshot_events` implements exact rules: direct create suppresses snapshot create, direct modify/create suppresses snapshot modify, direct delete suppresses snapshot delete, but direct modify does NOT suppress snapshot delete |
+| Snapshot diagnostics in `meta.json` + stderr | ✅ Via `_record_snapshot_diagnostics` and `build_session_meta` |
+| No false completeness claim on cap/skip | ✅ `build_snapshot_summary` sets `complete=False` conservatively |
+| `AI_OBSERVE_NESTED=1` injected into child | ✅ `child_env["AI_OBSERVE_NESTED"] = "1"` at line 232, used in `Popen(env=child_env)` at line 340 |
+
+### 2. Code Quality
+
+**Strengths:**
+- **Clean lifecycle separation**: `prepare_snapshot_plan` (pre-launch) / `finalize_snapshot_plan` (post-exit) / `merge_snapshot_events` (post-parse) is easy to follow.
+- **`SnapshotPlan` dataclass** centralizes snapshot state cleanly through the execution lifecycle.
+- **`merge_snapshot_events` handles all recovery modes** — normal (append to `.jsonl`), timeout-rebuilt (append to `.rebuilt`), parser-failure (write snapshot-only events to empty `.jsonl`), and the edge case where no safe target exists.
+- **Security posture maintained**: `safe_write_meta` uses `O_NOFOLLOW`, `0o600` permissions, and symlink rejection. `active_artifacts` now includes `.rebuilt` and `.meta.json` paths.
+- **Child env properly separated** from parent env via `child_env = dict(env)` — `NESTED=1` doesn't leak into the parent's own env vars.
+
+**Minor observations (non-blocking):**
+- `build_snapshot_summary` treats any diagnostic (including benign "overlapping_root") as `complete=False`. This is more conservative than necessary but safe per spec's "do not claim completeness" guidance.
+- `merge_snapshot_events` re-reads + rewrites the full JSONL file to merge. Simple and correct for this release; a streaming append could be an optimization later.
+- When ALL configured roots are missing (`not snapshot_plan.roots`), the observer refuses to launch the child command at all (line 270). This is sharp but matches the spec ("unless no root remains"). Worth noting in docs (Phase 7).
+
+### 3. Test Coverage
+
+**Phase 4 adds 4 integration tests** in `test_observe_cli.py`:
+
+| Test | What it covers |
+|------|----------------|
+| `test_snapshot_default_root_merges_inferred_changes_and_excludes_observer_artifacts` | Default cwd roots, merged strace+snapshot events, `.codev/observe/` artifact exclusion |
+| `test_snapshot_explicit_roots_ignore_outside_changes` | `AI_OBSERVE_ROOTS`, out-of-root changes absent |
+| `test_snapshot_missing_roots_fail_when_no_roots_remain` | Missing root diagnostics, meta.json written, error exit |
+| `test_snapshot_parser_failure_keeps_partial_direct_and_writes_inferred_jsonl` | Parser failure + snapshot: partial directs in `.partial`, snapshot-only events in `.jsonl` |
+
+**Pre-existing tests cover additional paths:**
+- `test_live_trace.py` covers timeout→rebuild→meta.json flow, NESTED env injection, safe artifact writes
+- `test_snapshot.py` covers deduplication rules, diff operations, excludes, cap handling
+
+**All 188 tests pass** including all pre-existing tests — no regressions.
+
+### 4. Error Handling
+
+- Snapshot diagnostic capture in `_record_snapshot_diagnostics` properly routes to both structured `diagnostics` list and stderr warnings.
+- `merge_snapshot_events` wrapped in try/except at lines 511-526 — snapshot merge failure produces a warning but doesn't crash the session.
+- `safe_write_meta` failure at lines 529-536 also just warns without crashing.
+- The `_snapshot_max_files` parser handles non-numeric and negative values gracefully with warnings.
+
+### 5. Plan Alignment
+
+The implementation follows the Phase 4 plan precisely:
+- ✅ `observe.py` parses snapshot env vars, captures start/end manifests, calls snapshot diff, merges events, writes meta
+- ✅ `snapshot.py` has deduplication helpers (added in this phase via `deduplicate_snapshot_events`)
+- ✅ Integration tests cover the specified scenarios
+- ✅ No Phase 5+ viewer work, no Phase 6+ backend abstraction work bleeds in
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 delivers clean snapshot-observe integration with correct synchronous lifecycle ordering, conservative deduplication matching spec rules, proper recovery-mode merge targets, and solid test coverage across all key paths.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

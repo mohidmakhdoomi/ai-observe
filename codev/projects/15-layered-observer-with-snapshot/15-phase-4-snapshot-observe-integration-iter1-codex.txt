@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 4 wiring is mostly in place, but the no-roots path violates the spec and the tests currently lock in that incorrect behavior.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `AI_OBSERVE_ROOTS` with no usable roots does not fail the session as required. `parse_roots()` emits `no_roots` (`src/ai_observe/snapshot.py:189-190`), but `prepare_snapshot_plan()`/`run_resolved_command()` only record warnings and continue (`src/ai_observe/observe.py:630-664`). The spec says missing roots are skipped “unless no root remains”; this case should not proceed as a successful observed session.
+- The integration test encodes the wrong contract: `tests/test_observe_cli.py:324-330` asserts return code `0` when all configured roots are missing. That should be reversed to cover the required failure behavior for the no-remaining-roots case.

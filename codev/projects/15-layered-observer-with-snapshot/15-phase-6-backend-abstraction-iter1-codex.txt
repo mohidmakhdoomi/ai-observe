@@ -1,0 +1,9 @@
+Using direct file reads to review only phase-6 backend-abstraction scope.Reading backend modules and phase-6 specific tests/paths.Inspecting the phase-6 integration tests in full.Checking the strace-only phase-6 integration test and backend-specific behavior.Searching for any strace-only test coverage and backend-selection references.Opening the strace-only test block directly.Running the phase-6 targeted tests to verify actual behavior.Re-running targeted tests with a writable temp dir override so failures reflect code, not the sandbox.Inspecting log preparation and any backend-mode assumptions in observe.py.Searching for explicit `AI_OBSERVE_BACKENDS=strace,snapshot` test coverage.Collecting exact line references for the phase-6 issues.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 6 is close, but it misses one explicit acceptance-test requirement and has a backend-selection error-path that still reports strace-specific failures in snapshot-only mode.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- Missing explicit coverage for `AI_OBSERVE_BACKENDS=strace,snapshot`, which Phase 6 calls out as “accepted and tested.” Current tests cover default/no env, invalid names, `snapshot` only, and `strace` only, but not the explicit combined setting (`tests/test_backends.py:19-26`, `tests/test_observe_cli.py:241-320`).
+- Snapshot-only mode still uses hardcoded strace startup error text on process launch failures (`"failed to start strace"` / `"failed to run strace"`), even when no strace backend is selected and `session.launch_argv` is the real command (`src/ai_observe/observe.py:320-323`). That makes troubleshooting backend-selected modes misleading.

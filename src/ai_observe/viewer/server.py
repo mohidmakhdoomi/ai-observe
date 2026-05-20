@@ -1,15 +1,19 @@
 """Loopback-only HTTP server for the ai_observe viewer.
 
-Serves a small static UI and exposes a Server-Sent Events stream at
-`/events`. Each SSE client first receives the full backlog of events (replay
-from offset 0) under a snapshot watermark, then receives new events as they
-arrive — with no gaps or duplicates.
+Serves a small static UI, a sanitized session-status JSON document at
+`/session`, and a Server-Sent Events stream at `/events`.
+
+Each SSE client selects one event artifact (`.jsonl`, `.jsonl.rebuilt`, or
+`.jsonl.partial`). The server replays that artifact's full sanitized backlog,
+then streams live appended events with no gaps or duplicates.
 
 Per the spec:
 
 - Binds only to 127.0.0.1. No flag to change this.
 - Tab title is fixed; sensitive fields are never sent to the page (see
   `tailer.sanitize_event`).
+- Meta/artifact status exposed to the browser is sanitized and never includes
+  raw syscalls, argv, PID/process details, or full manifest contents.
 """
 
 from __future__ import annotations
@@ -19,8 +23,10 @@ import json
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import parse_qs, urlsplit
 
 from .tailer import JsonlTailer
 
@@ -28,6 +34,24 @@ from .tailer import JsonlTailer
 _HOST = "127.0.0.1"
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _APPEND_BATCH_SIZE = 512
+_EVENT_ARTIFACT_KEYS = ("jsonl", "rebuilt", "partial")
+
+
+@dataclass(frozen=True)
+class _SessionPaths:
+    requested_artifact: str
+    jsonl: Path
+    rebuilt: Path
+    partial: Path
+    meta: Path
+
+    def artifact_map(self) -> dict[str, Path]:
+        return {
+            "jsonl": self.jsonl,
+            "rebuilt": self.rebuilt,
+            "partial": self.partial,
+            "meta": self.meta,
+        }
 
 
 def _event_batches(events: List[dict], batch_size: Optional[int] = None):
@@ -84,7 +108,137 @@ class _Broadcaster:
             return not self._shutdown
 
 
-def _build_handler(broadcaster: _Broadcaster):
+class _ArtifactStream:
+    def __init__(self, path: Path, poll_interval: float) -> None:
+        self._path = Path(path)
+        self._broadcaster = _Broadcaster()
+        self._tailer = JsonlTailer(
+            self._path,
+            on_event=self._broadcaster.append,
+            poll_interval=poll_interval,
+        )
+
+    @property
+    def broadcaster(self) -> _Broadcaster:
+        return self._broadcaster
+
+    def start(self) -> None:
+        self._tailer.start()
+
+    def stop(self) -> None:
+        self._broadcaster.shutdown()
+        self._tailer.stop()
+
+
+def _resolve_session_paths(path: Path) -> _SessionPaths:
+    path = Path(path)
+    requested_artifact = "jsonl"
+    if path.name.endswith(".jsonl.partial"):
+        requested_artifact = "partial"
+        jsonl_path = path.with_name(path.name[: -len(".partial")])
+    elif path.name.endswith(".jsonl.rebuilt"):
+        requested_artifact = "rebuilt"
+        jsonl_path = path.with_name(path.name[: -len(".rebuilt")])
+    elif path.name.endswith(".meta.json"):
+        stem = path.name[: -len(".meta.json")]
+        jsonl_path = path.with_name(f"{stem}.jsonl")
+    else:
+        jsonl_path = path
+
+    meta_name = (
+        f"{jsonl_path.name[: -len('.jsonl')]}.meta.json"
+        if jsonl_path.name.endswith(".jsonl")
+        else f"{jsonl_path.name}.meta.json"
+    )
+    return _SessionPaths(
+        requested_artifact=requested_artifact,
+        jsonl=jsonl_path,
+        rebuilt=jsonl_path.with_name(f"{jsonl_path.name}.rebuilt"),
+        partial=jsonl_path.with_name(f"{jsonl_path.name}.partial"),
+        meta=jsonl_path.with_name(meta_name),
+    )
+
+
+def _read_meta(path: Path) -> dict | None:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _artifact_key_for_name(paths: _SessionPaths, filename: str | None) -> str | None:
+    if not filename:
+        return None
+    for key in _EVENT_ARTIFACT_KEYS:
+        if paths.artifact_map()[key].name == filename:
+            return key
+    return None
+
+
+def _sanitize_snapshot_summary(snapshot: dict | None) -> dict | None:
+    if not isinstance(snapshot, dict):
+        return None
+    return {
+        "enabled": bool(snapshot.get("enabled")),
+        "complete": bool(snapshot.get("complete")),
+        "diagnostic_count": len(snapshot.get("diagnostics") or []),
+        "emitted_event_count": int(snapshot.get("emitted_event_count") or 0),
+    }
+
+
+def _default_artifact_role(key: str, exists: bool) -> str:
+    if key == "jsonl":
+        return "authoritative_complete" if exists else "absent"
+    return "present_without_meta" if exists else "absent"
+
+
+def _default_selected_artifact(paths: _SessionPaths, authoritative_artifact: str | None) -> str:
+    requested = paths.requested_artifact
+    if requested in {"partial", "rebuilt"}:
+        return requested
+    if authoritative_artifact in {"jsonl", "rebuilt"}:
+        return authoritative_artifact
+    return "jsonl"
+
+
+def _build_session_info(paths: _SessionPaths) -> dict:
+    meta = _read_meta(paths.meta)
+    meta_artifacts = meta.get("artifacts") if isinstance(meta, dict) else None
+    if not isinstance(meta_artifacts, dict):
+        meta_artifacts = {}
+
+    authoritative_name = meta_artifacts.get("authoritative_event_path")
+    authoritative_artifact = _artifact_key_for_name(paths, authoritative_name)
+    selected_artifact = _default_selected_artifact(paths, authoritative_artifact)
+
+    artifact_map = paths.artifact_map()
+    artifacts = {}
+    for key in (*_EVENT_ARTIFACT_KEYS, "meta"):
+        path = artifact_map[key]
+        meta_entry = meta_artifacts.get(key)
+        role = meta_entry.get("role") if isinstance(meta_entry, dict) else _default_artifact_role(key, path.exists())
+        artifacts[key] = {
+            "path": path.name,
+            "exists": path.exists(),
+            "role": role,
+            "kind": "event" if key in _EVENT_ARTIFACT_KEYS else "metadata",
+        }
+
+    return {
+        "requested_artifact": paths.requested_artifact,
+        "default_artifact": selected_artifact,
+        "authoritative_artifact": authoritative_artifact,
+        "parser_status": (meta.get("parser") or {}).get("status") if isinstance(meta, dict) else None,
+        "warnings_count": len(meta.get("warnings") or []) if isinstance(meta, dict) else 0,
+        "snapshot": _sanitize_snapshot_summary(meta.get("snapshot") if isinstance(meta, dict) else None),
+        "artifacts": artifacts,
+    }
+
+
+def _build_handler(server: "ViewerServer"):
     static_dir = _STATIC_DIR
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -94,19 +248,25 @@ def _build_handler(broadcaster: _Broadcaster):
             return
 
         def do_GET(self):  # noqa: N802 - stdlib signature
-            if self.path == "/" or self.path == "/index.html":
+            parsed = urlsplit(self.path)
+            route = parsed.path
+            if route == "/" or route == "/index.html":
                 self._serve_static("index.html", "text/html; charset=utf-8")
                 return
-            if self.path.startswith("/static/"):
-                name = self.path[len("/static/") :]
+            if route.startswith("/static/"):
+                name = route[len("/static/") :]
                 if "/" in name or ".." in name:
                     self.send_error(404)
                     return
                 ctype = self._guess_content_type(name)
                 self._serve_static(name, ctype)
                 return
-            if self.path == "/events":
-                self._serve_events()
+            if route == "/session":
+                self._serve_session()
+                return
+            if route == "/events":
+                artifact = parse_qs(parsed.query).get("artifact", [None])[0]
+                self._serve_events(artifact)
                 return
             self.send_error(404)
 
@@ -135,7 +295,22 @@ def _build_handler(broadcaster: _Broadcaster):
             self.end_headers()
             self.wfile.write(data)
 
-        def _serve_events(self) -> None:
+        def _serve_session(self) -> None:
+            payload = json.dumps(server.session_info(), separators=(",", ":")).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _serve_events(self, artifact: str | None) -> None:
+            try:
+                broadcaster = server.broadcaster_for(artifact)
+            except ValueError:
+                self.send_error(400)
+                return
+
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
@@ -143,14 +318,12 @@ def _build_handler(broadcaster: _Broadcaster):
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
 
-            # Replay snapshot, then live tail.
             n = broadcaster.snapshot_len()
             try:
                 self._send_append_batches(broadcaster.slice(0, n))
                 while True:
                     has_more = broadcaster.wait_for_more(n, timeout=1.0)
                     if not has_more:
-                        # Shutdown: send a final frame so the browser stops reconnecting.
                         self._send_event("shutdown", {})
                         return
                     new_end = broadcaster.snapshot_len()
@@ -164,10 +337,6 @@ def _build_handler(broadcaster: _Broadcaster):
             for batch in _event_batches(events):
                 self._send_event("append_batch", batch)
 
-        def _send_batch(self, kind: str, events: list) -> None:
-            for ev in events:
-                self._send_event(kind, ev)
-
         def _send_event(self, kind: str, payload) -> None:
             data = json.dumps(payload, separators=(",", ":"))
             chunk = f"event: {kind}\ndata: {data}\n\n".encode("utf-8")
@@ -178,26 +347,26 @@ def _build_handler(broadcaster: _Broadcaster):
 
 
 class ViewerServer:
-    """Loopback-only viewer HTTP server. Use as a context manager or call
-    `start()` / `stop()` explicitly. Listens on an OS-chosen port unless one
-    is supplied."""
+    """Loopback-only viewer HTTP server.
+
+    The viewer can present multiple sibling event artifacts from a single
+    session (`.jsonl`, `.jsonl.rebuilt`, `.jsonl.partial`). The initial path
+    still controls the default selection, preserving the v1 CLI surface while
+    allowing phase-5 artifact banners and switching.
+    """
 
     def __init__(self, jsonl_path: Path, port: int = 0, poll_interval: float = 0.25) -> None:
         self._path = Path(jsonl_path)
-        self._broadcaster = _Broadcaster()
-        self._tailer = JsonlTailer(
-            self._path, on_event=self._broadcaster.append, poll_interval=poll_interval
-        )
-        handler_cls = _build_handler(self._broadcaster)
+        self._session_paths = _resolve_session_paths(self._path)
+        self._streams = {
+            key: _ArtifactStream(getattr(self._session_paths, key), poll_interval)
+            for key in _EVENT_ARTIFACT_KEYS
+        }
+        handler_cls = _build_handler(self)
 
-        # Set SO_REUSEADDR before bind to actually reduce TIME_WAIT pain when
-        # tests recycle ports rapidly. ThreadingHTTPServer's superclass binds
-        # in __init__, so we subclass to flip the flag before bind.
         class _ReuseHTTPServer(http.server.ThreadingHTTPServer):
             allow_reuse_address = True
 
-        # ThreadingHTTPServer gives us one thread per request, which is what
-        # SSE clients need.
         self._httpd = _ReuseHTTPServer((_HOST, port), handler_cls)
         self._serve_thread: Optional[threading.Thread] = None
         self._serving = threading.Event()
@@ -212,16 +381,28 @@ class ViewerServer:
     def port(self) -> int:
         return self._httpd.server_address[1]
 
+    def session_info(self) -> dict:
+        return _build_session_info(self._session_paths)
+
+    def broadcaster_for(self, artifact: str | None) -> _Broadcaster:
+        if artifact in {None, "", "auto"}:
+            key = self.session_info()["default_artifact"]
+        else:
+            key = artifact
+        if key not in self._streams:
+            raise ValueError(f"unknown artifact: {artifact!r}")
+        return self._streams[key].broadcaster
+
     def start(self) -> None:
-        self._tailer.start()
+        for stream in self._streams.values():
+            stream.start()
 
         self._serve_thread = threading.Thread(
-            target=self._httpd.serve_forever, name="ViewerServer", daemon=True
+            target=self._httpd.serve_forever,
+            name="ViewerServer",
+            daemon=True,
         )
         self._serve_thread.start()
-        # Block until the server is actually accepting connections. Without
-        # this, a fast stop() races the serve_forever selector setup and
-        # leaves a stray Exception-in-thread traceback on stderr.
         host, port = self._httpd.server_address
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
@@ -238,8 +419,8 @@ class ViewerServer:
         if self._stopped:
             return
         self._stopped = True
-        # Signal SSE clients to wind down first so their wait loops exit.
-        self._broadcaster.shutdown()
+        for stream in self._streams.values():
+            stream.broadcaster.shutdown()
         try:
             self._httpd.shutdown()
         except Exception:  # noqa: BLE001 - defensive
@@ -250,7 +431,8 @@ class ViewerServer:
             pass
         if self._serve_thread is not None:
             self._serve_thread.join(timeout=5.0)
-        self._tailer.stop()
+        for stream in self._streams.values():
+            stream.stop()
 
     def __enter__(self) -> "ViewerServer":
         self.start()

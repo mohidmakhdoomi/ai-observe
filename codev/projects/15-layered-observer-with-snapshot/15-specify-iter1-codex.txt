@@ -1,0 +1,14 @@
+Using direct file reads to verify the spec against the repo context.Checking the current implementation details the spec references.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong direction and mostly feasible, but key event-shape and warning semantics are still too ambiguous for reliable implementation and testing.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The spec requires explicit warnings/status for skipped roots, cap exceedance, unreadable paths, hash errors, and partial/rebuilt artifacts, but it does not define whether these are JSONL records, sidecar metadata, or viewer-only derived state. This is a real gap because multiple MUSTs and acceptance criteria depend on it.
+- Snapshot event semantics are underspecified for metadata-only changes. The manifest includes mode/ctime/xattrs-related inputs, but snapshot requirements only mandate create/modify/delete. Clarify whether chmod/xattr-only diffs emit `metadata`/`chmod`, degrade to `modify`, or are intentionally ignored.
+- Built-in snapshot excludes are not sufficiently concrete. “lock files where excluding them does not hide primary user work artifacts” is subjective and not testable; the spec should name the default patterns/classes explicitly.
+- Deduplication/correlation rules are directionally good but still too loose for deterministic implementation. Terms like “same normalized operation/path” and “operation class differs materially” need a concrete matching policy, especially for rename-vs-modify and multiple writes to the same path.
+- The rebuilt/partial artifact story is incomplete. The current code/docs already use `.jsonl`, `.jsonl.partial`, and full-trace rebuild paths differently; the spec should define the exact artifact naming/discovery contract so the viewer and docs can implement one consistent behavior.
+
+Everything else looks technically feasible. The repo context supports the overall approach: current code is strace-first, schema-v1-only, and the viewer/tailer presently reject non-v1 events, so the schema-v2 + normalization migration is necessary and sensible.

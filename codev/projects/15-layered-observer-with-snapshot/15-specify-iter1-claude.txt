@@ -1,0 +1,75 @@
+I'll review this specification by first examining the actual codebase to verify the claims and assess feasibility.Now let me check the existing test structure and the viewer static assets to understand the full scope:Good. I now have a thorough understanding of the codebase to evaluate this spec. Here's my review:
+
+---
+
+## Specification Review: 15-layered-observer-with-snapshot
+
+### 1. Completeness — Excellent
+
+This is one of the most thorough specifications I've reviewed. Requirements are organized into clear MUST/SHOULD tiers, acceptance criteria are concrete and testable, and the event model examples are immediately useful for a builder. The solution exploration section is well-reasoned with honest tradeoffs.
+
+### 2. Technical Feasibility — Sound, with notes
+
+**a. Tailer schema gate needs explicit mention.** The current `tailer.py` line 161 hardcodes `if sv != SCHEMA_VERSION` where `SCHEMA_VERSION = 1`, and *skips* non-matching events. The spec correctly requires v1/v2 coexistence in the tailer/server/browser pipeline, and the builder will need to update this gate — but the spec never calls out the concrete blocker. The requirement "Preserve v1 ingestion compatibility… by treating missing `schema_version`, `source`, and `confidence` as v1/strace/direct" covers the v1→v2 normalization direction, but doesn't explicitly say "the tailer must accept schema_version=2 events." A builder reading the spec in isolation could reasonably think the tailer only needs to handle missing-version normalization and miss that the existing gate rejects v2 outright. This is implicit but worth making explicit.
+
+**b. `O_CREAT` without `O_EXCL` heuristic is underspecified.** The spec says "when the parser can confidently determine creation, including non-`O_EXCL` cases." But strace output for a plain `open("file", O_CREAT|O_WRONLY)` doesn't distinguish between creating a new file and opening an existing one — both return a non-negative fd. The only reliable signal is whether the file previously existed, which the parser doesn't track. The spec should either: (a) define the specific heuristic (e.g., "emit create only when `O_CREAT|O_EXCL` or `O_CREAT|O_TRUNC` on a path not previously seen in this session's fd table"), or (b) explicitly state this is a plan-phase decision. As written, a builder could implement something that produces false-positive creates.
+
+**c. `AI_OBSERVE_NESTED=1` vs `AI_OBSERVE_DISABLE=1`.** The existing `DISABLE=1` already does `os.execvpe()` of the resolved real command. The spec introduces `NESTED=1` that "should direct-exec the resolved real binary rather than launching another nested strace, so the outer strace -f can observe descendants." This is semantically identical to `DISABLE=1` at the inner invocation level. The spec doesn't clarify: does the *outer* observer set `NESTED=1` in the child environment automatically, or does the user set it? If automatic, that's new behavior in `observe.py` that should be a MUST requirement. If manual, what does NESTED offer over DISABLE? The distinction needs one more sentence.
+
+### 3. Edge Cases and Error Scenarios — Well covered
+
+The spec handles degradation paths thoughtfully:
+- Missing/unreadable roots → warn and skip
+- Max-files cap → degrade with explicit warning, don't claim completeness
+- Parser timeout → discoverable rebuilt/partial artifact
+- Snapshot races with child startup → acknowledged as open question
+
+**One gap:** What happens when `AI_OBSERVE_ROOTS` contains overlapping paths (e.g., `/repo:/repo/src`)? Should the snapshot dedup these, warn, or process both? Large overlapping trees could double traversal cost and produce duplicate entries. This edge case is common enough to deserve a sentence.
+
+### 4. Security Considerations — Solid
+
+The spec correctly preserves all existing security posture: loopback-only viewer, sanitized SSE payloads, O_NOFOLLOW/symlink protections, 0600 permissions. The new provenance fields (`source`, `confidence`, `schema_version`) are explicitly allowed through browser sanitization while sensitive fields remain blocked.
+
+One note: snapshot manifests will contain stat metadata (`dev`, `ino`, `size`, `mtime`, `ctime`, `mode`) for every file under watched roots. If these manifests are stored as JSONL alongside other artifacts, the sensitive-data warning should extend to them — they reveal directory structure even beyond what the process actually touched.
+
+### 5. Testing Strategy — Good coverage, one concern
+
+The acceptance criteria are well-structured and testable. The fixture-based approach for parser tests is pragmatic. The test scenarios section provides concrete end-to-end cases.
+
+**Concern about test feasibility for snapshot reconciliation:** The scenario "A helper process outside the traced tree writes under `AI_OBSERVE_ROOTS` during the session" requires orchestrating an external write during a live strace session. This is inherently timing-sensitive. The spec says "SHOULD add regression tests using trace fixtures rather than requiring privileged or timing-sensitive live tests" — but that guidance is in the parser section, not the snapshot section. The snapshot acceptance criteria ("Tests show external writes…appear as snapshot/inferred events") could benefit from explicit guidance that unit-testing the manifest diff logic in isolation is the primary test strategy, with live integration tests as secondary.
+
+### 6. Scope Assessment
+
+This is a large spec encompassing 6 significant work streams (parser improvements, schema v2, snapshot reconciliation, viewer UX, backend abstraction, docs). The "one PR with phase commits" approach is reasonable but the PR will be substantial. This is a comment, not a blocker — the phasing is well thought out and the dependencies between phases are correctly ordered.
+
+### 7. Open Questions Assessment
+
+Three of the four "Important" open questions should ideally be resolved before planning:
+
+- **Snapshot exclude pattern syntax**: Directly affects the user-facing API and test fixtures. Gitignore-like vs glob-like is a real fork in implementation. The viewer already uses absolute-path anchored globs (`aggregator.js`); reusing that syntax for `AI_OBSERVE_SNAPSHOT_EXCLUDE` would reduce cognitive load.
+- **Snapshot baseline timing**: The correctness vs latency tradeoff here is significant. A background baseline means the first few seconds of child output could produce phantom "creates" in the snapshot diff for files the child modified before baseline completed.
+- **Backend selection surface**: CLI vs env var vs both is a design question that affects the abstraction's public API.
+
+The spec could close these with a clear recommendation even if the plan adjusts later.
+
+### 8. Minor Observations
+
+- The `sanitize_event` function in `tailer.py` currently returns a fixed tuple of fields. Adding `schema_version`, `source`, `confidence` means the sanitized event set grows — this is stated in the spec and feasible.
+- The dedup "minimum suppression rule" uses "same normalized operation/path" — what "normalized" means for operations isn't defined. Does a strace `create` match a snapshot `create`? Probably yes, but the term introduces ambiguity.
+- The configuration table lists `AI_OBSERVE_BACKENDS` or `--backend` as optional; the backend abstraction MUST section says to "define a small protocol." The spec correctly hedges that backend selection is optional in this release, which is wise.
+
+---
+
+```
+---
+VERDICT: COMMENT
+SUMMARY: Exceptionally thorough spec with a few underspecified heuristics and semantic gaps that should be addressed before or during planning
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- O_CREAT without O_EXCL creation heuristic is underspecified — builder needs guidance on what "confidently determine creation" means concretely when strace output doesn't distinguish create-new from open-existing
+- AI_OBSERVE_NESTED=1 semantics overlap with existing DISABLE=1; spec should clarify whether it's set automatically by the outer observer or manually, and what differentiates it
+- Tailer.py hardcodes schema_version==1 rejection (line 161); the v2 acceptance requirement is implicit but should be explicit to avoid implementation miss
+- Overlapping AI_OBSERVE_ROOTS paths (e.g., /repo:/repo/src) edge case is unaddressed
+- Three "Important" open questions (exclude syntax, baseline timing, backend selection surface) would benefit from recommendations even if plan adjusts later
+```

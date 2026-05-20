@@ -11,11 +11,13 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional
+from typing import Iterable, Optional
 
 
 RECENCY_HALF_LIFE_MS = 60_000.0
-
+DEFAULT_ENABLED_SOURCES = ("strace", "snapshot")
+SOURCE_ORDER = ("strace", "snapshot")
+CONFIDENCE_ORDER = ("direct", "inferred")
 
 FACTORY_FILTER_PATTERNS = (
     "/home/*/.codex/**",
@@ -61,10 +63,8 @@ def glob_to_regex_source(pattern: str) -> str:
         last = i == len(segments) - 1
         if seg == "**":
             if last:
-                # `/tmp/**` matches `/tmp`, `/tmp/a`, and `/tmp/a/b`.
                 out += r"/.*" if out == "^" else r"(?:/.*)?"
             else:
-                # `/a/**/b` matches `/a/b`, `/a/x/b`, and `/a/x/y/b`.
                 out += r"(?:/[^/]+)*"
         else:
             out += "/" + _compile_segment_glob(seg)
@@ -93,6 +93,44 @@ def compile_filter_patterns(patterns: Optional[Iterable[str]] = None) -> list[re
     return [compile_filter_pattern(p) for p in _normalized_filter_patterns(patterns)]
 
 
+def normalize_enabled_sources(raw=None) -> list[str]:
+    if raw is None:
+        raw = DEFAULT_ENABLED_SOURCES
+    if isinstance(raw, dict):
+        raw = [key for key, enabled in raw.items() if enabled]
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in raw:
+        if not isinstance(value, str):
+            continue
+        trimmed = value.strip()
+        if not trimmed or trimmed in seen:
+            continue
+        seen.add(trimmed)
+        out.append(trimmed)
+    return out
+
+
+def order_values(values: Iterable[str], preferred: Iterable[str]) -> list[str]:
+    pref = {value: index for index, value in enumerate(preferred)}
+    unique = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return sorted(unique, key=lambda value: (pref.get(value, math.inf), value))
+
+
+def normalize_event_source(event: dict) -> str:
+    return event.get("source") or "strace"
+
+
+def normalize_event_confidence(event: dict) -> str:
+    return event.get("confidence") or "direct"
+
+
 _DEFAULT_FILTER_REGEXES = compile_filter_patterns(FACTORY_FILTER_PATTERNS)
 
 
@@ -104,8 +142,6 @@ def is_filtered_path(path: Optional[str], regexes: Optional[Iterable[re.Pattern]
 
 
 def event_matches_filters(event: dict, regexes: Optional[Iterable[re.Pattern]] = None) -> bool:
-    """An event is filtered iff every non-null path on it matches the
-    active filter list."""
     paths = [p for p in (event.get("path"), event.get("old_path"), event.get("new_path")) if p]
     if not paths:
         return False
@@ -113,18 +149,14 @@ def event_matches_filters(event: dict, regexes: Optional[Iterable[re.Pattern]] =
 
 
 def is_noise(path: Optional[str]) -> bool:
-    # Backward-compatible alias for the factory filter list.
     return is_filtered_path(path)
 
 
 def event_is_noise(event: dict) -> bool:
-    # Backward-compatible alias for the factory filter list.
     return event_matches_filters(event)
 
 
 def _parse_ts_ms(ts: str) -> float:
-    # ISO 8601 with trailing Z. Datetime handles offset-aware with +00:00 only,
-    # so swap Z → +00:00.
     if ts.endswith("Z"):
         ts = ts[:-1] + "+00:00"
     dt = datetime.fromisoformat(ts)
@@ -141,7 +173,17 @@ def _decay(acc_value: float, acc_at_ms: float, now_ms: float) -> float:
 
 
 class _PathEntry:
-    __slots__ = ("bytes_w", "events", "rec_acc", "rec_at_ms", "last_touched_ms", "tombstoned", "op_counts")
+    __slots__ = (
+        "bytes_w",
+        "events",
+        "rec_acc",
+        "rec_at_ms",
+        "last_touched_ms",
+        "tombstoned",
+        "op_counts",
+        "sources",
+        "confidences",
+    )
 
     def __init__(self) -> None:
         self.bytes_w = 0
@@ -150,14 +192,26 @@ class _PathEntry:
         self.rec_at_ms = 0.0
         self.last_touched_ms = 0.0
         self.tombstoned = False
-        self.op_counts: dict = {}
+        self.op_counts: dict[str, int] = {}
+        self.sources: set[str] = set()
+        self.confidences: set[str] = set()
+
+    def reset(self) -> None:
+        self.bytes_w = 0
+        self.events = 0
+        self.rec_acc = 0.0
+        self.rec_at_ms = 0.0
+        self.last_touched_ms = 0.0
+        self.tombstoned = False
+        self.op_counts = {}
+        self.sources = set()
+        self.confidences = set()
 
     def bump_event(self, op: str) -> None:
         self.events += 1
         self.op_counts[op] = self.op_counts.get(op, 0) + 1
 
     def add_recency_at(self, when_ms: float, weight: float = 1.0) -> None:
-        # Decay the current acc to `when_ms`, then add `weight`.
         cur = _decay(self.rec_acc, self.rec_at_ms, when_ms) if self.rec_at_ms else 0.0
         self.rec_acc = cur + weight
         self.rec_at_ms = when_ms
@@ -166,29 +220,24 @@ class _PathEntry:
         if when_ms > self.last_touched_ms:
             self.last_touched_ms = when_ms
 
-    def to_state(self) -> dict:
-        return {
-            "bytes": self.bytes_w,
-            "events": self.events,
-            "rec_acc": self.rec_acc,
-            "rec_at_ms": self.rec_at_ms,
-            "last_touched_ms": self.last_touched_ms,
-            "tombstoned": self.tombstoned,
-            "op_counts": dict(self.op_counts),
-        }
+    def record_provenance(self, event: dict) -> None:
+        self.sources.add(normalize_event_source(event))
+        self.confidences.add(normalize_event_confidence(event))
 
 
 class Aggregator:
-    """In-memory aggregation of per-path filesystem activity.
+    """In-memory aggregation of per-path filesystem activity."""
 
-    Mirrors `aggregator.js`; semantics match the spec's Rename handling,
-    metric definitions, and exclude-filter rules.
-    """
-
-    def __init__(self, filter_patterns: Optional[Iterable[str]] = None) -> None:
+    def __init__(
+        self,
+        filter_patterns: Optional[Iterable[str]] = None,
+        enabled_sources: Optional[Iterable[str] | dict[str, bool]] = None,
+    ) -> None:
         self.filter_patterns = _normalized_filter_patterns(filter_patterns)
+        self.enabled_sources = normalize_enabled_sources(enabled_sources)
+        self._enabled_source_set = set(self.enabled_sources)
         self._filter_regexes = compile_filter_patterns(self.filter_patterns)
-        self.paths: dict = {}
+        self.paths: dict[str, _PathEntry] = {}
         self.filtered_event_count = 0
         self.total_event_count = 0
         self.latest_ts_ms = 0.0
@@ -200,20 +249,23 @@ class Aggregator:
         self.latest_ts_ms = 0.0
 
     def _entry(self, path: str) -> _PathEntry:
-        e = self.paths.get(path)
-        if e is None:
-            e = _PathEntry()
-            self.paths[path] = e
-        return e
+        entry = self.paths.get(path)
+        if entry is None:
+            entry = _PathEntry()
+            self.paths[path] = entry
+        return entry
+
+    def _source_enabled(self, event: dict) -> bool:
+        return normalize_event_source(event) in self._enabled_source_set
 
     def ingest(self, event: dict) -> None:
+        if not self._source_enabled(event):
+            return
         self.total_event_count += 1
         ts_ms = _parse_ts_ms(event["timestamp"])
         if ts_ms > self.latest_ts_ms:
             self.latest_ts_ms = ts_ms
 
-        # Event-level filter accounting (spec rule). Filtered events are
-        # still retained so the UI can reveal them later when include_noise=True.
         if event_matches_filters(event, self._filter_regexes):
             self.filtered_event_count += 1
 
@@ -227,17 +279,11 @@ class Aggregator:
             return
         entry = self._entry(path)
         if entry.tombstoned:
-            # A fresh event for a tombstoned path resurrects it as a new entry.
-            entry.tombstoned = False
-            entry.bytes_w = 0
-            entry.events = 0
-            entry.rec_acc = 0.0
-            entry.rec_at_ms = 0.0
-            entry.last_touched_ms = 0.0
-            entry.op_counts = {}
+            entry.reset()
         entry.bump_event(op)
         entry.update_last_touched(ts_ms)
         entry.add_recency_at(ts_ms, 1.0)
+        entry.record_provenance(event)
         if op == "modify":
             result = event.get("result")
             if isinstance(result, int) and result > 0:
@@ -248,67 +294,54 @@ class Aggregator:
         new = event.get("new_path")
         if not old and not new:
             return
-        # Migrate state from old → new per spec.
         if old and new and old != new:
             src = self.paths.get(old)
             dst = self._entry(new)
             if dst.tombstoned:
-                dst.tombstoned = False
+                dst.reset()
             if src is not None:
-                # Bytes: move.
                 dst.bytes_w += src.bytes_w
-                # Events: dst.events += src.events + 1 (rename charges dst).
                 dst.events += src.events + 1
-                # op_counts: merge + charge the rename to dst.
-                for k, v in src.op_counts.items():
-                    dst.op_counts[k] = dst.op_counts.get(k, 0) + v
+                for key, value in src.op_counts.items():
+                    dst.op_counts[key] = dst.op_counts.get(key, 0) + value
                 dst.op_counts["rename"] = dst.op_counts.get("rename", 0) + 1
-                # Recency: decay src's acc to ts_ms, dst's to ts_ms, sum, add 1.
                 src_at_ts = _decay(src.rec_acc, src.rec_at_ms, ts_ms) if src.rec_at_ms else 0.0
                 dst_at_ts = _decay(dst.rec_acc, dst.rec_at_ms, ts_ms) if dst.rec_at_ms else 0.0
                 dst.rec_acc = src_at_ts + dst_at_ts + 1.0
                 dst.rec_at_ms = ts_ms
-                # last_touched: max(src, dst, ts).
                 dst.last_touched_ms = max(dst.last_touched_ms, src.last_touched_ms, ts_ms)
-                # Tombstone source.
+                dst.sources.update(src.sources)
+                dst.confidences.update(src.confidences)
+                dst.record_provenance(event)
                 src.tombstoned = True
                 src.bytes_w = 0
                 src.events = 0
                 src.rec_acc = 0.0
                 src.rec_at_ms = 0.0
                 src.op_counts = {}
-                # last_touched on src is no longer relevant.
+                src.sources = set()
+                src.confidences = set()
             else:
-                # No prior src state: dst just records the rename event.
                 dst.events += 1
                 dst.op_counts["rename"] = dst.op_counts.get("rename", 0) + 1
                 dst.add_recency_at(ts_ms, 1.0)
                 dst.update_last_touched(ts_ms)
+                dst.record_provenance(event)
         else:
-            # Partial rename resolution is possible when one side is relative
-            # to an unresolved directory fd. Preserve the event on whichever
-            # path is known instead of dropping it.
             known = new or old
             entry = self._entry(known)
+            if entry.tombstoned:
+                entry.reset()
             entry.bump_event("rename")
             entry.update_last_touched(ts_ms)
             entry.add_recency_at(ts_ms, 1.0)
-
-    # ----- snapshots -----
+            entry.record_provenance(event)
 
     def snapshot(self, *, metric: str = "bytes", include_noise: bool = False, include_filtered: bool = False) -> dict:
-        """Return a top-down hierarchical snapshot keyed by path.
-
-        Tree nodes carry `{path, name, isDir, bytes, events, recent,
-        last_touched_ms, children}`. Tombstoned entries are excluded.
-        `include_noise`/`include_filtered` controls filter application at
-        snapshot time so the same aggregation state can back both hidden and
-        visible filtered views.
-        """
         include_filter_matches = include_noise or include_filtered
         now_ms = self.latest_ts_ms or 0.0
-        # Build the tree.
         root = {"path": "/", "name": "/", "isDir": True, "children": {}, "_files": []}
+
         for path, entry in self.paths.items():
             if entry.tombstoned:
                 continue
@@ -325,9 +358,8 @@ class Aggregator:
                 else:
                     child = cur["children"].get(part)
                     if child is None:
-                        ancestor = "/" + "/".join(parts[: i + 1])
                         child = {
-                            "path": ancestor,
+                            "path": "/" + "/".join(parts[: i + 1]),
                             "name": part,
                             "isDir": True,
                             "children": {},
@@ -337,8 +369,6 @@ class Aggregator:
                     cur = child
 
         def _finalize(node: dict) -> dict:
-            # Convert children + _files into a sorted children list with
-            # aggregates rolled up.
             kids = []
             for fname, fpath, entry in node["_files"]:
                 recent = _decay(entry.rec_acc, entry.rec_at_ms, now_ms) if entry.rec_at_ms else 0.0
@@ -351,32 +381,38 @@ class Aggregator:
                         "events": entry.events,
                         "recent": recent,
                         "last_touched_ms": entry.last_touched_ms,
+                        "sources": order_values(entry.sources, SOURCE_ORDER),
+                        "confidences": order_values(entry.confidences, CONFIDENCE_ORDER),
                         "children": [],
                     }
                 )
-            for name, child in node["children"].items():
+            for child in node["children"].values():
                 kids.append(_finalize(child))
-            kids.sort(key=lambda n: n["name"])
-            bytes_sum = sum(k["bytes"] for k in kids)
-            events_sum = sum(k["events"] for k in kids)
-            recent_sum = sum(k["recent"] for k in kids)
-            last_touched = max((k["last_touched_ms"] for k in kids), default=0.0)
+            kids.sort(key=lambda item: item["name"])
             return {
                 "path": node["path"],
                 "name": node["name"],
                 "isDir": True,
-                "bytes": bytes_sum,
-                "events": events_sum,
-                "recent": recent_sum,
-                "last_touched_ms": last_touched,
+                "bytes": sum(kid["bytes"] for kid in kids),
+                "events": sum(kid["events"] for kid in kids),
+                "recent": sum(kid["recent"] for kid in kids),
+                "last_touched_ms": max((kid["last_touched_ms"] for kid in kids), default=0.0),
+                "sources": order_values(
+                    (source for kid in kids for source in kid.get("sources", [])),
+                    SOURCE_ORDER,
+                ),
+                "confidences": order_values(
+                    (confidence for kid in kids for confidence in kid.get("confidences", [])),
+                    CONFIDENCE_ORDER,
+                ),
                 "children": kids,
             }
 
-        tree = _finalize(root)
         return {
             "metric": metric,
             "include_noise": include_filter_matches,
-            "tree": tree,
+            "enabled_sources": list(self.enabled_sources),
+            "tree": _finalize(root),
             "filtered_event_count": self.filtered_event_count,
             "total_event_count": self.total_event_count,
             "latest_ts_ms": self.latest_ts_ms,

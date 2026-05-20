@@ -25,6 +25,8 @@ def _event(op="modify", path="/x", result=10, ts="2026-05-13T10:00:00.000Z", **e
         "path": path,
         "old_path": None,
         "new_path": None,
+        "source": "strace",
+        "confidence": "direct",
         "command": ["codex"],
         "raw_syscall": "secret",
         "result": result,
@@ -87,11 +89,24 @@ class JsonlTailerTests(unittest.TestCase):
         out = sanitize_event(raw)
         self.assertEqual(
             sorted(out.keys()),
-            sorted(["timestamp", "operation", "path", "old_path", "new_path", "result"]),
+            sorted([
+                "schema_version",
+                "timestamp",
+                "operation",
+                "path",
+                "old_path",
+                "new_path",
+                "result",
+                "source",
+                "confidence",
+            ]),
         )
         # The sensitive fields must not appear.
-        for forbidden in ("raw_syscall", "command", "pid", "process", "session_id", "invocation_id", "schema_version"):
+        for forbidden in ("raw_syscall", "command", "pid", "process", "session_id", "invocation_id"):
             self.assertNotIn(forbidden, out)
+        self.assertEqual(out["schema_version"], SCHEMA_VERSION)
+        self.assertEqual(out["source"], "strace")
+        self.assertEqual(out["confidence"], "direct")
 
     def test_empty_file_then_append(self):
         self._start()
@@ -172,10 +187,51 @@ class JsonlTailerTests(unittest.TestCase):
         self.assertEqual(evs[0]["path"], "/ok")
         self.assertTrue(any("malformed" in w for w in warns), warns)
 
-    def test_schema_version_mismatch_skipped(self):
+    def test_v1_missing_and_v2_events_are_normalized_with_provenance(self):
+        self._start()
+        missing = _event(path="/missing")
+        missing.pop("schema_version")
+        missing.pop("source")
+        missing.pop("confidence")
+        v1 = _event(path="/v1", schema_version=1)
+        v1.pop("source")
+        v1.pop("confidence")
+        v2 = _event(path="/v2", schema_version=2, source="snapshot", confidence="inferred")
+        _write_line(self.path, missing)
+        _write_line(self.path, v1)
+        _write_line(self.path, v2)
+        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 3))
+        evs, warns = self.col.snapshot()
+        self.assertEqual([e["path"] for e in evs], ["/missing", "/v1", "/v2"])
+        self.assertEqual([e["schema_version"] for e in evs], [1, 1, 2])
+        self.assertEqual([e["source"] for e in evs], ["strace", "strace", "snapshot"])
+        self.assertEqual([e["confidence"] for e in evs], ["direct", "direct", "inferred"])
+        self.assertEqual(warns, [])
+
+    def test_future_schema_with_known_safe_fields_is_normalized(self):
+        self._start()
+        future = _event(
+            path="/future",
+            schema_version=3,
+            source="snapshot",
+            confidence="inferred",
+            raw_new_field={"must": "not be exposed"},
+        )
+        _write_line(self.path, future)
+        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        evs, warns = self.col.snapshot()
+        self.assertEqual(evs[0]["schema_version"], 3)
+        self.assertEqual(evs[0]["path"], "/future")
+        self.assertEqual(evs[0]["source"], "snapshot")
+        self.assertEqual(evs[0]["confidence"], "inferred")
+        self.assertNotIn("raw_new_field", evs[0])
+        self.assertEqual(warns, [])
+
+    def test_unsupported_future_schema_version_skipped(self):
         self._start()
         bad = _event(path="/future")
-        bad["schema_version"] = 2
+        bad["schema_version"] = 999
+        bad.pop("operation")
         _write_line(self.path, bad)
         _write_line(self.path, _event(path="/ok"))
         self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))

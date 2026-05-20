@@ -1,0 +1,81 @@
+I'll start by reading the primary implementation and test files for this phase.The files are in the builder worktree. Let me find them:Good, I've read the two primary files. Let me also check `observe.py` for any phase-3 specific changes and run the tests:Tests pass. Let me run the broader test suite and look at a few specific areas more carefully:All 179 tests pass. Now let me do a deeper review of the snapshot module against the spec requirements:Now let me check a couple of edge cases in the `_changed_operation` logic and verify some additional spec requirements:I've now reviewed all the key components. Let me compile my findings.
+
+---
+
+## Phase 3 Review: Snapshot Manifest Capture, Diff, Excludes, and Diagnostics
+
+### Spec Adherence
+
+The implementation covers all Phase 3 success criteria:
+
+1. **Root parsing** (`parse_roots`): Defaults to launch cwd when unset/empty ✅, uses `os.pathsep` (colon on Linux) ✅, handles missing roots, overlapping roots (ancestor wins), duplicates, non-directories, and resolution errors with structured diagnostics ✅, emits `no_roots` when nothing remains ✅
+
+2. **Built-in excludes** match `.git`, `node_modules`, `__pycache__`, `.codev/observe/**`, `**/*.pyc`, `**/*.pyo`, swap/backup patterns, `.DS_Store`, `.nfs*` ✅. Lockfiles (`package-lock.json`, `Cargo.lock`, etc.) are **not** excluded ✅
+
+3. **User excludes** via `parse_exclude_patterns` support colon- and newline-separated patterns with documented segment/glob semantics ✅
+
+4. **Manifest entries** include path, type, size, mtime_ns, ctime_ns, mode, dev/ino, optional symlink_target, optional hash ✅
+
+5. **Diff** produces create, modify, delete, metadata, and conservative rename operations ✅. Renames require 1:1 `dev`/`ino` match and same file type — ambiguous cases fall through to separate delete/create ✅
+
+6. **`ctime` alone does not emit an event** ✅ (explicit test + comment)
+
+7. **Schema-v2 events** use `source: "snapshot"`, `confidence: "inferred"`, no process attribution fields ✅
+
+8. **Max-files cap** stops walk and produces structured `max_files_exceeded` diagnostic ✅
+
+9. **Hashing** is opt-in, streaming (1MB chunks), and errors produce `hash_error` diagnostics ✅
+
+10. **Symlink subtrees not followed**: `entry.stat(follow_symlinks=False)` and `entry.is_dir(follow_symlinks=False)` ensure symlinks are recorded but not traversed ✅
+
+### Code Quality
+
+The code is clean, well-structured, and maintainable:
+
+- Pure module with no side effects — no child process launching, no sidecar writing
+- Good use of frozen dataclasses for immutable manifest entries and diagnostics
+- `diff_manifests` accepts both `Manifest` objects and raw dicts, providing flexibility
+- Deterministic output via sorted iterations
+- `_normalize_pattern` is called redundantly (once in `all_exclude_patterns`, again inside `should_exclude` on every pattern for every path) — minor inefficiency but not a blocker
+
+### Test Coverage
+
+The 9 tests in `test_snapshot.py` cover the main functionality:
+- Root parsing with defaults, missing, and overlap
+- Built-in excludes + lockfile non-exclusion
+- User exclude pattern parsing
+- Manifest capture fields, symlink handling, hash, excludes
+- Max-files cap diagnostics
+- Diff operations: create, modify, delete, metadata, rename, ambiguous delete/create
+- ctime-only non-emission
+- Hash-based modify detection
+- Schema-v2 event synthesis validation
+
+**Minor test gaps** (not blocking for this phase):
+- No explicit test for `no_roots` diagnostic when every root is invalid
+- No test for `not_directory` diagnostic (root points to a file)
+- No test for `unreadable_path` diagnostic during walk
+- No test for directory entries in the manifest (only files and symlinks are directly verified)
+- `synthesize_events` is only tested for the rename case — create/modify/delete synthesis is exercised implicitly through the diff test but not asserted at the event level
+
+### Error Handling
+
+Robust throughout:
+- `OSError` is caught during walk, stat, hash, and root resolution
+- Each error path records structured diagnostics and sets `manifest.complete = False`
+- `_cap_exceeded` deduplicates its diagnostic per root
+
+### Plan Alignment
+
+The implementation matches the plan precisely:
+- `snapshot.py` is a pure, deterministic module with no integration into the observer wrapper
+- `observe.py` has no snapshot wiring — Phase 4's responsibility
+- All planned success criteria are met
+
+---
+VERDICT: APPROVE
+SUMMARY: Solid phase-3 implementation — pure snapshot module with correct root parsing, excludes, manifest walk, conservative diff/rename, and schema-v2 event synthesis; all 179 tests pass.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

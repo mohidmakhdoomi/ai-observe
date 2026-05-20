@@ -47,7 +47,7 @@ def _load_jsonl(path: Path):
             obj = json.loads(s)
         except json.JSONDecodeError:
             continue
-        if obj.get("schema_version") != 1:
+        if not isinstance(obj, dict):
             continue
         events.append(obj)
     return events
@@ -178,6 +178,44 @@ class CustomFilterTests(unittest.TestCase):
         self.assertIsNotNone(_find_node(filtered["tree"], "/work/a.txt"))
         self.assertIsNotNone(_find_node(shown["tree"], "/secret/a.txt"))
 
+    def test_v2_provenance_fields_do_not_change_core_aggregation(self):
+        agg = Aggregator()
+        ev = self._event("/work/v2.txt", idx=0, result=7)
+        ev.update({"schema_version": 2, "source": "strace", "confidence": "direct"})
+        agg.ingest(ev)
+        snap = agg.snapshot(include_noise=False)
+        node = _find_node(snap["tree"], "/work/v2.txt")
+        self.assertIsNotNone(node)
+        self.assertEqual(node["events"], 1)
+        self.assertEqual(node["bytes"], 7)
+        self.assertEqual(node["sources"], ["strace"])
+        self.assertEqual(node["confidences"], ["direct"])
+
+    def test_mixed_v1_v2_sources_roll_up_provenance(self):
+        agg = Aggregator()
+        for ev in _load_jsonl(FIXTURES / "mixed_sources.jsonl"):
+            agg.ingest(ev)
+        snap = agg.snapshot()
+        mixed = _find_node(snap["tree"], "/work/mixed.txt")
+        work = _find_node(snap["tree"], "/work")
+        self.assertEqual(mixed["sources"], ["strace", "snapshot"])
+        self.assertEqual(mixed["confidences"], ["direct", "inferred"])
+        self.assertEqual(work["sources"], ["strace", "snapshot"])
+        self.assertEqual(work["confidences"], ["direct", "inferred"])
+
+    def test_source_visibility_replays_only_selected_sources(self):
+        agg = Aggregator(enabled_sources=["snapshot"])
+        for ev in _load_jsonl(FIXTURES / "mixed_sources.jsonl"):
+            agg.ingest(ev)
+        snap = agg.snapshot()
+        self.assertEqual(snap["enabled_sources"], ["snapshot"])
+        self.assertIsNone(_find_node(snap["tree"], "/work/direct.txt"))
+        inferred = _find_node(snap["tree"], "/work/inferred.txt")
+        mixed = _find_node(snap["tree"], "/work/mixed.txt")
+        self.assertEqual(inferred["sources"], ["snapshot"])
+        self.assertEqual(mixed["sources"], ["snapshot"])
+        self.assertEqual(mixed["bytes"], 11)
+
     def test_custom_event_filtering_uses_all_paths_match_rule(self):
         secret_rx = [compile_filter_pattern("/secret/**")]
         self.assertTrue(event_matches_filters(self._event("/secret/a"), secret_rx))
@@ -233,8 +271,8 @@ class BasicAggregationTests(unittest.TestCase):
         self.snap = self.agg.snapshot()
 
     def test_total_and_filtered_counts(self):
-        # basic.jsonl has 15 valid v1 events; none are noise.
-        self.assertEqual(self.snap["total_event_count"], 15)
+        # basic.jsonl has 16 valid mixed-schema events; none are filtered by default.
+        self.assertEqual(self.snap["total_event_count"], 16)
         self.assertEqual(self.snap["filtered_event_count"], 0)
 
     def test_bytes_metric_for_known_path(self):
@@ -404,12 +442,15 @@ class JsParityTests(unittest.TestCase):
                 "events": node["events"],
                 "recent": round(float(node["recent"]), 6),
                 "last_touched_ms": node["last_touched_ms"],
+                "sources": list(node.get("sources", [])),
+                "confidences": list(node.get("confidences", [])),
                 "children": [canon(c) for c in node["children"]],
             }
 
         self.assertEqual(canon(py_snap["tree"]), canon(js_snap["tree"]))
         self.assertEqual(py_snap["total_event_count"], js_snap["total_event_count"])
         self.assertEqual(py_snap["filtered_event_count"], js_snap["filtered_event_count"])
+        self.assertEqual(py_snap.get("enabled_sources"), js_snap.get("enabled_sources"))
 
 
     def test_js_filter_helpers_cover_validation_and_globs(self):

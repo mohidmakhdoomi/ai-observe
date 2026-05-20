@@ -1,0 +1,8 @@
+Using filesystem checks to verify the cited files/modules exist before reviewing the plan.Reading the current implementation to check whether the plan’s phases and file targets match the actual code structure.Checking the existing observe/test code for contracts the plan may need to preserve explicitly, especially artifact handling and env compatibility.One more check: verifying whether any wrapper/entrypoint files outside `observe.py` would also need touching during the planned refactor.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong, spec-aligned plan overall, but it leaves two required contracts under-specified: secure handling of new artifacts and authoritative artifact precedence across timeout/rebuild flows.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The plan does not explicitly cover security/hardening work for new artifacts (`<session>.jsonl.rebuilt`, `<session>.meta.json`, and any snapshot-related writes). Current `observe.py` has path-safety and symlink protections for `.trace/.jsonl/.jsonl.partial`; the plan should require equivalent safe-write helpers and regression tests so Phase 1/4 do not weaken the spec’s security/privacy guarantees.
+- The artifact contract is still ambiguous across Phases 1, 4, and 5 for cases where `.jsonl`, `.jsonl.partial`, `.jsonl.rebuilt`, and `.meta.json` coexist. The plan should state exactly which file is authoritative in each recovery mode, how snapshot events are merged when live parsing times out, and what precedence the viewer uses when presenting/opening artifacts; otherwise builders can implement inconsistent behavior.

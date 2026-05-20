@@ -1,0 +1,12 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 5 is not complete: viewer provenance UX, source filtering, and artifact/meta banner support are largely unimplemented.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `src/ai_observe/viewer/static/index.html:9-57`, `index.js:141-297`, `table.js:29-55`, and `treemap.js:77-99` add only path-filter UI; there is no `strace`/`snapshot` source control, no provenance badges, and no confidence/source display in rows or tooltips. This misses the phase’s core MUST requirements to distinguish `strace/direct` vs `snapshot/inferred` and let users filter by source.
+- `src/ai_observe/viewer/server.py:96-175` exposes only `/events` with event batches. There is no sibling artifact detection for `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, or `<session>.meta.json`, no sanitized artifact-status payload, and no authoritative-artifact precedence handling from meta sidecar data.
+- `src/ai_observe/viewer/tailer.py:28-37` sanitizes provenance fields, but nothing downstream uses them for UI rendering or source-based visibility. Phase 5 required end-to-end viewer UX, not just tailer acceptance.
+- Tests do not cover the required phase behavior. `tests/test_viewer_server.py`, `tests/test_viewer_index_js.py`, `tests/test_viewer_aggregator.py`, and `tests/test_viewer_smoke_e2e.py` cover path filters and SSE basics, but there are no tests for source filters, provenance badges/tooltips, mixed v1/v2 source aggregation behavior in the UI, or partial/rebuilt/meta banners and precedence.
+- The current aggregator/UI path remains oriented around generic path filtering only (`tests/_aggregator_oracle.py`, `src/ai_observe/viewer/static/aggregator.js`); there is no implementation for source-aware aggregation/filter semantics required by this phase.

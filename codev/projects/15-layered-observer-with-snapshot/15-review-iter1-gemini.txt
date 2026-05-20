@@ -1,0 +1,21 @@
+# Gemini consultation unavailable for PR review iteration 1
+
+Gemini PR consultation was attempted for review iteration 1, but the provider repeatedly returned capacity/rate-limit failures before producing a review artifact.
+
+Observed failure details included:
+
+- HTTP `429 Too Many Requests`
+- `RESOURCE_EXHAUSTED`
+- `MODEL_CAPACITY_EXHAUSTED`
+- `reason: rateLimitExceeded`
+
+No Gemini review verdict was available.
+
+---
+VERDICT: COMMENT
+SUMMARY: Gemini PR consultation failed due to provider capacity/rate-limit errors before a review artifact could be produced.
+CONFIDENCE: LOW
+---
+
+KEY_ISSUES:
+- Gemini review could not be completed because the provider returned repeated 429/capacity exhaustion errors.

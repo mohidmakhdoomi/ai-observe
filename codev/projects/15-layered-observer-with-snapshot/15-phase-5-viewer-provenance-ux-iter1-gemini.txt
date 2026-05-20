@@ -1,0 +1,10 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The frontend UI components and server artifact discovery required for Phase 5 are completely missing.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The entire frontend implementation is missing. Files such as `src/ai_observe/viewer/static/aggregator.js`, `index.html`, `index.js`, `table.js`, `treemap.js`, and `style.css` were not modified to add source filtering, provenance badges, or artifact banners.
+- `src/ai_observe/viewer/server.py` was not updated to detect sibling artifacts (`.partial`, `.rebuilt`, `.meta.json`) or expose the sanitized artifact state to the browser.
+- `tests/test_viewer_aggregator.py` still hardcodes `if obj.get("schema_version") != 1: continue` in `_load_jsonl()`, which ignores the v2 events the tests are supposed to validate.
+- `tests/_aggregator_oracle.py` was not updated to propagate `source` and `confidence` alongside `aggregator.js`.

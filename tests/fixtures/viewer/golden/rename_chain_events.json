@@ -1,4 +1,8 @@
 {
+  "enabled_sources": [
+    "strace",
+    "snapshot"
+  ],
   "filtered_event_count": 0,
   "include_noise": false,
   "latest_ts_ms": 1778666400500.0,
@@ -13,27 +17,45 @@
           {
             "bytes": 140,
             "children": [],
+            "confidences": [
+              "direct"
+            ],
             "events": 6,
             "isDir": false,
             "last_touched_ms": 1778666400500.0,
             "name": "final",
             "path": "/p/final",
-            "recent": 5.982707964013699
+            "recent": 5.982707964013699,
+            "sources": [
+              "strace"
+            ]
           }
+        ],
+        "confidences": [
+          "direct"
         ],
         "events": 6,
         "isDir": true,
         "last_touched_ms": 1778666400500.0,
         "name": "p",
         "path": "/p",
-        "recent": 5.982707964013699
+        "recent": 5.982707964013699,
+        "sources": [
+          "strace"
+        ]
       }
+    ],
+    "confidences": [
+      "direct"
     ],
     "events": 6,
     "isDir": true,
     "last_touched_ms": 1778666400500.0,
     "name": "/",
     "path": "/",
-    "recent": 5.982707964013699
+    "recent": 5.982707964013699,
+    "sources": [
+      "strace"
+    ]
   }
 }

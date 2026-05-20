@@ -84,6 +84,34 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual([e["result"] for e in file_events], [0, 7, 5])
         self.assertEqual(sum(e["result"] for e in file_events if e["result"] > 0), 12)
 
+    def test_copy_file_range_and_sendfile_modify_known_destination(self):
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "src", O_RDONLY) = 3</tmp/work/src>
+123 1714932000.000002 openat(AT_FDCWD, "dst", O_WRONLY|O_CREAT, 0666) = 4</tmp/work/dst>
+123 1714932000.000003 copy_file_range(3</tmp/work/src>, NULL, 4</tmp/work/dst>, NULL, 11, 0) = 11
+123 1714932000.000004 sendfile(4</tmp/work/dst>, 3</tmp/work/src>, NULL, 7) = 7
+123 1714932000.000005 copy_file_range(3</tmp/work/src>, NULL, 99, NULL, 11, 0) = 11
+""")
+        self.assertEqual(self.ops(events), ["modify", "modify"])
+        self.assertEqual([e["path"] for e in events], ["/tmp/work/dst", "/tmp/work/dst"])
+        self.assertEqual([e["result"] for e in events], [11, 7])
+
+    def test_xattr_operations_emit_metadata_when_target_known(self):
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "x", O_RDWR) = 3</tmp/work/x>
+123 1714932000.000002 setxattr("x", "user.k", "v", 1, 0) = 0
+123 1714932000.000003 lsetxattr("link", "user.k", "v", 1, 0) = 0
+123 1714932000.000004 fsetxattr(3</tmp/work/x>, "user.k", "v", 1, 0) = 0
+123 1714932000.000005 removexattr("x", "user.k") = 0
+123 1714932000.000006 lremovexattr("link", "user.k") = 0
+123 1714932000.000007 fremovexattr(3</tmp/work/x>, "user.k") = 0
+""")
+        self.assertEqual(self.ops(events), ["metadata"] * 6)
+        self.assertEqual(
+            [e["path"] for e in events],
+            ["/tmp/work/x", "/tmp/work/link", "/tmp/work/x", "/tmp/work/x", "/tmp/work/link", "/tmp/work/x"],
+        )
+
     def test_delete_rename_chmod_metadata(self):
         events = self.parse("""
 123 1714932000.000001 unlink("gone.txt") = 0
@@ -115,7 +143,9 @@ class TraceParserTests(unittest.TestCase):
         events = self.parse('1714932000.000001 creat("x", 0600) = 3</tmp/work/x>\n')
         self.assertEqual(len(events), 1)
         e = events[0]
-        self.assertEqual(e["schema_version"], 1)
+        self.assertEqual(e["schema_version"], 2)
+        self.assertEqual(e["source"], "strace")
+        self.assertEqual(e["confidence"], "direct")
         self.assertTrue(e["timestamp"].endswith("Z"))
         self.assertEqual(e["session_id"], "s1")
         self.assertEqual(e["invocation_id"], "s1")
@@ -132,6 +162,17 @@ class TraceParserTests(unittest.TestCase):
 123 1714932000.000002 <... openat resumed> , 0600) = 3</tmp/work/u.txt>
 """)
         self.assertEqual(self.ops(events), ["create"])
+
+    def test_truncated_final_lines_are_safe_false_negatives(self):
+        parser = self._new_parser()
+        result = parser.parse_lines([
+            '123 1714932000.000001 creat("ok", 0600) = 3</tmp/work/ok>\n',
+            '123 1714932000.000002 openat(AT_FDCWD, "unfinished", O_WRONLY|O_CREAT|O_EXCL <unfinished ...>\n',
+            '123 1714932000.000003 creat("truncated"',
+        ])
+        self.assertEqual(self.ops(result.events), ["create"])
+        self.assertEqual(result.events[0]["path"], "/tmp/work/ok")
+        self.assertTrue(any("unparsed body" in err for err in result.errors))
 
     def test_chdir_fchdir_relative_and_dirfd_at(self):
         events = self.parse("""
@@ -156,6 +197,22 @@ class TraceParserTests(unittest.TestCase):
         self.assertIsNone(events[0]["old_path"])
         self.assertEqual(events[0]["new_path"], "/tmp/work/new")
         self.assertEqual(events[0]["path"], "/tmp/work/new")
+
+    def test_watched_roots_drop_outside_and_cross_boundary_direct_events(self):
+        events = self.parse("""
+123 1714932000.000001 creat("/tmp/work/inside/keep.txt", 0600) = 3</tmp/work/inside/keep.txt>
+123 1714932000.000002 creat("/tmp/work/outside/drop.txt", 0600) = 4</tmp/work/outside/drop.txt>
+123 1714932000.000003 rename("/tmp/work/inside/move-out.txt", "/tmp/work/outside/move-out.txt") = 0
+123 1714932000.000004 rename("/tmp/work/outside/move-in.txt", "/tmp/work/inside/move-in.txt") = 0
+123 1714932000.000005 rename("/tmp/work/inside/old.txt", "/tmp/work/inside/new.txt") = 0
+""", watched_roots=["/tmp/work/inside"])
+        self.assertEqual(
+            [(event["operation"], event["path"]) for event in events],
+            [
+                ("create", "/tmp/work/inside/keep.txt"),
+                ("rename", "/tmp/work/inside/new.txt"),
+            ],
+        )
 
     def test_artifact_exclusion_only_active_paths(self):
         events = self.parse("""

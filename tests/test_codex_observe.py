@@ -169,6 +169,7 @@ class CodexObserveTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "CODEV_OBSERVE_REAL_CODEX": str(real),
                 "CODEV_OBSERVE_DIR": str(root / "obs"),
                 "CODEV_OBSERVE_SESSION_ID": "empty",
@@ -192,6 +193,7 @@ class CodexObserveTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "CODEV_OBSERVE_REAL_CODEX": str(real),
                 "CODEV_OBSERVE_DIR": str(root / "obs"),
                 "CODEV_OBSERVE_SESSION_ID": "run",
@@ -214,6 +216,7 @@ class CodexObserveTests(unittest.TestCase):
                 env = os.environ.copy()
                 env.update({
                     "PATH": f"{root}{os.pathsep}{env_path()}",
+                    "AI_OBSERVE_BACKENDS": "strace",
                     "CODEV_OBSERVE_REAL_CODEX": str(real),
                     "CODEV_OBSERVE_DIR": str(root / "obs"),
                     "CODEV_OBSERVE_SESSION_ID": "pf",
@@ -234,6 +237,7 @@ class CodexObserveTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "CODEV_OBSERVE_REAL_CODEX": str(real),
                 "CODEV_OBSERVE_DIR": str(root / "obs"),
                 "CODEV_OBSERVE_SESSION_ID": "deny",
@@ -367,6 +371,7 @@ class CodexObserveTests(unittest.TestCase):
             env = os.environ.copy()
             env.update({
                 "PATH": f"{root}{os.pathsep}{env_path()}",
+                "AI_OBSERVE_BACKENDS": "strace",
                 "CODEV_OBSERVE_REAL_CODEX": str(real),
                 "CODEV_OBSERVE_DIR": str(obs),
                 "CODEV_OBSERVE_SESSION_ID": "stream",

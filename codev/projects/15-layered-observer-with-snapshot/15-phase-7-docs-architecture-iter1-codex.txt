@@ -1,0 +1,9 @@
+Using direct file reads to review the phase-7 documentation and architecture deliverables.Verifying the docs against the implemented backend, observer, and viewer code so I only flag real mismatches.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase-7 docs are mostly strong, but `docs/observe.md` still misses the required documentation for snapshot exclude-pattern semantics.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `docs/observe.md:106-114,255-258` documents `AI_OBSERVE_SNAPSHOT_EXCLUDE` only as “separated by `:` or newlines,” but the spec requires the exact matching model to be documented: root-relative glob behavior, basename/segment matching, and examples like `foo/**`, `**/*.pyc`, and bare-segment matches such as `node_modules`. This is a phase-scope documentation gap, not a later-phase feature.
+- `docs/observe.md:16-27` gives a solid artifact sensitivity warning, but it should explicitly call out snapshot/manifest-derived metadata as sensitive to fully match the phase acceptance language around manifest-derived metadata.

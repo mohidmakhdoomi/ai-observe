@@ -1,0 +1,10 @@
+Using direct file reads to review the Phase 3 snapshot implementation against the spec/plan.Using line-numbered reads to pinpoint any Phase 3 issues in `snapshot.py` and its tests.Checking the exact `_changed_operation` branch because hash-error handling affects Phase 3 correctness.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The Phase 3 snapshot engine is close, but it still has two correctness bugs in conservative diffing plus missing tests for those cases.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `src/ai_observe/snapshot.py:343-351` and `src/ai_observe/snapshot.py:423-425` can emit a false-positive `modify` when hashing fails on only one side. A hash error sets `hash=None`, and `_changed_operation()` treats `old.hash != new.hash` as evidence of content change. That violates the spec’s conservative/no-false-positive requirement; hash comparison should only drive `modify` when both hashes are successfully present.
+- `src/ai_observe/snapshot.py:384-409` rename detection is not root-scoped. `_detect_renames()` pairs any delete/create with matching `(dev, ino)` regardless of watched-root boundary, but the spec requires conservative rename detection within the same root. Cross-root matches should stay delete/create unless stronger proof is available.
+- `tests/test_snapshot.py` does not cover the two cases above, and it also lacks explicit unreadable/hash-error diagnostic coverage required by the phase success criteria.

@@ -6,44 +6,55 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <h1>ai_observe viewer</h1>
-  <button id="up-button" type="button">▲ Up</button>
-  <nav id="breadcrumb" class="crumb" aria-label="Breadcrumb"></nav>
-  <div id="metric-controls" role="group" aria-label="Metric">
-    <button type="button" data-metric="bytes" class="active">Bytes</button>
-    <button type="button" data-metric="events">Events</button>
-    <button type="button" data-metric="recent">Recent</button>
-  </div>
-  <button id="filters-button" type="button" aria-expanded="false" aria-controls="filters-editor">Filters (0)</button>
-  <button id="add-selected-filters" type="button" hidden>Add selected to Filters</button>
-  <label><input id="show-filtered" type="checkbox"> Show filtered</label>
-  <span id="live-badge" class="badge gray">idle</span>
-  <span id="counts">0 events, 0 filtered</span>
-  <div id="filters-editor" class="filter-editor" role="dialog" aria-labelledby="filters-editor-title" hidden>
-    <div class="filter-editor-head">
-      <h2 id="filters-editor-title">Filters</h2>
-      <button id="filters-close" type="button" aria-label="Close filters">×</button>
+<header>
+  <div class="topbar">
+    <h1>ai_observe viewer</h1>
+    <button id="up-button" type="button">▲ Up</button>
+    <nav id="breadcrumb" class="crumb" aria-label="Breadcrumb"></nav>
+    <div id="metric-controls" role="group" aria-label="Metric">
+      <button type="button" data-metric="bytes" class="active">Bytes</button>
+      <button type="button" data-metric="events">Events</button>
+      <button type="button" data-metric="recent">Recent</button>
     </div>
-    <ul id="filters-list" class="filters-list" aria-label="Filter patterns"></ul>
-    <form id="filters-add-form" class="filters-add">
-      <label for="filters-new-pattern">Add filter</label>
-      <input id="filters-new-pattern" type="text" placeholder="/work/build/**" autocomplete="off">
-      <button type="submit">Add</button>
-    </form>
-    <p id="filters-error" class="filter-error" role="alert" hidden></p>
-    <button id="filters-reset" type="button">Reset to defaults</button>
-  </div>
-  <div id="filter-preview" class="filter-preview" role="dialog" aria-labelledby="filter-preview-title" hidden>
-    <h2 id="filter-preview-title">Add to Filters</h2>
-    <form id="filter-preview-form">
-      <ul id="filter-preview-list" class="filters-list" aria-label="Preview filter patterns"></ul>
-      <p id="filter-preview-error" class="filter-error" role="alert" hidden></p>
-      <div class="filter-preview-actions">
-        <button id="filter-preview-commit" type="submit">Add to Filters</button>
-        <button id="filter-preview-cancel" type="button">Cancel</button>
+    <button id="filters-button" type="button" aria-expanded="false" aria-controls="filters-editor">Filters (0)</button>
+    <button id="add-selected-filters" type="button" hidden>Add selected to Filters</button>
+    <label><input id="show-filtered" type="checkbox"> Show filtered</label>
+    <div class="source-controls" role="group" aria-label="Sources">
+      <span class="source-controls-label">Sources</span>
+      <label><input id="show-source-strace" type="checkbox" checked> Strace</label>
+      <label><input id="show-source-snapshot" type="checkbox" checked> Snapshot</label>
+    </div>
+    <span id="live-badge" class="badge gray">idle</span>
+    <span id="counts">0 events, 0 filtered</span>
+    <div id="filters-editor" class="filter-editor" role="dialog" aria-labelledby="filters-editor-title" hidden>
+      <div class="filter-editor-head">
+        <h2 id="filters-editor-title">Filters</h2>
+        <button id="filters-close" type="button" aria-label="Close filters">×</button>
       </div>
-    </form>
+      <ul id="filters-list" class="filters-list" aria-label="Filter patterns"></ul>
+      <form id="filters-add-form" class="filters-add">
+        <label for="filters-new-pattern">Add filter</label>
+        <input id="filters-new-pattern" type="text" placeholder="/work/build/**" autocomplete="off">
+        <button type="submit">Add</button>
+      </form>
+      <p id="filters-error" class="filter-error" role="alert" hidden></p>
+      <button id="filters-reset" type="button">Reset to defaults</button>
+    </div>
+    <div id="filter-preview" class="filter-preview" role="dialog" aria-labelledby="filter-preview-title" hidden>
+      <h2 id="filter-preview-title">Add to Filters</h2>
+      <form id="filter-preview-form">
+        <ul id="filter-preview-list" class="filters-list" aria-label="Preview filter patterns"></ul>
+        <p id="filter-preview-error" class="filter-error" role="alert" hidden></p>
+        <div class="filter-preview-actions">
+          <button id="filter-preview-commit" type="submit">Add to Filters</button>
+          <button id="filter-preview-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="session-banner" class="session-banner" hidden>
+    <span id="session-banner-text"></span>
+    <div id="session-banner-buttons" class="session-banner-buttons"></div>
   </div>
 </header>
 <main class="main">

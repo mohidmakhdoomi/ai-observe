@@ -1,0 +1,94 @@
+I'll read the key implementation files for Phase 2 to review them against the plan and spec.Let me also read the other changed test and implementation files to get the full picture.Now let me also check the `_aggregator_oracle.py` to see if any v2 handling was added there:Let me verify one more thing — the codex_observe import alias and check for any new phase-2 files:Now I have a complete picture. Let me verify the test suite runs in its current state to understand the baseline:I've completed a thorough review of all the relevant files. Here is my assessment:
+
+---
+
+## Phase 2 Review: Schema-v2 provenance emission and compatibility normalization
+
+### The Core Problem: Phase 2 Has Not Been Implemented
+
+After reading every file listed in the change set, **none of the Phase 2 deliverables exist**. The code reflects only Phase 1 work (parser reliability, recovery contract, nested shim). Every Phase 2 requirement is missing or actively contradicted by the current code.
+
+### Detailed Findings
+
+#### 1. `trace_parser.py` — No v2 emission
+
+- **Line 17**: `SCHEMA_VERSION = 1` — still v1, not bumped to 2.
+- **Lines 374–390** (`_make_event`): Events are constructed with `"schema_version": SCHEMA_VERSION` (which is 1). No `source`, `confidence`, or `object` fields are emitted.
+- **Plan requirement**: "Bump emitted events to `schema_version: 2` and add `source: "strace"`, `confidence: "direct"`, plus optional object identity."
+- **Status**: ❌ Not done.
+
+#### 2. `viewer/tailer.py` — Still rejects v2 events
+
+- **Line 26**: `SCHEMA_VERSION = 1` — unchanged.
+- **Lines 160–163** (`_handle_line`): `if sv != SCHEMA_VERSION: ... return` — schema_version 2 events are **rejected with a warning**.
+- **Lines 28, 31–37** (`sanitize_event`): The whitelist `_SANITIZED_FIELDS = ("timestamp", "operation", "path", "old_path", "new_path", "result")` does **not** include `schema_version`, `source`, or `confidence`.
+- **Docstring (line 9)**: Still says "Skips … lines with `schema_version != 1`".
+- **Plan requirement**: "Accept schema-v1 and schema-v2 events, explicitly stop rejecting `schema_version: 2`, normalize missing provenance as `strace/direct`, and sanitize `schema_version`, `source`, and `confidence` to the browser."
+- **Status**: ❌ Not done.
+
+#### 3. `tests/test_trace_parser.py` — Tests assert v1 behavior
+
+- **Line 118** (`test_single_process_line_and_schema_fields`): `self.assertEqual(e["schema_version"], 1)` — asserts the **opposite** of what Phase 2 requires.
+- **Plan requirement**: "Assert parser-emitted events contain `schema_version: 2`, `source`, and `confidence`."
+- **Status**: ❌ Not done.
+
+#### 4. `tests/test_viewer_tailer.py` — Tests actively verify v2 rejection
+
+- **Lines 175–183** (`test_schema_version_mismatch_skipped`): Sets `schema_version = 2`, writes it, and **asserts it is skipped** with a warning. This is the **opposite** of Phase 2's requirement.
+- **Plan requirement**: "Add tailer tests for missing `schema_version`, explicit `schema_version: 1`, explicit `schema_version: 2`, and unsupported future versions."
+- **Status**: ❌ Not done.
+
+#### 5. `tests/test_viewer_aggregator.py` — Oracle rejects v2
+
+- **Line 50** (`_load_jsonl`): `if obj.get("schema_version") != 1: continue` — silently drops v2 events.
+- **Plan requirement**: "Run `python3 -m unittest ... tests.test_viewer_aggregator` to catch early sanitizer/oracle effects from new safe provenance fields."
+- **Status**: ❌ Not updated for v2 compatibility.
+
+#### 6. `tests/test_viewer_server.py` — SSE whitelist assertions incompatible with v2
+
+- **Lines 153–157, 176–180**: Assert that SSE payloads contain **exactly** `["timestamp", "operation", "path", "old_path", "new_path", "result"]`. Phase 2 would need `schema_version`, `source`, `confidence` in this whitelist.
+- **Status**: ❌ Assertions will need updating when Phase 2 lands.
+
+#### 7. `tests/_aggregator_oracle.py` — No v2 handling
+
+- No `source`/`confidence` propagation through aggregation.
+- **Status**: ❌ Not updated.
+
+### What SHOULD Be Done for Phase 2
+
+Per the plan, the following concrete changes are needed:
+
+1. **`trace_parser.py`**:
+   - Change `SCHEMA_VERSION = 1` → `SCHEMA_VERSION = 2`
+   - Add `"source": "strace"` and `"confidence": "direct"` to `_make_event`
+   - Optionally add `"object": {"dev": ..., "ino": ...}` when available from fd/path annotations
+
+2. **`viewer/tailer.py`**:
+   - Accept both v1 and v2 events (change the version check from `sv != 1` to support both)
+   - Normalize missing provenance on v1 events as `source: "strace"`, `confidence: "direct"`
+   - Add `"schema_version"`, `"source"`, `"confidence"` to `_SANITIZED_FIELDS`
+   - Warn/skip only truly unsupported future versions (e.g., v3+) 
+   - Update the docstring
+
+3. **Tests**:
+   - Update `test_single_process_line_and_schema_fields` to assert `schema_version: 2`, `source`, `confidence`
+   - Replace `test_schema_version_mismatch_skipped` with tests for: v1 accepted and normalized, v2 accepted, future v3+ warned/skipped
+   - Add tests for sanitized output including provenance fields
+   - Update aggregator oracle and fixtures for v2 compatibility
+   - Update SSE whitelist assertions in server tests
+
+---
+
+```
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 2 (schema-v2 provenance emission and compatibility normalization) has not been implemented — all files still reflect Phase 1 / pre-v2 behavior.
+CONFIDENCE: HIGH
+```
+```
+KEY_ISSUES:
+- trace_parser.py still emits schema_version: 1 with no source/confidence fields (the central Phase 2 deliverable)
+- viewer/tailer.py still rejects schema_version: 2 events instead of accepting them
+- sanitize_event whitelist does not include schema_version, source, or confidence
+- All tests assert the pre-Phase-2 behavior (v1 emission, v2 rejection) rather than the required Phase 2 behavior
+- Aggregator oracle silently drops v2 events
+```

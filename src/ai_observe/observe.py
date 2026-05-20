@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path
 import random
@@ -14,8 +15,20 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable
+from typing import Any, Callable
 
+from .backends import BackendSession, backends_in_finalize_order, backends_in_prepare_order, parse_backend_selection
+from .backends.snapshot import SnapshotBackend
+from .backends.strace import StraceBackend
+from .snapshot import (
+    Manifest,
+    all_exclude_patterns,
+    capture_manifest,
+    deduplicate_snapshot_events,
+    diff_manifests,
+    parse_roots,
+    synthesize_events,
+)
 from .trace_parser import ParserFailure, TraceParser, dump_event, parse_trace_file
 
 SESSION_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -29,6 +42,21 @@ class LogPaths:
     trace_path: Path
     jsonl_path: Path
     partial_path: Path
+    rebuilt_path: Path
+    meta_path: Path
+
+
+@dataclass
+class SnapshotPlan:
+    roots: list[Path]
+    exclude_patterns: list[str]
+    hash_files: bool
+    max_files: int | None
+    start_manifest: Manifest | None
+    end_manifest: Manifest | None
+    diagnostics: list[dict[str, Any]]
+    warnings: list[str]
+    raw_events: list[dict[str, Any]]
 
 
 class ObserveError(RuntimeError):
@@ -161,22 +189,47 @@ def run_command(
     return run_resolved_command(real_argv, env, error_prefix=error_prefix)
 
 
+def build_backends(env: dict[str, str]) -> tuple[tuple[str, ...], dict[str, Any]]:
+    try:
+        names = parse_backend_selection(env_value(env, "BACKENDS"))
+    except ValueError as exc:
+        raise ObserveError(str(exc), 2) from exc
+
+    available = {
+        "strace": StraceBackend(
+            error_factory=ObserveError,
+            trace_parser_cls=TraceParser,
+            live_tracer_cls=LiveTracer,
+            parse_trace_file=parse_trace_file,
+            safe_write_jsonl=safe_write_jsonl,
+            env_flag=env_flag,
+            env_value=env_value,
+            live_enabled=_live_enabled,
+            live_poll_seconds=_live_poll_seconds,
+            live_join_timeout=_live_join_timeout,
+        ),
+        "snapshot": SnapshotBackend(
+            error_factory=ObserveError,
+            prepare_plan=prepare_snapshot_plan,
+            finalize_plan=finalize_snapshot_plan,
+            merge_snapshot_events=merge_snapshot_events,
+            build_snapshot_summary=build_snapshot_summary,
+            build_session_meta=build_session_meta,
+            safe_write_meta=safe_write_meta,
+        ),
+    }
+    return names, {name: available[name] for name in names}
+
+
 def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_prefix: str) -> int:
     real_command = Path(real_argv[0])
-    argv = real_argv[1:]
     if env_flag(env, "DISABLE"):
         os.execvpe(str(real_command), real_argv, env)
         raise AssertionError("execvpe returned")
-
-    if sys.platform.startswith("linux") is False:
-        raise ObserveError("Linux required for strace backend", 1)
-    strace = shutil.which("strace", path=env.get("PATH"))
-    if not strace:
-        raise ObserveError(
-            "strace not found; install strace or set AI_OBSERVE_DISABLE=1 "
-            "(legacy CODEV_OBSERVE_DISABLE=1)",
-            127,
-        )
+    if env_flag(env, "NESTED"):
+        os.execvpe(str(real_command), real_argv, env)
+        raise AssertionError("execvpe returned")
+    backend_names, backend_map = build_backends(env)
 
     logs = prepare_logs(env)
     if not env_flag(env, "QUIET"):
@@ -185,20 +238,6 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
             file=sys.stderr,
         )
 
-    trace_cmd = [
-        strace,
-        "-f",
-        "-qq",
-        "-ttt",
-        "-s",
-        "4096",
-        "-yy",
-        "-o",
-        str(logs.trace_path),
-        "-e",
-        "trace=%file,%desc,%process",
-        *real_argv,
-    ]
     command = list(real_argv)
     proc = None
     interrupted: int | None = None
@@ -211,37 +250,27 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
         fail_after_n = None
     include_log_writes = env_flag(env, "INCLUDE_LOG_WRITES")
     initial_cwd = str(Path(os.getcwd()).resolve())
-    active_artifacts = {str(Path(p).resolve()) for p in (logs.trace_path, logs.jsonl_path, logs.partial_path)}
+    active_artifacts = {
+        str(Path(p).resolve())
+        for p in (logs.trace_path, logs.jsonl_path, logs.partial_path, logs.rebuilt_path, logs.meta_path)
+    }
+    session = BackendSession(
+        env,
+        dict(env),
+        list(real_argv),
+        list(real_argv),
+        command,
+        logs,
+        initial_cwd=initial_cwd,
+        active_artifacts=active_artifacts,
+        error_prefix=error_prefix,
+        include_log_writes=include_log_writes,
+        fail_after_events=fail_after_n,
+    )
+    for name in backends_in_prepare_order(backend_names):
+        backend_map[name].prepare(session)
 
-    live_parser: TraceParser | None = None
-    live_tracer: LiveTracer | None = None
-    if _live_enabled(env):
-        live_parser = TraceParser(
-            session_id=logs.session_id,
-            invocation_id=logs.session_id,
-            command=command,
-            initial_cwd=initial_cwd,
-            active_artifacts=active_artifacts,
-            include_log_writes=include_log_writes,
-            fail_after_events=fail_after_n,
-        )
-        candidate = LiveTracer(
-            logs.trace_path,
-            logs.jsonl_path,
-            logs.observe_dir,
-            live_parser,
-            _live_poll_seconds(env),
-        )
-        try:
-            candidate.start()
-            live_tracer = candidate
-        except Exception as exc:
-            print(
-                f"{error_prefix}: warning: live tracer failed to start: {exc}; continuing with post-hoc-only",
-                file=sys.stderr,
-            )
-            live_parser = None
-            live_tracer = None
+    launch_subject = "strace" if "strace" in backend_names else "observed command"
 
     def _forward(signum: int) -> None:
         if proc and proc.poll() is None:
@@ -281,12 +310,19 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
     try:
         try:
             verify_log_path_safe(logs.trace_path, logs.observe_dir)
-            proc = subprocess.Popen(trace_cmd, stdin=None, stdout=None, stderr=None, env=env, start_new_session=True)
+            proc = subprocess.Popen(
+                session.launch_argv,
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                env=session.child_env,
+                start_new_session=True,
+            )
             forced_terminated = wait_for_process(proc, lambda: interrupted, float(env_value(env, "SIGNAL_GRACE", "2")))
         except PermissionError as exc:
-            raise ObserveError(f"failed to start strace: {exc}", 1) from exc
+            raise ObserveError(f"failed to start {launch_subject}: {exc}", 1) from exc
         except OSError as exc:
-            raise ObserveError(f"failed to run strace: {exc}", 1) from exc
+            raise ObserveError(f"failed to run {launch_subject}: {exc}", 1) from exc
     finally:
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)  # type: ignore[arg-type]
@@ -294,116 +330,30 @@ def run_resolved_command(real_argv: list[str], env: dict[str, str], *, error_pre
     codex_code = normalize_exit_code(proc.returncode if proc is not None else 1)
     if interrupted and (codex_code == 0 or forced_terminated):
         codex_code = 128 + interrupted
-    if codex_code == 1 and logs.trace_path.stat().st_size == 0:
+    if "strace" in backend_names and codex_code == 1 and logs.trace_path.stat().st_size == 0:
         print(f"{error_prefix}: strace failed; ptrace may be denied by sandbox/seccomp/Yama", file=sys.stderr)
+    for name in backends_in_finalize_order(backend_names):
+        backend_map[name].stop(session)
+    for name in backends_in_finalize_order(backend_names):
+        backend_map[name].finalize(session, codex_code)
 
-    parse_failed = False
-    if live_tracer is not None:
-        live_tracer.request_stop()
-        timed_out, live_error, live_pf = live_tracer.join(_live_join_timeout(env))
-        if timed_out:
-            parse_failed = True
-            print(
-                f"{error_prefix}: live parser did not exit within join timeout; leaving partial .jsonl; original exit {codex_code}",
-                file=sys.stderr,
-            )
-        elif live_pf is not None:
-            parse_failed = True
-            try:
-                safe_write_jsonl(logs.partial_path, live_pf.events, logs.observe_dir)
-            except Exception as exc:
-                print(
-                    f"{error_prefix}: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {exc}",
-                    file=sys.stderr,
-                )
-            else:
-                print(
-                    f"{error_prefix}: parser failed; wrote {logs.partial_path}; original exit {codex_code}",
-                    file=sys.stderr,
-                )
-            try:
-                safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
-            except Exception:
-                pass
-        elif live_error is not None:
-            parse_failed = True
-            print(
-                f"{error_prefix}: warning: live parser raised {type(live_error).__name__}: {live_error}; falling back to post-hoc rebuild; original exit {codex_code}",
-                file=sys.stderr,
-            )
-            try:
-                result = parse_trace_file(
-                    logs.trace_path,
-                    None,
-                    session_id=logs.session_id,
-                    invocation_id=logs.session_id,
-                    command=command,
-                    initial_cwd=initial_cwd,
-                    active_artifacts=active_artifacts,
-                    include_log_writes=include_log_writes,
-                    fail_after_events=fail_after_n,
-                )
-                safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
-            except ParserFailure as exc:
-                parse_failed = True
-                try:
-                    safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
-                except Exception as inner:
-                    print(
-                        f"{error_prefix}: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {inner}",
-                        file=sys.stderr,
-                    )
-                else:
-                    print(
-                        f"{error_prefix}: parser failed; wrote {logs.partial_path}; original exit {codex_code}",
-                        file=sys.stderr,
-                    )
-                try:
-                    safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
-                except Exception:
-                    pass
-            except Exception as exc:
-                parse_failed = True
-                try:
-                    safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
-                    print(
-                        f"{error_prefix}: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}",
-                        file=sys.stderr,
-                    )
-                except Exception as inner:
-                    print(
-                        f"{error_prefix}: parser failed; could not write {logs.partial_path}; original exit {codex_code}: {exc}; secondary: {inner}",
-                        file=sys.stderr,
-                    )
-                try:
-                    safe_write_jsonl(logs.jsonl_path, [], logs.observe_dir)
-                except Exception:
-                    pass
-        # Clean live exit: `.jsonl` already has the final stream; nothing else to do.
-    else:
-        try:
-            result = parse_trace_file(
-                logs.trace_path,
-                None,
-                session_id=logs.session_id,
-                invocation_id=logs.session_id,
-                command=command,
-                initial_cwd=initial_cwd,
-                active_artifacts=active_artifacts,
-                include_log_writes=include_log_writes,
-                fail_after_events=fail_after_n,
-            )
-            safe_write_jsonl(logs.jsonl_path, result.events, logs.observe_dir)
-        except ParserFailure as exc:
-            parse_failed = True
-            safe_write_jsonl(logs.partial_path, exc.events, logs.observe_dir)
-            print(f"{error_prefix}: parser failed; wrote {logs.partial_path}; original exit {codex_code}", file=sys.stderr)
-        except Exception as exc:  # safe wrapper behavior
-            parse_failed = True
-            safe_write_jsonl(logs.partial_path, [], logs.observe_dir)
-            print(f"{error_prefix}: parser failed; wrote empty {logs.partial_path}; original exit {codex_code}: {exc}", file=sys.stderr)
+    try:
+        safe_write_meta(
+            logs.meta_path,
+            build_session_meta(
+                logs,
+                session.state.parser_status,
+                session.state.authoritative_path,
+                session.state.meta_warnings,
+                snapshot_summary=session.state.snapshot_summary,
+                parser_source=session.state.parser_source,
+            ),
+            logs.observe_dir,
+        )
+    except Exception as exc:
+        print(f"{error_prefix}: warning: could not write {logs.meta_path}: {exc}", file=sys.stderr)
 
-    if parse_failed and env_flag(env, "STRICT_PARSE"):
+    if session.state.parse_failed and env_flag(env, "STRICT_PARSE"):
         return 1
     return int(codex_code)
 
@@ -469,6 +419,251 @@ def safe_write_jsonl(path: Path, events, observe_dir: Path) -> None:
         pass
 
 
+def safe_write_meta(path: Path, data: dict, observe_dir: Path) -> None:
+    verify_log_path_safe(path, observe_dir)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise ObserveError(f"cannot safely write log path {path}: {exc}", 1) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        import json
+        json.dump(data, fh, sort_keys=True, separators=(",", ":"))
+        fh.write("\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def prepare_snapshot_plan(
+    env: dict[str, str],
+    logs: LogPaths,
+    initial_cwd: str,
+    active_artifacts: set[str],
+    *,
+    error_prefix: str,
+) -> SnapshotPlan:
+    roots, root_diags = parse_roots(env_value(env, "ROOTS"), cwd=initial_cwd)
+    diagnostics: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    _record_snapshot_diagnostics(root_diags, diagnostics, warnings, error_prefix=error_prefix)
+    max_files, max_files_warning = _snapshot_max_files(env)
+    if max_files_warning is not None:
+        warnings.append(max_files_warning)
+        print(f"{error_prefix}: warning: {max_files_warning}", file=sys.stderr)
+    patterns = all_exclude_patterns(env_value(env, "SNAPSHOT_EXCLUDE"))
+    patterns.extend(_artifact_exclude_patterns(roots, logs.observe_dir, active_artifacts))
+    start_manifest: Manifest | None = None
+    if roots:
+        start_manifest = capture_manifest(
+            roots,
+            hash_files=env_flag(env, "SNAPSHOT_HASH"),
+            exclude_patterns=patterns,
+            max_files=max_files,
+        )
+        _record_snapshot_diagnostics(
+            start_manifest.diagnostics,
+            diagnostics,
+            warnings,
+            error_prefix=error_prefix,
+        )
+    return SnapshotPlan(
+        roots=roots,
+        exclude_patterns=patterns,
+        hash_files=env_flag(env, "SNAPSHOT_HASH"),
+        max_files=max_files,
+        start_manifest=start_manifest,
+        end_manifest=None,
+        diagnostics=diagnostics,
+        warnings=warnings,
+        raw_events=[],
+    )
+
+
+def finalize_snapshot_plan(plan: SnapshotPlan, logs: LogPaths, *, error_prefix: str) -> SnapshotPlan:
+    if not plan.roots or plan.start_manifest is None:
+        return plan
+    plan.end_manifest = capture_manifest(
+        plan.roots,
+        hash_files=plan.hash_files,
+        exclude_patterns=plan.exclude_patterns,
+        max_files=plan.max_files,
+    )
+    _record_snapshot_diagnostics(
+        plan.end_manifest.diagnostics,
+        plan.diagnostics,
+        plan.warnings,
+        error_prefix=error_prefix,
+    )
+    diff_records = diff_manifests(plan.start_manifest, plan.end_manifest)
+    plan.raw_events = synthesize_events(
+        diff_records,
+        session_id=logs.session_id,
+        invocation_id=logs.session_id,
+        timestamp=_iso_utc_now(),
+    )
+    return plan
+
+
+def merge_snapshot_events(
+    logs: LogPaths,
+    authoritative_path: Path | None,
+    parser_status: str,
+    snapshot_events: list[dict[str, Any]],
+    *,
+    error_prefix: str,
+) -> tuple[Path | None, int]:
+    if not snapshot_events:
+        return authoritative_path, 0
+
+    if authoritative_path in {logs.jsonl_path, logs.rebuilt_path}:
+        target_path = authoritative_path
+        direct_events = read_jsonl_events(target_path, logs.observe_dir)
+        filtered = deduplicate_snapshot_events(snapshot_events, direct_events)
+        if not filtered:
+            return authoritative_path, 0
+        safe_write_jsonl(target_path, [*direct_events, *filtered], logs.observe_dir)
+        return authoritative_path, len(filtered)
+
+    if logs.jsonl_path.exists() and logs.jsonl_path.stat().st_size == 0:
+        safe_write_jsonl(logs.jsonl_path, snapshot_events, logs.observe_dir)
+        return (logs.jsonl_path if snapshot_events else authoritative_path), len(snapshot_events)
+
+    print(
+        f"{error_prefix}: warning: snapshot events available but no safe canonical event artifact target was found",
+        file=sys.stderr,
+    )
+    return authoritative_path, 0
+
+
+def build_snapshot_summary(plan: SnapshotPlan) -> dict[str, Any]:
+    manifests_complete = True
+    if plan.start_manifest is not None:
+        manifests_complete = manifests_complete and plan.start_manifest.complete
+    if plan.end_manifest is not None:
+        manifests_complete = manifests_complete and plan.end_manifest.complete
+    return {
+        "enabled": True,
+        "source": "snapshot",
+        "roots": [str(root) for root in plan.roots],
+        "hash_files": plan.hash_files,
+        "max_files": plan.max_files,
+        "complete": bool(plan.roots) and manifests_complete and not plan.diagnostics,
+        "diagnostics": plan.diagnostics,
+        "raw_event_count": len(plan.raw_events),
+        "emitted_event_count": 0,
+    }
+
+
+def build_session_meta(
+    logs: LogPaths,
+    parser_status: str,
+    authoritative_path: Path | None,
+    warnings: list[str],
+    *,
+    snapshot_summary: dict[str, Any] | None = None,
+    parser_source: str = "strace",
+) -> dict:
+    def artifact(path: Path, role: str) -> dict:
+        return {
+            "path": path.name,
+            "role": role,
+            "exists": True if path == logs.meta_path else path.exists(),
+        }
+
+    if authoritative_path == logs.rebuilt_path:
+        jsonl_role = "partial_live"
+        rebuilt_role = "authoritative_complete"
+        partial_role = "absent_or_parser_failure_partial"
+    elif authoritative_path == logs.jsonl_path:
+        jsonl_role = "authoritative_complete"
+        rebuilt_role = "absent"
+        partial_role = "absent_or_parser_failure_partial"
+    else:
+        if parser_status.startswith("live_timeout") or parser_status.startswith("live_error"):
+            jsonl_role = "partial_live"
+        else:
+            jsonl_role = "inferred_or_empty_placeholder"
+        rebuilt_role = "absent"
+        partial_role = "partial_direct"
+
+    meta = {
+        "schema_version": 1,
+        "session_id": logs.session_id,
+        "parser": {
+            "status": parser_status,
+            "source": parser_source,
+        },
+        "artifacts": {
+            "authoritative_event_path": authoritative_path.name if authoritative_path is not None else None,
+            "trace": artifact(logs.trace_path, "trace"),
+            "jsonl": artifact(logs.jsonl_path, jsonl_role),
+            "partial": artifact(logs.partial_path, partial_role),
+            "rebuilt": artifact(logs.rebuilt_path, rebuilt_role),
+            "meta": artifact(logs.meta_path, "metadata"),
+        },
+        "warnings": warnings,
+    }
+    if snapshot_summary is not None:
+        meta["snapshot"] = snapshot_summary
+    return meta
+
+
+def _record_snapshot_diagnostics(
+    diags,
+    diagnostics: list[dict[str, Any]],
+    warnings: list[str],
+    *,
+    error_prefix: str,
+) -> None:
+    for diag in diags:
+        diagnostics.append(diag.to_dict())
+        warning = f"snapshot {diag.code}: {diag.message}"
+        warnings.append(warning)
+        print(f"{error_prefix}: warning: {warning}", file=sys.stderr)
+
+
+def _snapshot_max_files(env: dict[str, str]) -> tuple[int | None, str | None]:
+    raw = env_value(env, "SNAPSHOT_MAX_FILES")
+    if raw in {None, ""}:
+        return None, None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None, f"snapshot max-files value is invalid and was ignored: {raw!r}"
+    if value <= 0:
+        return None, f"snapshot max-files value must be positive and was ignored: {raw!r}"
+    return value, None
+
+
+def _artifact_exclude_patterns(
+    roots: list[Path],
+    observe_dir: Path,
+    active_artifacts: set[str],
+) -> list[str]:
+    patterns: list[str] = []
+    for root in roots:
+        try:
+            rel_dir = observe_dir.resolve(strict=False).relative_to(root)
+        except ValueError:
+            rel_dir = None
+        if rel_dir is not None:
+            rel_dir_text = rel_dir.as_posix().strip("/")
+            if rel_dir_text:
+                patterns.append(f"{rel_dir_text}/**")
+        for artifact in active_artifacts:
+            try:
+                rel = Path(artifact).relative_to(root)
+            except ValueError:
+                continue
+            rel_text = rel.as_posix().strip("/")
+            if rel_text:
+                patterns.append(rel_text)
+    return patterns
+
+
 def safe_append_jsonl_handle(path: Path, observe_dir: Path):
     """Open a path-hardened append handle on `path`.
 
@@ -493,7 +688,15 @@ def safe_append_jsonl_handle(path: Path, observe_dir: Path):
         raise ObserveError(f"cannot wrap append handle for {path}: {exc}", 1) from exc
 
 
+def safe_open_jsonl_read(path: Path, observe_dir: Path):
+    return _safe_open_text_read(path, observe_dir, label="jsonl")
+
+
 def safe_open_trace_read(path: Path, observe_dir: Path):
+    return _safe_open_text_read(path, observe_dir, label="trace")
+
+
+def _safe_open_text_read(path: Path, observe_dir: Path, *, label: str):
     """Open a path-hardened read handle on the `.trace` file.
 
     Verifies path safety, then opens with O_RDONLY | O_NOFOLLOW (when
@@ -507,7 +710,7 @@ def safe_open_trace_read(path: Path, observe_dir: Path):
     try:
         fd = os.open(path, flags)
     except OSError as exc:
-        raise ObserveError(f"cannot safely open trace for read {path}: {exc}", 1) from exc
+        raise ObserveError(f"cannot safely open {label} for read {path}: {exc}", 1) from exc
     try:
         return os.fdopen(fd, "r", encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -516,6 +719,17 @@ def safe_open_trace_read(path: Path, observe_dir: Path):
         except OSError:
             pass
         raise ObserveError(f"cannot wrap read handle for {path}: {exc}", 1) from exc
+
+
+def read_jsonl_events(path: Path, observe_dir: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    with safe_open_jsonl_read(path, observe_dir) as fh:
+        return [json.loads(line) for line in fh if line.strip()]
+
+
+def _iso_utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def _live_enabled(env: dict[str, str]) -> bool:
     return env_value(env, "LIVE_PARSE", "1") != "0"
@@ -830,11 +1044,16 @@ def prepare_logs(env: dict[str, str]) -> LogPaths:
         trace_path = observe_dir / f"{session}.trace"
         jsonl_path = observe_dir / f"{session}.jsonl"
         partial_path = observe_dir / f"{session}.jsonl.partial"
-        if trace_path.exists() or jsonl_path.exists() or partial_path.exists():
+        rebuilt_path = observe_dir / f"{session}.jsonl.rebuilt"
+        meta_path = observe_dir / f"{session}.meta.json"
+        if trace_path.exists() or jsonl_path.exists() or partial_path.exists() or rebuilt_path.exists() or meta_path.exists():
             continue
         try:
             verify_parent(trace_path, observe_dir)
             verify_parent(jsonl_path, observe_dir)
+            verify_parent(partial_path, observe_dir)
+            verify_parent(rebuilt_path, observe_dir)
+            verify_parent(meta_path, observe_dir)
             exclusive_touch(trace_path)
             try:
                 exclusive_touch(jsonl_path)
@@ -844,7 +1063,7 @@ def prepare_logs(env: dict[str, str]) -> LogPaths:
                 except OSError:
                     pass
                 raise
-            return LogPaths(observe_dir, session, trace_path, jsonl_path, partial_path)
+            return LogPaths(observe_dir, session, trace_path, jsonl_path, partial_path, rebuilt_path, meta_path)
         except OSError as exc:
             raise ObserveError(f"cannot create observe log files in {observe_dir}: {exc}", 1) from exc
     raise ObserveError("unable to allocate unique observe log names", 1)
