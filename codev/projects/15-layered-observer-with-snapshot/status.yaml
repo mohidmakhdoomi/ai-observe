@@ -1,7 +1,7 @@
 id: '15'
 title: layered-observer-with-snapshot
 protocol: spir
-phase: verify
+phase: verified
 plan_phases:
   - id: phase-1-strace-parser-reliability
     status: complete
@@ -41,4 +41,4 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-20T12:55:21.014Z'
+updated_at: '2026-05-20T12:55:22.072Z'
