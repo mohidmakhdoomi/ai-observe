@@ -16,10 +16,10 @@ plan_phases:
   - id: phase-6-backend-abstraction
     status: complete
   - id: phase-7-docs-architecture
-    status: in_progress
+    status: complete
   - id: phase-8-review-regression
-    status: pending
-current_plan_phase: phase-7-docs-architecture
+    status: in_progress
+current_plan_phase: phase-8-review-regression
 gates:
   spec-approval:
     status: approved
@@ -34,7 +34,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase-1-strace-parser-reliability
@@ -149,4 +149,4 @@ history:
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-7-docs-architecture-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-20T12:16:31.868Z'
+updated_at: '2026-05-20T12:16:33.390Z'
