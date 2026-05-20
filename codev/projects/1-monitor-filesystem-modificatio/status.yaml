@@ -6,14 +6,14 @@ plan_phases:
   - id: phase-1-project-skeleton
     status: complete
   - id: phase-2-strace-launch
-    status: in_progress
+    status: complete
   - id: phase-3-trace-parser-core
-    status: pending
+    status: in_progress
   - id: phase-4-integration-tests
     status: pending
   - id: phase-5-docs-review
     status: pending
-current_plan_phase: phase-2-strace-launch
+current_plan_phase: phase-3-trace-parser-core
 gates:
   spec-approval:
     status: approved
@@ -28,10 +28,10 @@ gates:
     status: approved
     approved_at: '2026-05-20T15:21:01.723Z'
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-05T17:54:20.241Z'
-updated_at: '2026-05-20T16:13:30.175Z'
+updated_at: '2026-05-20T16:14:14.495Z'
 pr_history:
   - phase: specify
     pr_number: 2
