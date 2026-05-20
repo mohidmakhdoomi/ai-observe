@@ -148,5 +148,21 @@ history:
         verdict: APPROVE
         file: >-
           /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-7-docs-architecture-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase-8-review-regression
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-8-review-regression-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-8-review-regression-iter1-codex.txt
+      - model: claude
+        verdict: COMMENT
+        file: >-
+          /home/user/code/ai-observe/.builders/spir-15/codev/projects/15-layered-observer-with-snapshot/15-phase-8-review-regression-iter1-claude.txt
 started_at: '2026-05-19T13:19:07.306Z'
-updated_at: '2026-05-20T12:19:22.869Z'
+updated_at: '2026-05-20T12:30:49.806Z'
