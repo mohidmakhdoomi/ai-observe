@@ -51,9 +51,10 @@ def _open_sse(url, timeout=2.0):
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
+    path_and_query = parsed.path + (("?" + parsed.query) if parsed.query else "")
     sock = _socket.create_connection((parsed.hostname, parsed.port), timeout=timeout)
     req = (
-        f"GET {parsed.path} HTTP/1.1\r\nHost: {parsed.hostname}:{parsed.port}\r\n"
+        f"GET {path_and_query} HTTP/1.1\r\nHost: {parsed.hostname}:{parsed.port}\r\n"
         f"Connection: close\r\nAccept: text/event-stream\r\n\r\n"
     ).encode("ascii")
     sock.sendall(req)
@@ -64,6 +65,11 @@ def _open_sse(url, timeout=2.0):
         if not line or line in (b"\r\n", b"\n"):
             break
     return sock, fh
+
+
+def _get_json(url, timeout=2.0):
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def _decode_sse_frame(cur_lines):
@@ -243,6 +249,78 @@ class ViewerServerTests(unittest.TestCase):
         self.assertEqual(errors, [])
         for paths in (results[0], results[1]):
             self.assertEqual([f["path"] for f in paths], ["/r0", "/r1", "/live"])
+
+    def test_session_endpoint_sanitizes_meta_and_artifact_state(self):
+        rebuilt_path = self.path.with_name(self.path.name + ".rebuilt")
+        partial_path = self.path.with_name(self.path.name + ".partial")
+        meta_path = self.path.with_name("events.meta.json")
+        _append_events(self.path, [_make_event(path="/canonical", idx=0)])
+        _append_events(rebuilt_path, [_make_event(path="/rebuilt", idx=1)])
+        _append_events(partial_path, [_make_event(path="/partial", idx=2)])
+        meta_path.write_text(json.dumps({
+            "schema_version": 1,
+            "parser": {"status": "live_timeout_rebuilt", "source": "strace"},
+            "warnings": ["internal warning not sent to browser verbatim"],
+            "snapshot": {
+                "enabled": True,
+                "complete": False,
+                "diagnostics": [{"code": "missing_root"}],
+                "emitted_event_count": 3,
+                "roots": ["/secret/root"],
+            },
+            "artifacts": {
+                "authoritative_event_path": rebuilt_path.name,
+                "jsonl": {"path": self.path.name, "role": "partial_live", "exists": True},
+                "rebuilt": {"path": rebuilt_path.name, "role": "authoritative_complete", "exists": True},
+                "partial": {"path": partial_path.name, "role": "partial_direct", "exists": True},
+                "meta": {"path": meta_path.name, "role": "metadata", "exists": True},
+            },
+        }), encoding="utf-8")
+        srv = self._server()
+        payload = _get_json(srv.url + "session", timeout=3.0)
+        self.assertEqual(payload["default_artifact"], "rebuilt")
+        self.assertEqual(payload["authoritative_artifact"], "rebuilt")
+        self.assertEqual(payload["parser_status"], "live_timeout_rebuilt")
+        self.assertEqual(payload["warnings_count"], 1)
+        self.assertEqual(payload["snapshot"], {"enabled": True, "complete": False, "diagnostic_count": 1, "emitted_event_count": 3})
+        self.assertEqual(sorted(payload["artifacts"].keys()), ["jsonl", "meta", "partial", "rebuilt"])
+        self.assertEqual(payload["artifacts"]["jsonl"]["role"], "partial_live")
+        self.assertEqual(payload["artifacts"]["rebuilt"]["role"], "authoritative_complete")
+        self.assertEqual(payload["artifacts"]["partial"]["role"], "partial_direct")
+        serialized = json.dumps(payload)
+        self.assertNotIn("/secret/root", serialized)
+        self.assertNotIn("internal warning not sent to browser verbatim", serialized)
+
+    def test_sse_can_switch_between_default_rebuilt_and_partial_artifacts(self):
+        rebuilt_path = self.path.with_name(self.path.name + ".rebuilt")
+        partial_path = self.path.with_name(self.path.name + ".partial")
+        meta_path = self.path.with_name("events.meta.json")
+        _append_events(self.path, [_make_event(path="/canonical", idx=0)])
+        _append_events(rebuilt_path, [_make_event(path="/rebuilt", idx=1)])
+        _append_events(partial_path, [_make_event(path="/partial", idx=2)])
+        meta_path.write_text(json.dumps({
+            "schema_version": 1,
+            "parser": {"status": "live_timeout_rebuilt", "source": "strace"},
+            "artifacts": {
+                "authoritative_event_path": rebuilt_path.name,
+                "jsonl": {"path": self.path.name, "role": "partial_live", "exists": True},
+                "rebuilt": {"path": rebuilt_path.name, "role": "authoritative_complete", "exists": True},
+                "partial": {"path": partial_path.name, "role": "partial_direct", "exists": True},
+                "meta": {"path": meta_path.name, "role": "metadata", "exists": True},
+            },
+        }), encoding="utf-8")
+        srv = self._server()
+        time.sleep(0.2)
+        sock_default, fh_default = _open_sse(srv.url + "events", timeout=3.0)
+        sock_partial, fh_partial = _open_sse(srv.url + "events?artifact=partial", timeout=3.0)
+        try:
+            default_backlog = _read_sse_frames(fh_default, 1, timeout=3.0)
+            partial_backlog = _read_sse_frames(fh_partial, 1, timeout=3.0)
+            self.assertEqual([f["path"] for f in default_backlog], ["/rebuilt"])
+            self.assertEqual([f["path"] for f in partial_backlog], ["/partial"])
+        finally:
+            sock_default.close()
+            sock_partial.close()
 
     def test_empty_jsonl_initially_emits_no_appends(self):
         # Path exists, file is empty. /events connects: no append frames

@@ -1,0 +1,89 @@
+I'll start by reading the key viewer files that Phase 5 targets, along with the test files. Let me read them in parallel.Now let me read the viewer static files and the oracle:Let me check the worktree and git state to understand the builder's actual changes:Now I understand - the builder's worktree is at `.builders/spir-15/`. Let me read the actual files from the worktree:Good - now I can see the tailer has been updated properly with v2 support. Let me now read the viewer static files and the remaining test/oracle files from the worktree:Now let me run the viewer tests to check they pass:Now I have a thorough understanding of the codebase. Let me verify one more thing — whether there are any mixed v1/v2 fixture files:Now I have the complete picture. Here's my review:
+
+---
+
+## Phase 5 Review: Viewer Provenance Rendering, Source Filters, and Artifact Banners
+
+### What Was Done
+
+The **tailer/server plumbing** (from Phase 2) is solid and present in this worktree:
+- `tailer.py`: `SCHEMA_VERSION = 2`, `_SANITIZED_FIELDS` includes `schema_version`/`source`/`confidence`, `normalize_event()` defaults missing provenance to `strace/direct`, `_schema_version_can_normalize()` handles forward compatibility
+- `test_viewer_tailer.py`: Good coverage for v1 normalization, v2 acceptance, future schema handling, sanitization assertions
+- `test_viewer_server.py`: SSE payload field assertions updated to include 9 sanitized fields with source/confidence
+- `test_viewer_aggregator.py`: Added `test_v2_provenance_fields_do_not_change_core_aggregation`
+- All 57 viewer tests pass
+
+### What Phase 5 Requires But Is Missing
+
+Comparing against the plan's Phase 5 success criteria and the spec's Viewer provenance UX MUST requirements:
+
+**1. No provenance rendering in the UI (MUST — Spec & Plan)**
+
+> "Render event provenance clearly enough that users can distinguish `strace/direct` from `snapshot/inferred`."
+
+- **`table.js`**: No source badges, no provenance column, no visual indicator. Rows show Path/Bytes/Events/Last Touched only.
+- **`treemap.js`**: `tooltipFor()` (line 78) shows `path + Bytes + Events + Last touched` — no source/confidence.
+- **`index.html`**: No UI elements for provenance display at all.
+- **`style.css`**: No badge/provenance CSS classes.
+
+**2. No source filtering (MUST — Spec & Plan)**
+
+> "Add source filtering or equivalent visibility controls for at least `strace` and `snapshot` events."
+
+- **`index.html`/`index.js`**: No source toggle buttons/checkboxes (like the existing "Show filtered" checkbox but for strace/snapshot sources).
+- **`aggregator.js`/`_aggregator_oracle.py`**: Neither propagates `source`/`confidence` through aggregation entries, nor implements source-based filtering semantics. Events arrive with provenance in SSE payloads, but the aggregator ignores `source` completely.
+
+**3. No source/confidence propagation in aggregation (Plan)**
+
+> "propagate source/confidence through aggregation, implement source filtering semantics alongside existing path filters, and track source composition per node where useful"
+
+- `newEntry()` in aggregator.js has no source tracking
+- `_PathEntry.__slots__` in _aggregator_oracle.py has no source tracking
+- Snapshot tree nodes don't carry source composition
+
+**4. No artifact banner support (MUST — Spec & Plan)**
+
+> "Sibling `<session>.jsonl.partial`, `<session>.jsonl.rebuilt`, and `<session>.meta.json` are detected and displayed through a non-sensitive banner/control."
+
+- **`server.py`**: No `/meta` endpoint, no sidecar detection logic
+- **`index.html`/`index.js`**: No banner DOM element, no meta-state rendering
+- **`tailer.py`**: No meta.json reading or artifact precedence logic for the viewer
+
+**5. Missing test fixtures and coverage (Plan)**
+
+> "Add fixtures for mixed v1/v2 strace/snapshot JSONL streams and golden aggregation output."
+
+- No mixed v1/v2 fixture files exist in `tests/fixtures/viewer/`
+- No source filter behavior tests
+- No badge/tooltip rendering tests
+- No server/tailer meta sidecar detection tests
+- No artifact banner tests
+
+### What Works / Is Good
+
+- The Phase 2 tailer foundation is well-engineered: clean `normalize_event()` function, smart forward-compat in `_schema_version_can_normalize()`, whitelist-based sanitization
+- All existing viewer tests continue to pass
+- The new `test_v2_provenance_fields_do_not_change_core_aggregation` test verifies schema-v2 events aggregate correctly at the data level
+- Privacy posture is preserved — no sensitive fields leak through sanitization
+
+### Assessment
+
+The builder completed the server/tailer backend plumbing (which was really Phase 2 work) but did not implement any of Phase 5's specific deliverables. Phase 5 is fundamentally about making provenance **visible to the user** in the browser, and none of that work is present. The UI files (`index.html`, `index.js`, `table.js`, `treemap.js`, `style.css`) are completely unchanged from their pre-Phase-5 state. The aggregator (`aggregator.js`, `_aggregator_oracle.py`) has no source-awareness.
+
+---
+
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 5 viewer provenance UI is entirely unimplemented — no source badges, no source filters, no artifact banners, no aggregator source tracking, no mixed-source test fixtures
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- No provenance badges/indicators rendered in table rows or treemap tiles — users cannot distinguish strace/direct from snapshot/inferred events (MUST requirement)
+- No source filtering controls — no UI to hide/show strace vs snapshot events (MUST requirement)
+- aggregator.js and _aggregator_oracle.py do not propagate source/confidence through per-path entries or tree nodes; source composition per node is untracked
+- No artifact banner UI or server-side meta.json/partial/rebuilt sidecar detection — viewer has no awareness of session artifact state (MUST requirement)
+- No mixed v1/v2 strace/snapshot JSONL test fixtures, no golden outputs for mixed streams, no source-filter behavior tests
+- treemap tooltipFor() shows no provenance information
+- index.html has no DOM elements for source toggles, provenance badges, or artifact banners
+- style.css has no badge/provenance styles

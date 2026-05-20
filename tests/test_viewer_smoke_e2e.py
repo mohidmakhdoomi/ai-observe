@@ -78,6 +78,9 @@ class ViewerSmokeE2ETests(unittest.TestCase):
         self.assertIn("Filters (0)", html)
         self.assertIn("Add selected to Filters", html)
         self.assertIn("Show filtered", html)
+        self.assertIn("Sources", html)
+        self.assertIn("Strace", html)
+        self.assertIn("Snapshot", html)
         self.assertIn("Reset to defaults", html)
         self.assertNotIn("Show noise", html)
         for asset in parser.styles + parser.scripts:
@@ -89,6 +92,16 @@ class ViewerSmokeE2ETests(unittest.TestCase):
         static_dir = ROOT / "src" / "ai_observe" / "viewer" / "static"
         total = sum(p.stat().st_size for p in static_dir.iterdir() if p.is_file())
         self.assertLess(total, 50_000)
+
+    def test_session_endpoint_exposes_sanitized_default_artifact_state(self):
+        payload = json.loads(self.get('/session'))
+        self.assertEqual(payload['default_artifact'], 'jsonl')
+        self.assertEqual(payload['requested_artifact'], 'jsonl')
+        self.assertIsNone(payload['authoritative_artifact'])
+        self.assertEqual(sorted(payload['artifacts'].keys()), ['jsonl', 'meta', 'partial', 'rebuilt'])
+        self.assertTrue(payload['artifacts']['jsonl']['exists'])
+        self.assertFalse(payload['artifacts']['partial']['exists'])
+        self.assertNotIn('warnings', payload)
 
     def test_viewer_docs_describe_filters_and_port_behavior(self):
         docs = (ROOT / "docs" / "viewer.md").read_text()

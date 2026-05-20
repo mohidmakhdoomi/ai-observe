@@ -1,0 +1,4 @@
+{"timestamp":"2026-05-13T10:00:00.000000Z","operation":"modify","path":"/work/direct.txt","old_path":null,"new_path":null,"result":5}
+{"schema_version":2,"timestamp":"2026-05-13T10:00:01.000000Z","operation":"modify","path":"/work/inferred.txt","old_path":null,"new_path":null,"result":7,"source":"snapshot","confidence":"inferred"}
+{"schema_version":2,"timestamp":"2026-05-13T10:00:02.000000Z","operation":"modify","path":"/work/mixed.txt","old_path":null,"new_path":null,"result":3,"source":"strace","confidence":"direct"}
+{"schema_version":2,"timestamp":"2026-05-13T10:00:03.000000Z","operation":"modify","path":"/work/mixed.txt","old_path":null,"new_path":null,"result":11,"source":"snapshot","confidence":"inferred"}

@@ -60,5 +60,22 @@ class ViewerTableJsTests(unittest.TestCase):
         ])
 
 
+    def test_real_js_provenance_helpers_build_badges_and_titles(self):
+        driver = """
+        const tbl=require('./src/ai_observe/viewer/static/table.js');
+        const node={path:'/work/mixed.txt',sources:['strace','snapshot'],confidences:['direct','inferred']};
+        process.stdout.write(JSON.stringify({
+          summary: tbl.provenanceSummary(node),
+          badges: tbl.badgeDataForNode(node)
+        }));
+        """
+        proc = subprocess.run([self.node, "-e", driver], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertIn('Sources: strace, snapshot', out['summary']['text'])
+        self.assertIn('Confidence: direct, inferred', out['summary']['text'])
+        self.assertEqual([badge['label'] for badge in out['badges']], ['strace', 'snapshot', 'direct', 'inferred'])
+
+
 if __name__ == "__main__":
     unittest.main()

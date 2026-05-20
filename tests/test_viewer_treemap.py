@@ -149,7 +149,7 @@ class ViewerTreemapJsParityTests(unittest.TestCase):
         const out={
           formatted:t.formatLastTouched(Date.UTC(2026,4,13,10,0,1)),
           never:t.formatLastTouched(0),
-          tooltip:t.tooltipFor({path:'/a.txt',bytes:7,events:2,last_touched_ms:Date.UTC(2026,4,13,10,0,1)})
+          tooltip:t.tooltipFor({path:'/a.txt',bytes:7,events:2,last_touched_ms:Date.UTC(2026,4,13,10,0,1),sources:['strace','snapshot'],confidences:['direct','inferred']})
         };
         process.stdout.write(JSON.stringify(out));
         """
@@ -159,6 +159,8 @@ class ViewerTreemapJsParityTests(unittest.TestCase):
         self.assertEqual(out["formatted"], "2026-05-13 10:00:01 UTC")
         self.assertEqual(out["never"], "never")
         self.assertIn("Last touched: 2026-05-13 10:00:01 UTC", out["tooltip"])
+        self.assertIn("Sources: strace, snapshot", out["tooltip"])
+        self.assertIn("Confidence: direct, inferred", out["tooltip"])
         self.assertNotIn("Last touched: 1778666401000", out["tooltip"])
 
     def test_real_js_context_metadata_preserves_path_and_directory_flag(self):

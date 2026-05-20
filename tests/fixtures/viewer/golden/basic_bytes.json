@@ -1,9 +1,13 @@
 {
+  "enabled_sources": [
+    "strace",
+    "snapshot"
+  ],
   "filtered_event_count": 0,
   "include_noise": false,
   "latest_ts_ms": 1778666401400.0,
   "metric": "bytes",
-  "total_event_count": 15,
+  "total_event_count": 16,
   "tree": {
     "bytes": 899,
     "children": [
@@ -13,47 +17,93 @@
           {
             "bytes": 150,
             "children": [],
+            "confidences": [
+              "direct"
+            ],
             "events": 4,
             "isDir": false,
             "last_touched_ms": 1778666401000.0,
             "name": "a.txt",
             "path": "/work/a.txt",
-            "recent": 3.9506730587562076
+            "recent": 3.9506730587562076,
+            "sources": [
+              "strace"
+            ]
           },
           {
             "bytes": 299,
             "children": [],
+            "confidences": [
+              "direct"
+            ],
             "events": 7,
             "isDir": false,
             "last_touched_ms": 1778666401400.0,
             "name": "b.txt",
             "path": "/work/b.txt",
-            "recent": 6.95288159185173
+            "recent": 6.95288159185173,
+            "sources": [
+              "strace"
+            ]
           },
           {
             "bytes": 450,
             "children": [],
+            "confidences": [
+              "direct"
+            ],
             "events": 4,
             "isDir": false,
             "last_touched_ms": 1778666401100.0,
             "name": "c.txt",
             "path": "/work/c.txt",
-            "recent": 3.9752449445545204
+            "recent": 3.9752449445545204,
+            "sources": [
+              "strace"
+            ]
+          },
+          {
+            "bytes": 0,
+            "children": [],
+            "confidences": [
+              "direct"
+            ],
+            "events": 1,
+            "isDir": false,
+            "last_touched_ms": 1778666400900.0,
+            "name": "future.txt",
+            "path": "/work/future.txt",
+            "recent": 0.9942404238175473,
+            "sources": [
+              "strace"
+            ]
           }
         ],
-        "events": 15,
+        "confidences": [
+          "direct"
+        ],
+        "events": 16,
         "isDir": true,
         "last_touched_ms": 1778666401400.0,
         "name": "work",
         "path": "/work",
-        "recent": 14.878799595162459
+        "recent": 15.873040018980005,
+        "sources": [
+          "strace"
+        ]
       }
     ],
-    "events": 15,
+    "confidences": [
+      "direct"
+    ],
+    "events": 16,
     "isDir": true,
     "last_touched_ms": 1778666401400.0,
     "name": "/",
     "path": "/",
-    "recent": 14.878799595162459
+    "recent": 15.873040018980005,
+    "sources": [
+      "strace"
+    ]
   }
 }
