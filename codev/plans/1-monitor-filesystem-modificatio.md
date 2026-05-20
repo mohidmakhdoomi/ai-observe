@@ -7,7 +7,43 @@
 - Linux-first; tests degrade cleanly if live `strace` unavailable.
 - Follow approved spec exactly: strace backend, JSONL schema, deterministic behavior.
 
-## Phase 1: Project skeleton and wrapper CLI
+## Phase machine-readable block
+
+```json
+{
+  "phases": [
+    {
+      "id": "phase-1-project-skeleton",
+      "name": "Project skeleton and wrapper CLI",
+      "depends_on": []
+    },
+    {
+      "id": "phase-2-strace-launch",
+      "name": "strace launch and exit behavior",
+      "depends_on": ["phase-1-project-skeleton"]
+    },
+    {
+      "id": "phase-3-trace-parser-core",
+      "name": "Trace parser core",
+      "depends_on": ["phase-2-strace-launch"]
+    },
+    {
+      "id": "phase-4-integration-tests",
+      "name": "Integration tests and fake Codex workflow",
+      "depends_on": ["phase-3-trace-parser-core"]
+    },
+    {
+      "id": "phase-5-docs-review",
+      "name": "Documentation and final review artifact",
+      "depends_on": ["phase-4-integration-tests"]
+    }
+  ]
+}
+```
+
+## Phases
+
+### Phase 1: Project skeleton and wrapper CLI (`phase-1-project-skeleton`)
 
 ### Files
 
@@ -62,7 +98,7 @@
 - Unwritable observe dir fails before launching real Codex.
 - Symlink observe dir rejected unless env override.
 
-## Phase 2: strace launch and exit behavior
+### Phase 2: strace launch and exit behavior (`phase-2-strace-launch`)
 
 Note: parser-dependent Phase 2 tests use minimal parser API scaffold from Phase 1/2. Full parser semantics land in Phase 3 before final validation.
 
@@ -111,7 +147,7 @@ strace -f -qq -ttt -s 4096 -yy -o <trace-file> -e trace=%file,%desc,%process <re
 - Parser failure writes `.jsonl.partial`, preserves exit in default mode, overrides in strict mode.
 - Signal behavior covered with best-effort integration test if stable; else documented manual verification.
 
-## Phase 3: Trace parser core
+### Phase 3: Trace parser core (`phase-3-trace-parser-core`)
 
 ### Files
 
@@ -179,7 +215,7 @@ Parser fixtures must cover:
 - Full JSONL schema field population, including timestamp source/fallback and command argv array.
 - Parser partial-output behavior via injectable parse error.
 
-## Phase 4: Integration tests and fake Codex workflow
+### Phase 4: Integration tests and fake Codex workflow (`phase-4-integration-tests`)
 
 ### Files
 
@@ -222,7 +258,7 @@ work/.codev/observe/   # logs
 - Empty JSONL exists for no-mutation session.
 - Bypass mode runs fake real Codex without `.trace`/JSONL requirement.
 
-## Phase 5: Documentation and final review artifact
+### Phase 5: Documentation and final review artifact (`phase-5-docs-review`)
 
 ### Files
 

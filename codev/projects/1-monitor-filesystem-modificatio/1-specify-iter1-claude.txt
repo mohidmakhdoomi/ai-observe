@@ -1,0 +1,7 @@
+---
+VERDICT: APPROVE
+SUMMARY: Architect override: consultation bypassed with human approval at the specify gate.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None (placeholder; not a real review)

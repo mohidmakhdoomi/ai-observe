@@ -1,0 +1,7 @@
+---
+VERDICT: APPROVE
+SUMMARY: Architect override: consultation bypassed with human approval for phase-1-project-skeleton.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None (placeholder; not a real review)
