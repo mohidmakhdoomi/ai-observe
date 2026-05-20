@@ -31,9 +31,11 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-05T17:54:20.241Z'
-updated_at: '2026-05-20T15:55:04.363Z'
+updated_at: '2026-05-20T16:05:04.581Z'
 pr_history:
   - phase: specify
     pr_number: 2
     branch: builder/spir-1
     created_at: '2026-05-05T18:38:28.490Z'
+    merged: true
+    merged_at: '2026-05-20T16:05:04.581Z'
