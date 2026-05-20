@@ -1,0 +1,9 @@
+```
+---
+VERDICT: APPROVE
+SUMMARY: Documentation is properly updated with the layered promise, schema v2 details, snapshot limits, new environment variables, viewer capabilities, and architecture notes as requested.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+```

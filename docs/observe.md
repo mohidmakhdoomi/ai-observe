@@ -1,252 +1,302 @@
-# ai-observe command filesystem observer
+# ai-observe layered filesystem observer
 
-`ai-observe` is a Linux-first filesystem mutation observer for commands launched through its wrapper. It runs the real command under `strace -f`, follows the child process tree, and writes filesystem mutation events as JSONL.
+`ai-observe` observes filesystem changes made during a wrapped command session.
+The default mode is a **layered observer**:
 
-Named AI-tool shims are convenience wrappers around the same generic backend. The observer does **not** parse Codex, Claude Code, Gemini CLI, or OpenCode transcripts; it observes local Linux syscalls from the launched process tree.
+- `strace` supplies live, process-tree-scoped direct evidence.
+- start/end snapshots over watched roots backstop missed net changes.
+- emitted events carry provenance so direct and inferred evidence stay distinct.
 
-**Severe sensitive-data risk:** `.trace` and `.jsonl` logs can contain absolute paths, command arguments, and raw syscall text. These may include secrets, prompts, file names, and tool-generated temporary paths. Store `.codev/observe/` carefully. Redaction is not implemented.
+The intended product promise is:
 
-## Quick start: named shims
+> ai-observe reports every **net** file create, modify, or delete visible under configured watched roots during a session by combining a live event stream from the wrapped Linux process tree with session-boundary snapshot reconciliation. Events carry provenance so users can distinguish directly observed changes from inferred changes. Activity outside watched roots and changes by remote or hosted agents are not observed.
 
-Resolve the real binary before placing this repository's `bin/` directory before it in `PATH`, or set an absolute real-binary environment variable explicitly.
+It does **not** promise that any single live backend captures every mutation perfectly.
+
+## Severe sensitive-data risk
+
+Observer artifacts can contain absolute paths, command arguments, raw syscall text,
+file metadata, snapshot/manifest-derived metadata, warnings, and derived session state.
+Treat all of these as sensitive:
+
+- `.trace`
+- `.jsonl`
+- `.jsonl.partial`
+- `.jsonl.rebuilt`
+- `.meta.json`
+
+Store `.codev/observe/` carefully. Redaction is not implemented.
+
+## Quick start
+
+### Named shims
 
 ```bash
-# Codex
 export AI_OBSERVE_REAL_CODEX="/absolute/path/to/real/codex"
 export PATH="$PWD/bin:$PATH"
 codex "implement feature"
-
-# Claude Code
-export AI_OBSERVE_REAL_CLAUDE="/absolute/path/to/real/claude"
-export PATH="$PWD/bin:$PATH"
-claude -p "summarize this repo"
-
-# Gemini CLI
-export AI_OBSERVE_REAL_GEMINI="/absolute/path/to/real/gemini"
-export PATH="$PWD/bin:$PATH"
-gemini -p "summarize this repo"
-
-# OpenCode
-export AI_OBSERVE_REAL_OPENCODE="/absolute/path/to/real/opencode"
-export PATH="$PWD/bin:$PATH"
-opencode run "implement feature"
 ```
 
-For Codex compatibility, `CODEV_OBSERVE_REAL_CODEX` still works during the compatibility window:
+Other named shims work the same way:
 
-```bash
-export CODEV_OBSERVE_REAL_CODEX="/absolute/path/to/real/codex"
-export PATH="$PWD/bin:$PATH"
-codex "implement feature"
-```
+- `AI_OBSERVE_REAL_CLAUDE` → `bin/claude`
+- `AI_OBSERVE_REAL_GEMINI` → `bin/gemini`
+- `AI_OBSERVE_REAL_OPENCODE` → `bin/opencode`
 
-Do not set a real-binary variable with `command -v codex`, `command -v claude`, etc. after this repository's shim already shadows the real tool. Resolve the real binary first, or use a known absolute path.
+For Codex compatibility, `CODEV_OBSERVE_REAL_CODEX` still works during the compatibility window.
 
-## Quick start: arbitrary commands
-
-Use the generic entry point when you do not want a named shim:
+### Arbitrary commands
 
 ```bash
 bin/ai-observe --session my-run -- python -c 'from pathlib import Path; Path("x").write_text("y")'
 bin/ai-observe -- bash -lc 'echo hi > generated.txt'
 ```
 
-If you need to force the real executable while preserving arguments, use `AI_OBSERVE_REAL_COMMAND`:
+If you need to force the executable while preserving arguments:
 
 ```bash
 AI_OBSERVE_REAL_COMMAND=/opt/tools/tool-real bin/ai-observe -- tool arg1 arg2
 ```
 
-The first token after `--` (`tool` above) is still required for usage validation and diagnostics. `AI_OBSERVE_REAL_COMMAND` replaces only `argv[0]`; the traced/recorded command becomes:
+## Runtime model
 
-```json
-["/opt/tools/tool-real", "arg1", "arg2"]
-```
-
-## Runtime requirements
-
-- Linux.
-- Python 3 standard library.
-- `strace` 5.10+ or compatible output.
-- ptrace policy allowing the wrapper to trace its child process tree. Normal `kernel.yama.ptrace_scope=1` works for tracing direct children.
-
-The wrapper uses argv arrays, not shell interpolation. Internally it runs:
+Default mode is Linux-first and uses:
 
 ```bash
 strace -f -qq -ttt -s 4096 -yy -o <trace-file> -e trace=%file,%desc,%process <real-command> <args...>
 ```
 
-## Environment variables
+The wrapper uses argv arrays, not shell interpolation.
 
-Preferred names are `AI_OBSERVE_*`. Existing `CODEV_OBSERVE_*` aliases remain for backwards compatibility where listed. If both are set, `AI_OBSERVE_*` wins.
+### Backend selection
 
-| Preferred variable | Legacy alias | Purpose |
-| --- | --- | --- |
-| `AI_OBSERVE_REAL_CODEX` | `CODEV_OBSERVE_REAL_CODEX` | Real Codex executable for `bin/codex`. |
-| `AI_OBSERVE_REAL_CLAUDE` | none | Real Claude Code executable for `bin/claude`. |
-| `AI_OBSERVE_REAL_GEMINI` | none | Real Gemini CLI executable for `bin/gemini`. |
-| `AI_OBSERVE_REAL_OPENCODE` | none | Real OpenCode executable for `bin/opencode`. |
-| `AI_OBSERVE_REAL_COMMAND` | none | Forced executable for generic `bin/ai-observe -- command args...`; replaces only command `argv[0]`. |
-| `AI_OBSERVE_DIR` | `CODEV_OBSERVE_DIR` | Log directory. Relative paths resolve from launch cwd. If unset, searches upward for `.codev` and uses `.codev/observe`; otherwise `$PWD/.codev/observe`. |
-| `AI_OBSERVE_DISABLE=1` | `CODEV_OBSERVE_DISABLE=1` | Bypass tracing and exec the resolved real command. |
-| `AI_OBSERVE_SESSION_ID` | `CODEV_OBSERVE_SESSION_ID` | Requested session id. Unsafe filename chars become `_`; empty, `.` and `..` are rejected. |
-| `AI_OBSERVE_STRICT_PARSE=1` | `CODEV_OBSERVE_STRICT_PARSE=1` | Parser failure makes wrapper exit nonzero after the real command exits. |
-| `AI_OBSERVE_INCLUDE_LOG_WRITES=1` | `CODEV_OBSERVE_INCLUDE_LOG_WRITES=1` | Include active trace/JSONL artifact paths if the traced command touches them. |
-| `AI_OBSERVE_ALLOW_SYMLINK_DIR=1` | `CODEV_OBSERVE_ALLOW_SYMLINK_DIR=1` | Allow symlink final observe dir. |
-| `AI_OBSERVE_QUIET=1` | `CODEV_OBSERVE_QUIET=1` | Suppress sensitive-log warning. |
-| `AI_OBSERVE_LIVE_PARSE=0` | `CODEV_OBSERVE_LIVE_PARSE=0` | Opt out of live-mode streaming; events still land in `.jsonl` post-hoc. Default is live parsing on. |
-| `AI_OBSERVE_LIVE_POLL_MS` | `CODEV_OBSERVE_LIVE_POLL_MS` | Live tailer poll interval in milliseconds when no new trace bytes are available. Default `200`, bounds `[10, 2000]`. |
-| `AI_OBSERVE_LIVE_JOIN_TIMEOUT` | `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` | Seconds to wait for live tailer drain after strace exits. Default `30`, bounds `[0.1, 600]`. |
-| `AI_OBSERVE_SIGNAL_GRACE` | `CODEV_OBSERVE_SIGNAL_GRACE` | Seconds to wait between forwarded termination signals before escalation. Default `2`. |
+`AI_OBSERVE_BACKENDS` controls which backends run:
 
-## Real executable lookup
+- `strace,snapshot` (default)
+- `strace`
+- `snapshot`
 
-### Named shims
+Use `strace` or `snapshot` mainly for troubleshooting. The supported low-friction product path remains the default layered mode.
 
-For `codex`, `claude`, `gemini`, and `opencode`, lookup order is:
+- `strace` mode keeps live direct attribution but has no snapshot backstop.
+- `snapshot` mode skips strace wrapping and reports only inferred net changes under watched roots.
+- invalid backend names fail before the child command launches.
 
-1. `AI_OBSERVE_REAL_<PROGRAM>` if set and executable, for example `AI_OBSERVE_REAL_CLAUDE`.
-2. For Codex only, legacy `CODEV_OBSERVE_REAL_CODEX` if set and executable.
-3. First matching `<program>` in `PATH` whose resolved path differs from the current shim.
-4. Adjacent `<program>.real` or `<program>.bin` beside the shim.
-5. Exit `127` with an actionable error.
+## Watched roots and snapshot reconciliation
 
-### Generic `ai-observe`
+Snapshot reconciliation runs only under explicit watched roots.
 
-Generic mode requires `--` and a command token:
+- `AI_OBSERVE_ROOTS` is a path list; on Linux use `:` separators, for example:
 
-```bash
-bin/ai-observe [--session SESSION] -- command [args...]
-```
+  ```bash
+  AI_OBSERVE_ROOTS=/repo:/tmp/agent-work
+  ```
 
-Resolution order is:
+- if unset or empty, watched roots default to the launch cwd.
+- roots are resolved to absolute paths.
+- missing roots are warned about and skipped.
+- overlapping roots keep the ancestor and skip descendants.
+- if no usable roots remain, the session fails before launch and records diagnostics in `<session>.meta.json`.
 
-1. `AI_OBSERVE_REAL_COMMAND` if set and executable; replaces only `argv[0]`.
-2. Explicit command path containing `/`, resolved relative to cwd if needed.
-3. First matching command in `PATH` that is not recognized as an ai-observe shim.
-4. Exit `127` if not found or only recursive observer shims are found.
+The snapshot baseline is captured **synchronously before the child command starts**.
+A second manifest is captured after the child exits. The diff produces schema-v2
+`snapshot` / `inferred` events for net creates, modifies, deletes, and conservative renames.
 
-## Logs
+### Snapshot controls
 
-Default location:
+| Variable | Meaning |
+| --- | --- |
+| `AI_OBSERVE_ROOTS` | Watched roots for snapshot reconciliation. Defaults to launch cwd. |
+| `AI_OBSERVE_SNAPSHOT_HASH=1` | Hash regular files during snapshots to detect content changes that metadata alone might miss. |
+| `AI_OBSERVE_SNAPSHOT_EXCLUDE` | Extra exclude patterns, separated by `:` or newlines and matched as documented below against normalized root-relative paths / path segments. |
+| `AI_OBSERVE_SNAPSHOT_MAX_FILES` | Per-session safety cap for manifest entries. Over-cap roots are marked incomplete and warned. |
 
-```text
-.codev/observe/<session-id>.trace
-.codev/observe/<session-id>.jsonl
-```
+Built-in excludes suppress common high-noise paths such as `.git`, `node_modules`, `__pycache__`, `.codev/observe/**`, `*.pyc`, swap files, backup files, `.DS_Store`, and `.nfs*`.
+Project lockfiles are **not** excluded by default.
 
-Name collision uses deterministic suffixes: `session-1`, `session-2`, etc. No overwrite. No-mutation sessions still create empty `.jsonl` files.
+Exclude matching rules for `AI_OBSERVE_SNAPSHOT_EXCLUDE`:
 
-While the traced command runs, the wrapper tails its `.trace` file from a background thread and appends parsed events to `.jsonl` as they land. Another shell can stream events live:
+- patterns are matched against normalized **root-relative** paths
+- patterns may be separated by `:` or newlines
+- a subtree glob such as `foo/**` matches `foo` and anything below it within the watched root
+- a suffix glob such as `**/*.pyc` matches matching suffixes anywhere under the watched root
+- a bare segment or basename such as `node_modules` or `.nfs*` matches any path segment with that name
 
-```bash
-tail -F .codev/observe/<session-id>.jsonl
-```
-
-Latency is approximately `AI_OBSERVE_LIVE_POLL_MS` (default 200 ms) plus parser cost under normal load. The raw `.trace` remains the durable record. Set `AI_OBSERVE_LIVE_PARSE=0` to disable live streaming and parse post-hoc.
-
-For a browser treemap/table view of the same JSONL stream, see [Browser viewer for observer JSONL](viewer.md).
-
-On any non-`ParserFailure` error from the live tailer, the wrapper prints a stderr warning, rebuilds `.jsonl` from the full `.trace` after the real command exits, and preserves the real command's exit code unless `AI_OBSERVE_STRICT_PARSE=1`. If the tailer thread fails to exit within `AI_OBSERVE_LIVE_JOIN_TIMEOUT`, the wrapper leaves `.jsonl` in its partial state, prints a timeout warning, and applies the same strict-mode rule; no `.jsonl.partial` is written in that branch.
-
-On parser failure:
+Examples:
 
 ```text
-.codev/observe/<session-id>.jsonl.partial
+foo/**        # match a root-relative subtree
+**/*.pyc      # match Python bytecode anywhere under the root
+node_modules  # match any path segment named node_modules
 ```
 
-contains parsed events so far, or an empty file.
+## Artifacts and precedence
 
-Permissions are best effort: the wrapper creates observe dirs as `0700` and artifacts as `0600`. Existing dirs are not widened. Non-POSIX filesystems may not enforce these modes.
+Typical session artifacts:
 
-## JSONL schema
+```text
+.codev/observe/<session>.trace
+.codev/observe/<session>.jsonl
+.codev/observe/<session>.jsonl.partial
+.codev/observe/<session>.jsonl.rebuilt
+.codev/observe/<session>.meta.json
+```
 
-One event per line; `schema_version` remains `1`:
+Meaning:
+
+- `.trace`: raw strace output when the strace backend runs.
+- `.jsonl`: canonical event stream in normal operation.
+- `.jsonl.partial`: partial direct events when parsing fails before a complete canonical direct stream exists.
+- `.jsonl.rebuilt`: full-trace rebuild used when a live-timeout recovery leaves `.jsonl` partial.
+- `.meta.json`: warning/diagnostic sidecar plus artifact roles.
+
+The sidecar records which event artifact is authoritative.
+In normal sessions that is `.jsonl`. In live-timeout rebuild sessions it can be `.jsonl.rebuilt`.
+The browser viewer reads `<session>.meta.json` and exposes non-sensitive banner state for rebuilt / partial artifacts and snapshot diagnostics.
+
+## Event schema and provenance
+
+New output uses **schema version 2**.
+
+Required provenance fields:
+
+- `schema_version: 2`
+- `source`: `strace` or `snapshot`
+- `confidence`: `direct` or `inferred`
+
+Strace events use:
 
 ```json
 {
-  "schema_version": 1,
-  "timestamp": "2026-05-05T18:00:00.000000Z",
-  "session_id": "20260505T180000Z-12345-abcd",
-  "invocation_id": "20260505T180000Z-12345-abcd",
-  "pid": 12346,
-  "process": { "pid": 12346, "ppid": 12345, "comm": null },
+  "schema_version": 2,
+  "source": "strace",
+  "confidence": "direct"
+}
+```
+
+Snapshot events use:
+
+```json
+{
+  "schema_version": 2,
+  "source": "snapshot",
+  "confidence": "inferred"
+}
+```
+
+Example direct event:
+
+```json
+{
+  "schema_version": 2,
+  "timestamp": "2026-05-19T13:00:00.000000Z",
+  "session_id": "20260519T130000Z-12345-abcd",
+  "invocation_id": "20260519T130000Z-12345-abcd",
   "operation": "modify",
-  "path": "/abs/path/file.txt",
+  "path": "/repo/app.py",
   "old_path": null,
   "new_path": null,
-  "command": ["/real/path/claude", "-p", "edit file"],
-  "raw_syscall": "write(3</abs/path/file.txt>, \"x\", 1) = 1",
+  "source": "strace",
+  "confidence": "direct",
   "result": 1
 }
 ```
 
-**Severe sensitive-data risk:** `command` and `raw_syscall` can contain secrets. JSONL is audit output, not safe telemetry. The browser viewer intentionally does not send `command`, `raw_syscall`, process details, or PID fields to the page.
+Example inferred event:
 
-`path`, `old_path`, and `new_path` are absolute strings when resolved, else `null`. No sentinel strings.
+```json
+{
+  "schema_version": 2,
+  "timestamp": "2026-05-19T13:05:00.000000Z",
+  "session_id": "20260519T130000Z-12345-abcd",
+  "invocation_id": "20260519T130000Z-12345-abcd",
+  "operation": "modify",
+  "path": "/repo/app.py",
+  "old_path": null,
+  "new_path": null,
+  "source": "snapshot",
+  "confidence": "inferred",
+  "snapshot": {
+    "before": {"type": "file", "size": 1200, "mtime_ns": 1, "mode": 33188},
+    "after": {"type": "file", "size": 1250, "mtime_ns": 2, "mode": 33188}
+  },
+  "result": 0
+}
+```
 
-Operations:
+### Schema compatibility
 
-- `create`: strong creation evidence like `creat`, `O_CREAT|O_EXCL`, `mkdir*`, `mknod*`, `symlink*`, `link*` destination.
-- `modify`: positive-byte writes/splices to known writable fd, `O_TRUNC`, `truncate*`, `ftruncate`, parsed `fallocate`.
-- `delete`: `unlink*`, `rmdir`.
-- `rename`: `rename*`; partial old/new resolution allowed.
-- `chmod`: `chmod*`, `fchmod*`.
-- `metadata`: `chown*`, `utime*`, `utimensat`, `futimesat`.
+- existing schema-v1 JSONL remains viewable.
+- viewer/tailer code treats missing provenance as `strace` / `direct`.
+- higher schema versions are accepted only when they still carry the viewer-safe fields that current consumers can normalize.
 
-Failed syscalls emit no event. Zero-byte writes emit no event. Events are not coalesced.
+## Browser privacy posture
 
-## Backend tradeoffs
+The browser viewer is local-only and intentionally strips sensitive fields before sending events to the page.
+The page receives safe display fields such as:
 
-Chosen backend: `strace`.
+- `schema_version`
+- `timestamp`
+- `operation`
+- `path`, `old_path`, `new_path`
+- `result`
+- `source`
+- `confidence`
 
-Why:
+It does **not** receive raw syscall text, command argv, PID/process data, session ids, or full snapshot manifests.
 
-- No root required for tracing own child on normal Linux systems.
-- `-f` follows the launched process tree.
-- Captures syscall PID and raw path/fd details.
-- Works in the current repo/test setup with Python stdlib.
+See [docs/viewer.md](viewer.md) for provenance badges, source filters, and artifact banners.
 
-Rejected for initial scope:
+## Environment variables
 
-- `inotify`: low overhead, but cannot attribute events to a launched process tree.
-- `fanotify`: stronger watching, but permission and attribution complexity too high.
-- `eBPF`: powerful, but kernel/capability/version complexity too high.
-- `auditd`: privileged system service and host-state changes.
+Preferred names are `AI_OBSERVE_*`. Where legacy aliases still exist, `AI_OBSERVE_*` wins when both are set.
 
-## Scope and fidelity limits
+| Preferred variable | Legacy alias | Purpose |
+| --- | --- | --- |
+| `AI_OBSERVE_REAL_CODEX` | `CODEV_OBSERVE_REAL_CODEX` | Real Codex executable for `bin/codex`. |
+| `AI_OBSERVE_REAL_CLAUDE` | none | Real Claude executable for `bin/claude`. |
+| `AI_OBSERVE_REAL_GEMINI` | none | Real Gemini executable for `bin/gemini`. |
+| `AI_OBSERVE_REAL_OPENCODE` | none | Real OpenCode executable for `bin/opencode`. |
+| `AI_OBSERVE_REAL_COMMAND` | none | Forced executable for generic mode; replaces only `argv[0]`. |
+| `AI_OBSERVE_DIR` | `CODEV_OBSERVE_DIR` | Observe directory. Relative paths resolve from launch cwd. |
+| `AI_OBSERVE_DISABLE=1` | `CODEV_OBSERVE_DISABLE=1` | Bypass observation and exec the resolved real command. |
+| `AI_OBSERVE_SESSION_ID` | `CODEV_OBSERVE_SESSION_ID` | Requested session id. Unsafe filename characters become `_`. |
+| `AI_OBSERVE_STRICT_PARSE=1` | `CODEV_OBSERVE_STRICT_PARSE=1` | Parsing failures make the wrapper exit nonzero after the child exits. |
+| `AI_OBSERVE_INCLUDE_LOG_WRITES=1` | `CODEV_OBSERVE_INCLUDE_LOG_WRITES=1` | Include active trace/JSONL artifacts if the child touches them. |
+| `AI_OBSERVE_ALLOW_SYMLINK_DIR=1` | `CODEV_OBSERVE_ALLOW_SYMLINK_DIR=1` | Allow a symlink final observe dir. |
+| `AI_OBSERVE_QUIET=1` | `CODEV_OBSERVE_QUIET=1` | Suppress the sensitive-log warning. |
+| `AI_OBSERVE_LIVE_PARSE=0` | `CODEV_OBSERVE_LIVE_PARSE=0` | Disable live streaming; parse post-hoc only. |
+| `AI_OBSERVE_LIVE_POLL_MS` | `CODEV_OBSERVE_LIVE_POLL_MS` | Live tailer poll interval in milliseconds. |
+| `AI_OBSERVE_LIVE_JOIN_TIMEOUT` | `CODEV_OBSERVE_LIVE_JOIN_TIMEOUT` | Seconds to wait for live tailer drain after strace exits. |
+| `AI_OBSERVE_SIGNAL_GRACE` | `CODEV_OBSERVE_SIGNAL_GRACE` | Seconds to wait between forwarded termination signals before escalation. |
+| `AI_OBSERVE_ROOTS` | none | Watched roots for snapshot reconciliation. |
+| `AI_OBSERVE_SNAPSHOT_HASH=1` | none | Enable content hashing in snapshots. |
+| `AI_OBSERVE_SNAPSHOT_EXCLUDE` | none | Extra snapshot exclude patterns. |
+| `AI_OBSERVE_SNAPSHOT_MAX_FILES` | none | Snapshot manifest entry cap. |
+| `AI_OBSERVE_BACKENDS` | none | Backend selection. Default `strace,snapshot`; troubleshooting values `strace` and `snapshot`. |
+| `AI_OBSERVE_NESTED=1` | none | Internal recursion guard passed into traced children so nested shims direct-exec the real binary instead of launching nested strace. Not a general user toggle. |
 
-The observer is mostly generic for Linux programs launched as children of the wrapper, but it is not universal.
+## Limits and non-goals
 
-Process-tree and environment limits:
+What the layered observer **does not** cover:
 
-- Linux only; no macOS, Windows, or BSD backend in this version.
-- Requires `strace` plus ptrace/seccomp/Yama policy allowing child tracing.
-- Does not capture edits made by already-running external helper processes outside the traced tree.
-- Does not capture filesystem changes performed by remote services or hosted agents unless those changes occur locally through the traced process tree.
-- Does not capture editor/IDE extension edits unless the editor/extension process is in the traced tree.
-- TUI programs, background daemons, sandboxed tools, privilege transitions, containers, and remote-control modes may work only partially.
-- `strace` adds overhead and can perturb timing-sensitive sessions.
+- activity outside configured watched roots
+- remote or hosted agent filesystem changes that never occur locally
+- perfect byte-level attribution for `mmap` writes
+- full macOS / Windows live tracing backends
+- fanotify / inotify / eBPF in this release
 
-Filesystem/parser limits:
+Important caveats:
 
-- `mmap` writes may be missed.
-- Plain `open(..., O_CREAT)` without `O_EXCL` is not logged as `create`; later writes become `modify`.
-- Atomic-save patterns appear as temp create/modify plus rename.
-- Symlink paths are logged as used by the process, not guaranteed real targets.
-- Hardlink writes log only the path used by the syscall.
-- Deleted-open files may resolve as `null` if fd path is unavailable.
-- `fchdir`, inherited fds, fd reuse, and cwd races are best effort.
-- `io_uring`, `copy_file_range`, and `sendfile` may be missed or under-attributed. `splice` is counted when the destination is a known writable file descriptor.
-- Wrapper runs traced commands in a separate process group, forwards SIGINT/SIGTERM/SIGQUIT plus interactive terminal signals SIGWINCH/SIGTSTP/SIGCONT where available, and escalates termination after a short grace period.
+- snapshot events are **post-hoc net changes**, not a real-time stream.
+- create-then-delete ephemeral files can still be missed if no direct event is captured and the final snapshot no longer contains the file.
+- snapshot events do not imply process attribution.
+- already-running helpers or external daemons outside the traced process tree are invisible to `strace`; snapshot only backstops the net effect under watched roots.
 
 ## Troubleshooting
 
-- **Recursion / wrong binary**: set `AI_OBSERVE_REAL_<PROGRAM>` to an absolute real executable path before prepending `bin/` to `PATH`. For Codex, legacy `CODEV_OBSERVE_REAL_CODEX` also works.
-- **Generic wrapper runs another shim**: set `AI_OBSERVE_REAL_COMMAND=/absolute/path/to/tool`, or call the real executable by absolute path.
-- **Missing `strace`**: install `strace`, or set `AI_OBSERVE_DISABLE=1` to bypass tracing (`CODEV_OBSERVE_DISABLE=1` remains a legacy alias).
-- **Ptrace denied**: check sandbox/seccomp/Yama policy.
-- **Unwritable observe dir**: set `AI_OBSERVE_DIR` to a writable local path.
-- **Symlink observe dir rejected**: use a real directory or set `AI_OBSERVE_ALLOW_SYMLINK_DIR=1` knowingly.
-- **Parser partial output**: inspect `.trace` and `.jsonl.partial`; retry with current code or set `AI_OBSERVE_STRICT_PARSE=1` if parser failure must block.
-- **Generic CLI usage error**: use `bin/ai-observe [--session SESSION] -- command [args...]`; the `--` separator is required.
+- **Missing `strace`**: install `strace`, or use `AI_OBSERVE_BACKENDS=snapshot` for snapshot-only troubleshooting, or `AI_OBSERVE_DISABLE=1` to bypass observation entirely.
+- **Ptrace denied**: sandbox, seccomp, or Yama may block the default backend.
+- **Recursion / wrong binary**: set an absolute `AI_OBSERVE_REAL_<PROGRAM>` path before prepending `bin/` to `PATH`.
+- **No usable roots remain**: inspect `<session>.meta.json` for `missing_root`, `overlapping_root`, and related snapshot diagnostics.
+- **Partial or rebuilt artifacts**: inspect `.jsonl.partial`, `.jsonl.rebuilt`, and `.meta.json`; the viewer banner will also surface artifact status.
