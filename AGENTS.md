@@ -12,9 +12,33 @@ This project uses **Codev** for AI-assisted development.
 - **ASPIR**: Autonomous SPIR — no human gates on spec/plan (`codev/protocols/aspir/protocol.md`)
 - **AIR**: Autonomous Implement & Review for small features (`codev/protocols/air/protocol.md`)
 - **BUGFIX**: Bug fixes from GitHub issues (`codev/protocols/bugfix/protocol.md`)
+- **PIR**: Plan / Implement / Review — issue-driven with three human gates (plan-approval, dev-approval, pr) (`codev/protocols/pir/protocol.md`)
 - **EXPERIMENT**: Disciplined experimentation (`codev/protocols/experiment/protocol.md`)
 - **MAINTAIN**: Codebase maintenance (`codev/protocols/maintain/protocol.md`)
 - **RESEARCH**: Multi-agent research with 3-way investigation, synthesis, and critique (`codev/protocols/research/protocol.md`)
+
+## File Resolution (How Codev Finds Protocols and Templates)
+
+Codev resolves protocol files, prompts, agent definitions, and roles through a four-tier lookup (highest priority first):
+
+1. `.codev/<path>` — user override (project-local customization)
+2. `codev/<path>` — project-local copy (customized and checked in)
+3. Runtime cache
+4. **Installed package skeleton** — ships with `@cluesmith/codev` (the default for every standard protocol)
+
+**The absence of `codev/protocols/<name>/` on disk is not a missing reference** — it's the normal case for any protocol you haven't customized. The protocol resolves from the installed package's skeleton at runtime. Only protocols you want to customize need to live in your repo's `codev/protocols/`.
+
+**Implication for `codev update` and CLAUDE.md / AGENTS.md merges:** when an updated template references a protocol, do NOT drop the reference because `codev/protocols/<name>/` is absent locally. The protocol resolves via the package skeleton, and dropping the reference removes it from your available-protocol list while it's still callable from the CLI.
+
+## Protocol Verification (When You Don't Recognize a Protocol Name)
+
+If the user mentions a protocol name you don't immediately recognize, verify against the CLI before responding:
+
+```bash
+afx spawn --protocol <name> --help
+```
+
+This succeeds if the protocol is registered (including via the skeleton fallback in tier 4 of the resolution chain) and errors helpfully otherwise. The CLI is the source of truth — defer to it when in doubt.
 
 ## Key Locations
 
@@ -60,6 +84,26 @@ For complete reference, see `codev/resources/commands/`:
 - `codev/resources/commands/codev.md` - Project commands
 - `codev/resources/commands/agent-farm.md` - Agent Farm commands
 - `codev/resources/commands/consult.md` - Consultation commands
+
+## Inter-agent messaging
+
+Agents within a workspace communicate through `afx send`. Four addressing forms are supported:
+
+| Form | Meaning | Allowed from |
+|---|---|---|
+| `afx send <builder-id> "msg"` | Send to a specific builder (e.g. `afx send 0042 "..."`). | Any sender. |
+| `afx send architect "msg"` | From a builder: routes to the spawning architect via affinity. From an architect (or any non-builder sender): routes to the architect named `main` if present, else the first registered architect. | Any sender. |
+| `afx send architect:<name> "msg"` | Explicit per-architect addressing. **Architects (including `main`)**: open address grammar — any architect can address any other architect (sibling-architect messaging). **Builders**: allowed ONLY when `<name>` matches the builder's own spawning architect; mismatches are rejected by Tower's spoofing check. From a builder, this is an explicit form of the affinity routing, NOT an override. | Any sender (with the spoofing constraint above for builders). |
+| `afx send <workspace>:architect "msg"` | Cross-workspace addressing (e.g. `afx send marketmaker:architect "..."`). | Any sender. |
+
+**Sibling-architect messaging**: when a workspace hosts more than one architect (added via `afx workspace add-architect --name <name>`), sibling architects message each other via the `architect:<name>` form. Example: `main` running `afx send architect:ob-refine "PR-iter-2 feedback ready"` lands on the `ob-refine` architect's terminal. This works because sender = architect bypasses the spoofing check.
+
+**Builder spoofing-check**: a builder may only address its own spawning architect via `architect:<name>`. The spoofing check is enforced by Tower's message router; attempts to address a different architect from a builder are rejected.
+
+**Discovering active agents**:
+
+- `afx status` lists all architects alongside builders, with names, terminal IDs, and PIDs where available.
+- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree). **In-flight discovery**: `ls .builders/*/codev/state/*.md` and `cat .builders/<id>/codev/state/<id>_thread.md`. **Post-merge discovery**: after a builder's PR merges, its thread lands in `codev/state/` on `main` — list with `ls codev/state/` and read with `cat codev/state/<builder-id>_thread.md` from the main checkout.
 
 ## Configuration
 
