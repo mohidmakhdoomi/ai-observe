@@ -24,3 +24,6 @@ dist/
 
 # Claude
 .claude/scheduled_tasks.lock
+
+# Codev (added by codev update 2026-05-31)
+.architect-role.md

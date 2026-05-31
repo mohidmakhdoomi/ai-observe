@@ -45,6 +45,28 @@ This succeeds if the protocol is registered (including via the skeleton fallback
 - **Reviews**: `codev/reviews/` - Reviews and lessons learned
 - **Protocols**: `codev/protocols/` - Development protocols
 
+## Working with Project Labels
+
+If your project uses GitHub labels with a structured prefix (e.g. `area/*`, `team/*`, `priority/*`) to organize issues, treat them as the primary axis when users ask about grouping, editing, or auditing. Run `gh label list` to discover what your project uses, infer the convention from how existing issues are labeled, and ask the user to confirm before applying broad changes.
+
+**Discover the convention:**
+
+```bash
+# List all labels (skim for structured prefixes)
+gh label list
+
+# Filter to a specific prefix family
+gh label list --search "<prefix>/"
+```
+
+**Inferring policy:** conventions vary across projects. Common patterns:
+
+- **One label per axis.** Many projects allow only one `<prefix>/*` label per issue, with a dedicated multi-axis fallback (e.g. `<prefix>/cross-cutting`).
+- **Layered families.** Some projects use multiple prefixes together (`area/*` + `team/*` + `priority/*`).
+- **Separator style.** `<family>/<value>` and `<family>:<value>` both exist in the wild — respect whatever convention the project already uses.
+
+Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
+
 ## Quick Start
 
 1. For new features, start with the Specification phase
