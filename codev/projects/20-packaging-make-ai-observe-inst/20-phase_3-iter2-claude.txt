@@ -1,0 +1,82 @@
+I'll start by reading the primary Phase 3 deliverable — the smoke test module — along with key context files.The files are in the builder's worktree. Let me find the correct paths.Good. Now let me read the key files:Good. Now let me read the shim files and a few other key files for context:Now let me check the viewer server to understand the static serving and `--no-browser` flag:Now let me check the strace backend to verify the simulated platform test correctly exercises the error path:Now let me check the `ObserveError` class and the `prepare` method's `session` parameter to verify the simulated test:Now let me look at the `__init__.py` to verify version:Let me now check the consultation feedback for Phase 3 iteration 1 and the rebuttals:Now let me verify the existing tests still pass and the smoke tests work:All 21 smoke tests pass. Let me also verify the existing test suite still passes:All 234 tests pass (213 existing + 21 new packaging smoke tests). Now I have a complete picture for my review.
+
+---
+
+## Phase 3 Review: Packaging Smoke Tests (installed-artifact)
+
+### Spec Adherence — Complete ✅
+
+Every **MUST** smoke test from the spec is covered with the correct test approach:
+
+| Spec Requirement | Test Method(s) | Status |
+|---|---|---|
+| Build wheel + sdist | `test_both_artifacts_built` | ✅ |
+| Install from wheel into fresh venv | `setUpModule` (module-scoped) | ✅ |
+| Install from sdist (architect-preferred) | `test_install_from_sdist_best_effort` | ✅ |
+| Sdist build-path validation | `test_sdist_build_path_is_valid` | ✅ |
+| Works outside checkout, no PYTHONPATH | `test_import_works_outside_checkout_without_pythonpath` | ✅ |
+| `ai-observe` usage path works | `test_ai_observe_usage_path_works` | ✅ |
+| Live observed command (Linux+strace) | `test_observed_command_runs_and_warns_by_default` | ✅ (guarded) |
+| Unsupported platform fails clearly (simulated) | `test_unsupported_platform_raises_clear_error` | ✅ |
+| Installed backend unavailable fails clearly | `test_installed_backend_unavailable_fails_clearly` | ✅ |
+| **Shim two-path matrix** (real install) | `InstalledShimMatrixTests` (2 tests × 5 shims) | ✅ |
+| `ai-observe-viewer` serves with `--no-browser` | `test_installed_viewer_serves_static_outside_checkout` | ✅ |
+| `python -m ai_observe.viewer` after install | `test_module_invocation_serves_after_install` | ✅ |
+| **Hard criterion**: viewer serves `/`, `/static/index.html`, `/static/style.css` | `test_installed_viewer_serves_static_outside_checkout` | ✅ |
+| All six static files exposed | `test_installed_package_exposes_all_six_static_files` | ✅ |
+| Wheel/sdist include viewer static assets | `test_wheel_contains_all_static_assets`, `test_sdist_includes_static_license_and_notice` | ✅ |
+| Wheel excludes `tests/` | `test_wheel_excludes_tests` | ✅ |
+| Console scripts: only ai-observe + ai-observe-viewer | `test_wheel_declares_only_expected_console_scripts` | ✅ |
+| LICENSE/NOTICE in both artifacts | `test_wheel_includes_license_and_notice`, `test_sdist_includes_static_license_and_notice` | ✅ |
+| PEP 639 SPDX, no legacy classifier | `test_wheel_license_is_apache_spdx_without_legacy_classifier` | ✅ |
+| Sensitive-data warning on by default | `test_observed_command_runs_and_warns_by_default` | ✅ |
+| Quiet mode suppresses warning | `test_quiet_mode_suppresses_warning` | ✅ |
+
+### Code Quality — High
+
+1. **Module-scoped build-once fixture** (`setUpModule`/`tearDownModule`): Builds artifacts once via PEP 517 backend directly (avoids requiring the `build` package), installs the wheel into a clean venv with `--no-index --no-deps` (zero network required). Clean teardown removes the temp directory. This matches the plan's "session-scoped fixture" intent.
+
+2. **Source-copy isolation** (`_copy_source`): Builds from a fresh copy simulating a "fresh clone" — includes `pyproject.toml`, `LICENSE`, `NOTICE`, `src/`, and `docs/observe.md` (the readme target). Correctly excludes `.egg-info`, `__pycache__`, `.pyc`.
+
+3. **`_ViewerProc` helper** (lines 154–217): Well-designed subprocess manager with `select.select`-based non-blocking stderr reading with a bounded deadline, a bounded HTTP retry loop (20 attempts × 100ms), and always-cleanup in `stop()` with escalation from `terminate` → `kill`. The `HTTPError` is properly closed in a `finally` (addressing iter-1 feedback).
+
+4. **Build subprocess isolation**: Each artifact type (wheel, sdist) builds in its own subprocess to avoid setuptools/distutils in-process state pollution — the comment explains why.
+
+5. **Setuptools probe in `setUpModule`**: Probes `import setuptools` in `sys.executable` before building, and raises `unittest.SkipTest` with a clear message if absent — modern venvs without setuptools degrade gracefully.
+
+### Iter-1 Feedback — All Addressed
+
+All four iter-1 review points (2 blocking from Codex, 2 advisory from Gemini) were resolved:
+
+- **Codex #1** (shim matrix against real install): `InstalledShimMatrixTests` added — runs checkout `bin/*` shims with the venv interpreter against the real installed wheel. Both the installed path (no `-S`) and fallback path (`-S` hides site-packages) are tested across all 5 shims. ✅
+
+- **Codex #2** (sdist used `--system-site-packages`): `test_install_from_sdist_best_effort` now creates a **clean** venv, pre-provisions `setuptools>=77 wheel`, then installs with `--no-build-isolation --no-index --no-deps`. Asserts the import resolves to the venv, not checkout `src/`. ✅
+
+- **Gemini #1** (`sys.executable` may lack setuptools): `setUpModule` probes and skips clearly. ✅
+
+- **Gemini #2** (unclosed `HTTPError`): `exc.close()` in `finally`. ✅
+
+### Test Architecture — Sound
+
+The `InstalledShimMatrixTests._dispatch` method is clever and correct: it runs `_STATE["py"] [-S] ROOT/bin/<shim>` — the Python interpreter runs the shim as a script (shebang irrelevant), and the marker tool uses `#!{sys.executable}` (absolute path) so it works even with `PATH=""`. The `AI_OBSERVE_DISABLE=1` env var enables passthrough mode, and `AI_OBSERVE_REAL_*` vars point to the marker tool for named shims.
+
+The simulated platform test patches `strace_mod.sys.platform = "darwin"` and calls `backend.prepare(session=None)`. This is safe because the platform check at `strace.py:42` fires before any `session` attribute access at line 45, and the restore happens in a `finally` block.
+
+### Guards/Skips — Honest
+
+- `@unittest.skipUnless(sys.platform.startswith("linux"), ...)` and `@unittest.skipUnless(shutil.which("strace"), ...)` for live observation tests.
+- Ptrace/seccomp detection (lines 498-499): skips if the environment forbids ptrace (containers).
+- Sdist install skips with clear reason if backend can't be provisioned.
+- setuptools probe skips the whole module with a clear message.
+
+### Verified: 234 tests pass
+
+All 234 tests pass (213 existing + 21 new), confirming no regressions.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 3 smoke tests are thorough, well-structured, all 21 tests pass, every MUST item from the spec is covered including the hard static-asset criterion, and all iter-1 feedback was addressed.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES: None
