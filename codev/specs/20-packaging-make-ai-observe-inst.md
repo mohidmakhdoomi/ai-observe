@@ -212,6 +212,13 @@ checkout `ROOT/src` onto `sys.path` and retries. This keeps the named in-checkou
 (`claude`, `codex`, `gemini`, `opencode`) working for contributors while making them
 robust to an installed package, and is consistent with the baked CLI decision.
 
+**Known developer caveat (documented, not a code requirement):** because installed imports
+are preferred, a contributor who has done a non-editable `pip install .` and then edits
+`src/` will have `bin/*` (and the console scripts) run the **stale installed** copy, not
+their edits. The answer is the standard one — use an editable install (`pip install -e .`)
+or uninstall while iterating. This is normal Python packaging behavior; the spec does not
+add an `AI_OBSERVE_DEV` override or checkout-first heuristic to work around it.
+
 ## Functional requirements
 
 ### Packaging metadata (`pyproject.toml`)
@@ -220,6 +227,11 @@ robust to an installed package, and is consistent with the baked CLI decision.
 
 - Use **PEP 621** metadata with the **`setuptools`** build backend and the existing
   `src/` layout.
+- Set the distribution/package name explicitly to **`ai-observe`** (`project.name`), the
+  import package remaining `ai_observe`.
+- Configure setuptools package discovery for the `src/` layout
+  (`[tool.setuptools.packages.find] where = ["src"]`) so the package and the dynamic
+  version `attr` resolve at build time.
 - Set `requires-python = ">=3.10"`.
 - Declare **zero runtime dependencies** unless implementation discovers a concrete,
   justified one (justification recorded in the plan/review if so).
@@ -316,7 +328,15 @@ artifacts** and exercise the **installed** package (not the checkout `src/`):
   reliance on `bin/*`.
 - `ai-observe --help` (or equivalent usage path) works.
 - One small observed command runs successfully **on Linux with `strace` available**.
-- Unsupported platform/backend paths fail **clearly** at runtime when applicable.
+- Unsupported platform/backend paths fail **clearly** at runtime when applicable. Because
+  CI is Linux-only, this is validated by **targeted unit tests that simulate the failure**
+  (e.g. monkeypatching `sys.platform` / `shutil.which` so the strace backend raises its
+  clear error), not by requiring a native non-Linux runner. The native-failure case is a
+  documented manual check, not an automated gate.
+- **Shim two-path matrix**: cover **both** shim modes explicitly — (a) the
+  installed-package import path (package importable → shim uses it) and (b) the
+  checkout-fallback path (package not importable → shim splices `ROOT/src` and still
+  works).
 - `ai-observe-viewer` starts/serves **without opening a browser** (`--no-browser`).
 - `python -m ai_observe.viewer` still works after install.
 - Installed viewer serves `/`, `/static/index.js`, and `/static/style.css`.
@@ -331,6 +351,13 @@ artifacts** and exercise the **installed** package (not the checkout `src/`):
   them, while still failing loudly where the capability is expected (e.g. Linux CI).
 - Building artifacts once per test session (fixture-scoped) rather than per-test, to keep
   the suite reasonably fast.
+- **Offline / network-isolation robustness**: the test harness may run without PyPI
+  access. Build the wheel/sdist in the host environment (where the build backend is
+  already present) and install the **built artifact** into the clean venv. When installing
+  in an isolated/offline environment, use `pip install --no-build-isolation --no-deps`
+  (and/or pre-provision the build backend) so `pip` does not attempt to fetch
+  `setuptools>=77` from the network. Tests that genuinely require network SHOULD be guarded
+  with a clear skip reason rather than failing opaquely.
 
 ## Configuration
 
@@ -415,4 +442,27 @@ lives in `pyproject.toml`; `MANIFEST.in` is added only if needed to ship sdist f
 
 ## Consultation Log
 
-_(To be populated by porch-run 3-way consultation: Gemini, Codex, Claude.)_
+### Iteration 1 — 3-way spec review (Gemini, Codex, Claude)
+
+- **Gemini — APPROVE (HIGH).** No blocking issues. Recommendations folded in:
+  (1) explicitly add `[tool.setuptools.packages.find] where = ["src"]` so the package and
+  dynamic version `attr` resolve under the `src/` layout → added to packaging MUSTs;
+  (2) offline smoke-test footgun (sdist install may fetch the build backend from PyPI) →
+  added an "Offline / network-isolation robustness" SHOULD prescribing host-built artifacts
+  and `pip install --no-build-isolation --no-deps`; (3) editable-install developer caveat →
+  documented in the shim section.
+- **Codex — COMMENT (HIGH).** Strong/implementable; three clarifications, all folded in:
+  (1) state the distribution identity explicitly (`project.name = "ai-observe"`) → added to
+  packaging MUSTs; (2) specify how "unsupported platform/backend paths fail clearly" is
+  tested on a Linux-only lane → smoke-test entry now says targeted simulated unit tests
+  (monkeypatch `sys.platform`/`shutil.which`), native non-Linux is a manual check;
+  (3) require an explicit two-path shim test matrix (installed path + checkout-fallback
+  path) → added as a smoke-test MUST.
+- **Claude — APPROVE (HIGH).** Verified every codebase claim in the spec against the actual
+  source (version, entry-point signatures, six static assets, five shims, `AI_OBSERVE_QUIET`
+  resolution, strace gating, absence of `pyproject.toml`); no contradictions, no technical
+  blockers. The one note (stale non-editable install) overlaps Gemini's caveat and is now
+  documented.
+
+No reviewer requested a change that alters scope or the baked decisions; all feedback was
+clarifying/hardening and has been incorporated above.

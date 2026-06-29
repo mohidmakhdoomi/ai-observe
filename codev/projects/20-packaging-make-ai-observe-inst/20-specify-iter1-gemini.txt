@@ -1,0 +1,40 @@
+I will start by listing the contents of the workspace directory to verify the project's current structure and files.
+I will run a command to list all files, including hidden files, in the workspace.
+I will check if there is any git repository configuration or if this is indeed a completely empty directory.
+I will run `env` to check if there are any relevant environment variables in the current shell.
+I will run a command to search for any directories or files related to `ai-observe` or Python project structures that might be present in standard system paths or user directories.
+I will check the `/home/user/code` directory to see if the project repository is located there.
+I will search the web to confirm setuptools support for PEP 639 and verify if `setuptools>=77` is correct.
+I will search for any potential issues with setuptools reading dynamic versions from a `src` layout package.
+I will check the current permissions to see if there are any pre-authorized directory access paths.
+---
+VERDICT: APPROVE
+SUMMARY: The specification is exceptionally thorough, technically sound, and addresses all necessary packaging requirements, PEP 639 standards, and smoke testing strategies.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+---
+
+### Detailed Review & Insights
+
+#### 1. Packaging & Setuptools Layout Configuration (Insight)
+Since the project uses a `src/` layout, configuring `setuptools` to dynamically read `__version__ = "0.1.0"` from `src/ai_observe/__init__.py` requires setuptools to know where to find the source. 
+* **Recommendation**: In `pyproject.toml`, make sure the builder includes the package discovery directive:
+  ```toml
+  [tool.setuptools.packages.find]
+  where = ["src"]
+  ```
+  Without explicitly defining `where = ["src"]`, setuptools will fail to locate the `ai_observe` package at build time, leading to `ModuleNotFoundError` or `AttributeError` when resolving the `attr` dynamic version.
+
+#### 2. Checkout Shim Import Precedence (Workflow Consideration)
+The spec dictates:
+> "Upgrade the checkout `bin/*` shims to prefer installed-package imports first, falling back to adding the checkout `src/` directory to `sys.path` only when the package import is unavailable..."
+* **Consideration**: While this achieves the goal of running the shims in both contexts, it introduces a subtle developer footgun. If a contributor has installed `ai-observe` (e.g. via `pip install .`) and is editing code in `src/`, running `./bin/claude` will execute the *installed* version rather than their local checkout edits.
+* **Suggestion**: To avoid this, document that developers testing local changes must either uninstall the package or use an editable install (`pip install -e .`). Alternatively, the shims could check for the presence of a local `src/ai_observe` directory first when run from the repository root, or respect an environment variable (like `AI_OBSERVE_DEV`).
+
+#### 3. Smoke Test Offline Compatibility (Feasibility)
+The testing strategy requires installing the package in a clean virtualenv from both the built wheel and the sdist.
+* **Consideration**: In restricted or network-isolated environments (like a local test harness or sandbox), running `pip install <path-to-sdist>` will prompt `pip` to create an isolated build environment and download the build-backend (`setuptools>=77`) from PyPI, causing a network failure.
+* **Suggestion**: Ensure that the smoke test runner builds the wheel in the host environment (where `setuptools` is already available) and installs the built wheel. If installing from sdist in an offline environment, use `pip install --no-build-isolation --no-deps <sdist-path>` to prevent `pip` from attempting network requests.
