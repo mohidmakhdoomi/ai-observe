@@ -67,3 +67,27 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
 - Committed "[Spec 20] Plan with multi-agent review".
 - **STATE: plan-approval gate pending.** Will notify architect, STOP, wait for human
   `porch approve 20 plan-approval`.
+
+### Implement Phase 1 — packaging metadata + license
+- plan-approval APPROVED. Architect reminders: one branch/one PR; don't touch
+  viewer/server.py unless the hard static-asset test forces it; explicit git add; signal
+  when PR up.
+- Created: `pyproject.toml`, `LICENSE` (full Apache-2.0 + copyright), `NOTICE`.
+- Env: Python 3.14.4, setuptools 78.1.1 (>=77 ✓). `build` frontend not installed
+  (PEP 668 externally-managed env), so built via `setuptools.build_meta` directly
+  (== `python -m build --no-isolation`), offline. Phase 3 smoke tests will formalize this.
+- Build verification (wheel + sdist):
+  - Wheel: all 6 static assets present, `tests/` EXCLUDED, entry points = exactly
+    ai-observe + ai-observe-viewer, `License-Expression: Apache-2.0`, License-File LICENSE
+    + NOTICE, NO legacy Apache classifier, long-desc from docs/observe.md, version 0.1.0
+    (dynamic attr resolved), Requires-Python >=3.10.
+  - Sdist: includes LICENSE, NOTICE, pyproject, docs/observe.md, all 6 static assets,
+    PKG-INFO License-Expression Apache-2.0. (sdist also ships tests/ — fine; spec only
+    requires WHEEL to exclude tests.)
+  - Benign warning: setuptools sdist `check` warns "no README" because there's no root
+    README — cosmetic only; long_description IS populated from docs/observe.md (verified
+    in METADATA/PKG-INFO). Matches the plan's readme→docs/observe.md decision; NOT adding a
+    stub README (SPIR B owns docs). Documented fallback remains a root README if ever needed.
+  - No MANIFEST.in needed — license-files + package-data already ship everything.
+- 208 existing tests still pass. Build artifacts cleaned from worktree.
+- Signaling PHASE_COMPLETE via `porch done 20`; porch runs 3-way impl review then commits.

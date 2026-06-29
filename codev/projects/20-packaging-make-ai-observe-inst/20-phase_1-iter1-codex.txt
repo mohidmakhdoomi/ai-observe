@@ -1,0 +1,9 @@
+Using filesystem review of the changed spec/plan/status files, scoped to phase_1 only.Reading the remaining changed files to verify there isn't hidden phase_1 implementation outside the plan/spec.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 1 is not reviewable as implemented in the scoped PR files because the actual packaging deliverables (`pyproject.toml`, `LICENSE`, `NOTICE`, etc.) are absent from the changed file list.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The scoped PR/file list contains only spec/plan/consultation/status/thread documents; none of Phase 1’s required implementation deliverables are included (`pyproject.toml`, `LICENSE`, `NOTICE`, optional `MANIFEST.in`). As scoped, this phase does not satisfy the Phase 1 deliverables or acceptance criteria.
+- `codev/projects/20-packaging-make-ai-observe-inst/status.yaml` marks `current_plan_phase: phase_1` and `build_complete: true`, and `codev/state/spir-20_thread.md` claims Phase 1 created/built the packaging files, but those files are not part of the reviewed change scope. That mismatch must be resolved before approval.
+- Because the actual Phase 1 implementation files are not in scope here, I cannot verify required Phase 1 outcomes such as PEP 621/639 metadata, console-script declarations, package-data inclusion, license-file shipping, `tests/` exclusion from wheel, or build artifact correctness.
