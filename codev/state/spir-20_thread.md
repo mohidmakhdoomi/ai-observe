@@ -37,3 +37,18 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
 - Committed "[Spec 20] Specification with multi-agent review".
 - **STATE: spec-approval gate pending.** Notified architect via afx send. STOPPED, waiting
   for human `porch approve 20 spec-approval`.
+
+### Plan phase — start
+- spec-approval APPROVED by human. Advanced to plan phase.
+- Phase decomposition (3 phases, each an independent git commit within one PR):
+  1. Packaging metadata + license: `pyproject.toml` (PEP 621/639, dynamic version,
+     packages.find where=["src"], package-data for viewer/static, console scripts,
+     setuptools>=77), `LICENSE` (full Apache-2.0), `NOTICE`, `MANIFEST.in` if needed.
+     Verified by building wheel+sdist and inspecting contents.
+  2. Shim resilience: `bin/*` prefer installed import, fall back to checkout src. Unit
+     tests for both modes.
+  3. Packaging smoke tests: build → install into clean venv OUTSIDE checkout → exercise
+     entry points, viewer static serving (hard criterion), python -m, simulated
+     platform-failure, shim two-path matrix, wheel excludes tests.
+- Static-asset hardening (importlib.resources) is contingency only — Approach A keeps
+  filesystem reads; the hard smoke test is the arbiter.
