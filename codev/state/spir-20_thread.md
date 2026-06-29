@@ -125,3 +125,29 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
   runs under `python -S` (no site-packages) so only the checkout fallback can satisfy import;
   added test_broken_installed_package_is_not_masked_by_fallback for Codex-1 behavior.
 - 213 tests pass (208 + 5). Rebuttal written. Committing fixes, then porch done → iter2 re-review.
+- iter2: unanimous APPROVE (Gemini, Codex, Claude). porch advanced to phase_3.
+
+### Implement Phase 3 — packaging smoke tests
+- New: tests/test_packaging_smoke.py (19 tests). Module-scoped fixture builds wheel+sdist
+  ONCE (from copied source inputs = stand-in fresh clone) and installs the wheel into a
+  fresh venv with `--no-index --no-deps` (offline; zero deps). Tests exercise the INSTALLED
+  package, not checkout src.
+- Coverage: both artifacts built; wheel ships all 6 static assets; wheel excludes tests/;
+  wheel entry_points = only ai-observe + ai-observe-viewer (no shadow shims); wheel+sdist
+  carry LICENSE+NOTICE; License-Expression Apache-2.0, no legacy classifier; sdist ships
+  static+license; sdist build-path valid (unpack+rebuild); install-from-sdist best-effort
+  (system-site venv + --no-build-isolation; RAN here, not skipped); console scripts present;
+  usage path works; import outside checkout w/o PYTHONPATH resolves to venv not src; all 6
+  static files exposed by installed pkg; viewer serves via `python -m` and via console
+  script; **HARD CRITERION**: clean-venv wheel install OUTSIDE checkout serves /,
+  /static/index.html, /static/index.js, /static/style.css (200 + bytes); unsupported
+  platform simulated unit test (monkeypatch sys.platform → "Linux required"); installed
+  backend-unavailable (PATH="") fails clearly; Linux+strace live-observe runs + warns by
+  default; AI_OBSERVE_QUIET suppresses warning. Live tests skip cleanly w/o Linux/strace or
+  on ptrace-denied.
+- IMPORTANT FIX during dev: build_sdist + build_wheel in the SAME interpreter leaves the
+  2nd artifact unwritten (setuptools in-process state). Fixed by building each kind in its
+  OWN subprocess.
+- Static serving confirmed via Approach A (no viewer/server.py change needed — hard test
+  green). importlib.resources NOT required.
+- Full suite: 232 tests pass (213 + 19). Committing before porch done (Phase 1 lesson).
