@@ -1,28 +1,31 @@
 """Tests for the resilient bin/* shims (Spec 20, Phase 2).
 
 Each shim must PREFER the installed `ai_observe` package and fall back to the
-checkout `src/` directory only when the package is not importable, so the same
-shim works in both installed and source-checkout workflows.
+checkout `src/` directory only when the package itself is unavailable, so the
+same shim works in both installed and source-checkout workflows. Crucially the
+fallback must be narrow: a deeper import error (a broken/incomplete install)
+surfaces rather than being masked by silently importing the checkout copy.
 
 Two complementary layers:
 
 1. In-process branch detection (`exec` of the shim source under a non-``__main__``
-   name, so only the import logic runs, not dispatch). A sentinel ``ai_observe``
-   module in ``sys.modules`` lets us assert exactly WHICH branch executed:
-   - installed path: the shim binds its entry point from the already-importable
-     package and does NOT prepend the checkout ``src/`` to ``sys.path``;
-   - fallback path: with the package unimportable, the shim prepends ``src/`` and
-     resolves the real entry point.
+   name, so only the import logic runs, not dispatch). By controlling
+   ``sys.modules`` / ``sys.meta_path`` we assert exactly WHICH branch executes:
+   - installed path: binds the entry point from the already-importable package,
+     without prepending the checkout ``src/`` to ``sys.path``;
+   - fallback path (forced hermetically): with the package made unavailable, the
+     shim prepends ``src/`` and resolves the real entry point;
+   - broken install: with ``ai_observe`` importable but ``ai_observe.observe``
+     missing, the shim re-raises instead of falling back.
 
 2. End-to-end subprocess matrix: actually run ``python bin/<shim>`` in both an
-   "installed" env (``PYTHONPATH=src``) and a bare-checkout env (no ``PYTHONPATH``,
-   run from outside the repo), using the existing ``AI_OBSERVE_DISABLE`` +
-   ``AI_OBSERVE_REAL_*`` passthrough so dispatch reaches a marker without needing
-   a real target binary.
+   "installed" env (``PYTHONPATH=src``) and a hermetic bare-checkout env
+   (``-S`` to drop site-packages, no ``PYTHONPATH``, run from outside the repo),
+   using the existing ``AI_OBSERVE_DISABLE`` + ``AI_OBSERVE_REAL_*`` passthrough
+   so dispatch reaches a marker without needing a real target binary.
 """
 
 from pathlib import Path
-import importlib.util
 import os
 import subprocess
 import sys
@@ -59,11 +62,29 @@ def _exec_shim(name: str, namespace_name: str = "shim_under_test") -> dict:
     return ns
 
 
+class _AiObserveBlocker:
+    """Meta-path finder that hides ``ai_observe*`` until the checkout ``src/`` is
+    on ``sys.path``.
+
+    This forces the shim's fallback branch deterministically regardless of
+    whether ``ai_observe`` happens to be installed in the test interpreter: the
+    first import attempt is blocked (so the shim takes the ``except`` branch and
+    prepends ``src/``); once ``src/`` is present the finder defers, letting the
+    real path finder resolve the checkout copy.
+    """
+
+    def find_spec(self, name, path=None, target=None):  # noqa: D401, ANN001
+        if (name == "ai_observe" or name.startswith("ai_observe.")) and str(SRC) not in sys.path:
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        return None  # defer to the remaining finders
+
+
 class ShimImportBranchTests(unittest.TestCase):
     """Precise, in-process detection of which import branch each shim takes."""
 
     def setUp(self) -> None:
         self._saved_path = list(sys.path)
+        self._saved_meta = list(sys.meta_path)
         self._saved_modules = {
             k: v for k, v in sys.modules.items()
             if k == "ai_observe" or k.startswith("ai_observe.")
@@ -71,9 +92,14 @@ class ShimImportBranchTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         sys.path[:] = self._saved_path
+        sys.meta_path[:] = self._saved_meta
         for k in [k for k in sys.modules if k == "ai_observe" or k.startswith("ai_observe.")]:
             del sys.modules[k]
         sys.modules.update(self._saved_modules)
+
+    def _drop_ai_observe_modules(self) -> None:
+        for k in [k for k in sys.modules if k == "ai_observe" or k.startswith("ai_observe.")]:
+            del sys.modules[k]
 
     def _drop_src_from_path(self) -> None:
         sys.path[:] = [p for p in sys.path if Path(p).resolve() != SRC.resolve()]
@@ -91,8 +117,7 @@ class ShimImportBranchTests(unittest.TestCase):
                 setattr(fake_obs, attr, sentinel)
                 fake_pkg.observe = fake_obs
 
-                for k in [k for k in sys.modules if k == "ai_observe" or k.startswith("ai_observe.")]:
-                    del sys.modules[k]
+                self._drop_ai_observe_modules()
                 sys.modules["ai_observe"] = fake_pkg
                 sys.modules["ai_observe.observe"] = fake_obs
                 self._drop_src_from_path()
@@ -108,25 +133,44 @@ class ShimImportBranchTests(unittest.TestCase):
 
     def test_falls_back_to_checkout_src_when_package_absent(self):
         """When ai_observe is NOT importable, the shim splices in the checkout
-        src/ and resolves the real entry point."""
+        src/ and resolves the real entry point. Forced hermetically via a
+        meta-path blocker so it holds even if ai_observe is installed."""
         for name, attr in SHIMS.items():
             with self.subTest(shim=name):
-                for k in [k for k in sys.modules if k == "ai_observe" or k.startswith("ai_observe.")]:
-                    del sys.modules[k]
+                self._drop_ai_observe_modules()
                 self._drop_src_from_path()
-
-                # If ai_observe is importable from somewhere else (e.g. installed
-                # into the test env), the fallback path can't be exercised here.
-                if importlib.util.find_spec("ai_observe") is not None:
-                    self.skipTest("ai_observe importable without checkout src (installed in env)")
+                blocker = _AiObserveBlocker()
+                sys.meta_path.insert(0, blocker)
 
                 self.assertNotIn(str(SRC), sys.path)
                 ns = _exec_shim(name)
 
                 # Fallback prepended the checkout src/ and import succeeded.
                 self.assertIn(str(SRC), sys.path)
-                import ai_observe.observe as real_obs  # now importable via the fallback
+                import ai_observe.observe as real_obs  # importable now via the fallback
                 self.assertIs(ns[attr], getattr(real_obs, attr))
+
+    def test_broken_installed_package_is_not_masked_by_fallback(self):
+        """If ai_observe imports but ai_observe.observe is missing (a broken or
+        incomplete install), the shim must re-raise rather than silently fall
+        back to the checkout copy."""
+        for name, attr in SHIMS.items():
+            with self.subTest(shim=name):
+                # Top-level package present, but it exposes no submodules.
+                fake_pkg = types.ModuleType("ai_observe")
+                fake_pkg.__path__ = []
+                self._drop_ai_observe_modules()
+                sys.modules["ai_observe"] = fake_pkg
+                self._drop_src_from_path()
+                before = list(sys.path)
+
+                with self.assertRaises(ModuleNotFoundError) as cm:
+                    _exec_shim(name)
+
+                self.assertEqual(cm.exception.name, "ai_observe.observe")
+                # The fallback branch did NOT run.
+                self.assertNotIn(str(SRC), sys.path)
+                self.assertEqual(sys.path, before)
 
 
 def _write_exe(path: Path, text: str) -> Path:
@@ -148,18 +192,14 @@ class ShimSubprocessMatrixTests(unittest.TestCase):
                 fh.write("ran")
         """)
 
-    def _run(self, name: str, env: dict, *args: str, cwd: Path) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            [sys.executable, str(BIN / name), *args],
-            cwd=str(cwd),
-            env=env,
-            text=True,
-            capture_output=True,
-        )
+    def _run(self, name: str, env: dict, *args: str, cwd: Path, isolated: bool) -> subprocess.CompletedProcess:
+        # ``-S`` drops site-packages so an installed ai_observe cannot satisfy the
+        # try-branch; the only way the import succeeds is the checkout fallback.
+        cmd = [sys.executable, *(["-S"] if isolated else []), str(BIN / name), *args]
+        return subprocess.run(cmd, cwd=str(cwd), env=env, text=True, capture_output=True)
 
     def _base_env(self, marker: Path) -> dict:
         env = os.environ.copy()
-        # Bare checkout by default: no PYTHONPATH, so the shim must fall back to src/.
         env.pop("PYTHONPATH", None)
         env.update({
             "PATH": "",
@@ -175,15 +215,17 @@ class ShimSubprocessMatrixTests(unittest.TestCase):
             tool = self._marker_tool(root)
             env = self._base_env(marker)
             if installed:
-                # Simulate the package being importable without the fallback.
+                # Simulate the package being importable (try-branch succeeds).
                 env["PYTHONPATH"] = str(SRC)
             if name == "ai-observe":
                 args = ("--", str(tool))
             else:
                 env[f"AI_OBSERVE_REAL_{name.upper()}"] = str(tool)
                 args = ()
-            # Run from outside the checkout to prove cwd-independence.
-            proc = self._run(name, env, *args, cwd=root)
+            # Run from outside the checkout to prove cwd-independence. Fallback
+            # mode is isolated with -S so it cannot accidentally use an installed
+            # copy; installed mode must NOT use -S (it relies on PYTHONPATH).
+            proc = self._run(name, env, *args, cwd=root, isolated=not installed)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(marker.read_text(encoding="utf-8"), "ran")
             self.assertNotIn("ModuleNotFoundError", proc.stderr)

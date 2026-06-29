@@ -1,0 +1,9 @@
+Using direct file reads to review the phase_2 shim implementation and its tests.I’m checking exact line numbers in the shim files and the shim test for precise review notes.I’m running the phase_2 shim test module to confirm the current behavior matches the review.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The phase_2 shim pattern is close, but the current `except ImportError` fallback is too broad and the fallback-path tests do not reliably prove the required branch in environments where `ai_observe` is already installed.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `bin/ai-observe:8-15` (and likewise `bin/claude:8-15`, `bin/codex:8-15`, `bin/gemini:8-15`, `bin/opencode:8-15`) catches any `ImportError`, not just “package unavailable”. That can mask a broken installed package/import-time bug and incorrectly fall back to checkout `src/`, which violates the phase intent of falling back only when the package import is unavailable.
+- `tests/test_shim_resilience.py:109-129` and `tests/test_shim_resilience.py:171-199` do not hermetically force the fallback branch. If `ai_observe` is installed in the test interpreter/site-packages, the in-process fallback test skips entirely and the subprocess “fallback” run may still import the installed package instead of exercising checkout fallback. This means the required two-path matrix is not reliably proven.

@@ -113,3 +113,15 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
     bare-checkout (no PYTHONPATH, cwd outside repo) modes; uses AI_OBSERVE_DISABLE +
     AI_OBSERVE_REAL_<X> + marker (existing house idiom) to prove dispatch reaches a target.
 - 212 tests pass (208 + 4). Committing deliverables BEFORE porch done (Phase 1 lesson).
+
+### Phase 2 review iter1 — Codex REQUEST_CHANGES (both valid, fixed)
+- Gemini APPROVE, Claude APPROVE (Claude consult first hit a usage limit; retried OK), Codex
+  REQUEST_CHANGES.
+- Codex 1: `except ImportError` too broad → could mask a broken installed package. Fixed:
+  narrowed to `except ModuleNotFoundError as exc: if exc.name != "ai_observe": raise` in all
+  5 shims (absent top-level pkg → fallback; deeper failure → surface).
+- Codex 2: fallback tests not hermetic. Fixed: in-process fallback uses a sys.meta_path
+  blocker to force the branch regardless of installed env (skip removed); subprocess fallback
+  runs under `python -S` (no site-packages) so only the checkout fallback can satisfy import;
+  added test_broken_installed_package_is_not_masked_by_fallback for Codex-1 behavior.
+- 213 tests pass (208 + 5). Rebuttal written. Committing fixes, then porch done → iter2 re-review.

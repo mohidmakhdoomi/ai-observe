@@ -7,7 +7,12 @@ both installed and source-checkout workflows.
 """
 try:
     from ai_observe.observe import main_generic
-except ImportError:
+except ModuleNotFoundError as exc:
+    # Fall back to the checkout src/ ONLY when the package itself is absent.
+    # A deeper import error (a broken/incomplete install) must surface rather
+    # than be masked by silently importing the checkout copy.
+    if exc.name != "ai_observe":
+        raise
     import sys
     from pathlib import Path
 
