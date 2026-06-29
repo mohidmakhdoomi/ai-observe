@@ -7,6 +7,8 @@ codev/.update-hashes.json
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/
 
 # Dependencies
 node_modules/
