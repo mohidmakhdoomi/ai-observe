@@ -5,14 +5,14 @@ phase: implement
 plan_phases:
   - id: phase_1
     title: Packaging metadata + Apache-2.0 license
-    status: in_progress
+    status: complete
   - id: phase_2
     title: Resilient checkout bin/* shims
-    status: pending
+    status: in_progress
   - id: phase_3
     title: Packaging smoke tests (installed-artifact)
     status: pending
-current_plan_phase: phase_1
+current_plan_phase: phase_2
 gates:
   spec-approval:
     status: approved
@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -46,4 +46,4 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-20/codev/projects/20-packaging-make-ai-observe-inst/20-phase_1-iter1-claude.txt
 started_at: '2026-06-29T13:45:54.022Z'
-updated_at: '2026-06-29T14:10:14.670Z'
+updated_at: '2026-06-29T14:14:13.879Z'
