@@ -1,9 +1,18 @@
 id: '20'
 title: packaging-make-ai-observe-inst
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase_1
+    title: Packaging metadata + Apache-2.0 license
+    status: in_progress
+  - id: phase_2
+    title: Resilient checkout bin/* shims
+    status: pending
+  - id: phase_3
+    title: Packaging smoke tests (installed-artifact)
+    status: pending
+current_plan_phase: phase_1
 gates:
   spec-approval:
     status: approved
@@ -18,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-06-29T13:45:54.022Z'
-updated_at: '2026-06-29T14:00:07.267Z'
+updated_at: '2026-06-29T14:00:10.852Z'
