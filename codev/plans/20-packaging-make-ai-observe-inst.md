@@ -75,9 +75,18 @@ tests the Phase 2 shim matrix).
 #### Deliverables
 - [ ] `pyproject.toml` at repo root with:
   - `[build-system] requires = ["setuptools>=77"]`, `build-backend = "setuptools.build_meta"`.
-  - `[project]`: `name = "ai-observe"`, `description`, `readme`, `requires-python = ">=3.10"`,
-    `authors`, `keywords`, classifiers (Python versions, `Operating System :: POSIX :: Linux`,
-    Development Status, Environment/Topic as appropriate), `dynamic = ["version"]`.
+  - `[project]`: `name = "ai-observe"`, `description`,
+    `readme = {file = "docs/observe.md", content-type = "text/markdown"}`,
+    `requires-python = ">=3.10"`, `authors`, `keywords`, classifiers (Python versions,
+    `Operating System :: POSIX :: Linux`, Development Status, Environment/Topic as
+    appropriate), `dynamic = ["version"]`.
+    - **README decision** (resolving Codex plan review): the repo has **no root
+      `README*`**. Rather than create a stub README that SPIR B's docs rewrite would
+      replace (README/docs rewrite is an explicit SPIR-B non-goal), point `readme` at the
+      existing, accurate `docs/observe.md`. setuptools embeds it as the long-description and
+      auto-includes the referenced file in the sdist, so a rebuild-from-sdist stays valid.
+      (If pointing at `docs/observe.md` proves problematic at build time, the fallback is a
+      minimal root `README.md` — but the existing file is preferred to avoid scope creep.)
   - **PEP 639**: `license = "Apache-2.0"`, `license-files = ["LICENSE", "NOTICE"]`.
     **No** `License :: OSI Approved :: Apache Software License` classifier.
   - `[project.scripts]`: `ai-observe = "ai_observe.observe:main_generic"`,
@@ -160,7 +169,9 @@ ordered after Phase 1 for coherence).
 - [ ] A small shared idiom (inline per-file; no new importable runtime module is required —
       shims must work before the package is importable, so the fallback logic stays inline
       in each shim).
-- [ ] Unit tests for both shim modes (authored here; see Test Plan).
+- [ ] Unit tests for both shim modes in `tests/test_shim_resilience.py` (authored here; see
+      Test Plan). Note: shims use an `if __name__ == "__main__"` guard, so tests drive them
+      via `subprocess`/`runpy` rather than importing them.
 
 #### Implementation Details
 - Pattern per shim:
@@ -250,9 +261,23 @@ matrix to assert against a real install).
 #### Implementation Details
 - **Build once per session**: a session-scoped fixture builds wheel + sdist into a temp
   `dist/` (host environment, where the build backend is present) and yields paths.
-- **Offline robustness**: install the **built artifact** into the venv with
-  `pip install --no-build-isolation --no-deps <artifact>` (and/or pre-provisioned backend)
-  so no PyPI fetch is attempted; the project has zero runtime deps so `--no-deps` is safe.
+- **Offline robustness — concrete install recipes** (resolving Codex plan review):
+  - **Wheel install** (primary, used for the hard static-asset criterion): a fresh
+    `python -m venv` already ships `pip`; a wheel needs **no build backend**, so
+    `pip install --no-deps <wheel>` installs with no network (zero runtime deps → `--no-deps`
+    is safe). This is the no-network-required happy path.
+  - **Sdist install** (preferred per architect, with explicit pre-provisioning): installing
+    an sdist **builds** it, so the venv must have the build backend **before** the
+    `--no-build-isolation` install. Concretely, in the fresh venv:
+    1. `pip install "setuptools>=77" wheel` (pre-provision the backend; this step may need
+       network/cache — guard the whole sdist test and **skip with a clear reason** if the
+       backend cannot be provisioned offline);
+    2. `pip install --no-build-isolation --no-deps <sdist>`.
+  - **Fallback** (only if install-from-sdist is infeasible/offline-hostile in the harness):
+    validate the **sdist build path** instead — unpack the `.tar.gz`, assert it contains
+    `pyproject.toml`, `LICENSE`, `NOTICE`, and the six static assets, and optionally
+    `python -m build` from the unpacked tree. The architect prefers real install-from-sdist;
+    this fallback keeps the suite honest where the environment forbids it.
 - **Outside-checkout enforcement**: run the installed-package assertions from a temp working
   directory with `PYTHONPATH` cleared and `sys.path` not containing the checkout `src` (use
   the venv's interpreter via `subprocess`).
@@ -348,12 +373,32 @@ Phase 3 depends on **both** Phase 1 (artifact/entry points) and Phase 2 (shim ma
 
 ## Expert Review
 **Date**: 2026-06-29
-**Model**: (porch 3-way: Gemini, Codex, Claude — to be populated after plan consultation)
+**Model**: porch 3-way — Gemini, Codex, Claude
+
+**Verdicts**: Gemini **APPROVE** (HIGH), Claude **APPROVE** (HIGH), Codex **REQUEST_CHANGES**
+(HIGH — two concrete items, both addressed below).
+
 **Key Feedback**:
-- _(pending plan-phase consultation)_
+- **Codex (REQUEST_CHANGES)**:
+  1. The plan declared a `readme` but the repo has **no root `README*`** — underspecified.
+  2. The sdist offline/`--no-build-isolation` install needs the build backend
+     pre-provisioned in the fresh venv before install — hinted, not concrete.
+- **Gemini (APPROVE)**: confirmed alignment with spec + baked decisions; endorsed Approach A,
+  dynamic version, subprocess-driven shim tests, and offline install strategy.
+- **Claude (APPROVE)**: verified every codebase claim (paths, signatures, six static assets,
+  five shims, strace gating) against source; two non-blocking notes — name the shim test file
+  and remember the `MANIFEST.in` fallback if `LICENSE`/`NOTICE` miss the sdist (both already
+  anticipated; shim test file now named).
 
 **Plan Adjustments**:
-- _(pending)_
+- Phase 1: `readme` now points at the existing `docs/observe.md` (no stub README; SPIR B owns
+  the docs rewrite), with a minimal root `README.md` as fallback.
+- Phase 3: added concrete offline install recipes — wheel via `pip install --no-deps <wheel>`
+  (no network), sdist via pre-provisioning `setuptools>=77 wheel` then
+  `pip install --no-build-isolation --no-deps <sdist>`, with a guarded skip and a
+  build-path-validation fallback.
+- Phase 2: named the shim test file `tests/test_shim_resilience.py` and noted the
+  `__main__`-guard → subprocess/runpy testing approach.
 
 ## Approval
 - [ ] Expert AI Consultation Complete (3-way)
@@ -363,6 +408,7 @@ Phase 3 depends on **both** Phase 1 (artifact/entry points) and Phase 2 (shim ma
 | Date | Change | Reason | Author |
 |------|--------|--------|--------|
 | 2026-06-29 | Initial plan draft | Plan phase start | builder spir-20 |
+| 2026-06-29 | Address 3-way review (readme source, sdist offline recipe, shim test file) | Codex REQUEST_CHANGES + Claude notes | builder spir-20 |
 
 ## Notes
 - **PR strategy**: all three phases are git commits on one branch / one PR (per issue #20 PR

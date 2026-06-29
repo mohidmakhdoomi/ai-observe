@@ -1,0 +1,99 @@
+Let me read the actual codebase files to verify the plan's claims before rendering a verdict.Good — confirming: six static assets, five bin shims, no existing `pyproject.toml`. Let me read the key source files.Now let me check the existing tests to understand the test landscape:I've now verified all the key codebase claims. Let me check one more thing — the existing test for the viewer to understand current coverage:I have now thoroughly verified the codebase. Let me render my review.
+
+---
+
+## Plan Review: Packaging — make ai-observe installable
+
+### 1. Spec Coverage
+
+**Thorough.** I walked through every MUST in the spec's acceptance criteria against the plan's three phases:
+
+| Spec Criterion | Plan Phase | Covered? |
+|---|---|---|
+| PEP 621 metadata, setuptools, src layout, ≥3.10, classifiers | Phase 1 | ✅ |
+| Apache-2.0 via PEP 639, LICENSE + NOTICE in both artifacts | Phase 1 | ✅ |
+| Zero runtime deps | Phase 1 | ✅ |
+| Console scripts: ai-observe + ai-observe-viewer only | Phase 1 | ✅ |
+| Named shims NOT installed as scripts | Phase 1 | ✅ |
+| Shim try-installed/fallback-checkout | Phase 2 | ✅ |
+| Build wheel + sdist | Phase 3 | ✅ |
+| Install + run outside checkout | Phase 3 | ✅ |
+| python -m ai_observe.viewer after install | Phase 3 | ✅ |
+| Hard static-asset criterion | Phase 3 | ✅ |
+| Wheel includes static, excludes tests | Phase 3 | ✅ |
+| Unsupported platform fails clearly | Phase 3 (simulated) | ✅ |
+| Sensitive-data warning preserved | Implicit (no code change) | ✅ |
+| Existing tests pass | All phases | ✅ |
+
+No spec requirement is missing. No phase exceeds scope.
+
+### 2. Phase Breakdown
+
+**Well-structured.** Three phases is the right granularity:
+
+- **Phase 1** (packaging metadata) is the foundation — produces the buildable artifact. Independently committable, independently verifiable via build + content inspection.
+- **Phase 2** (shim resilience) is cleanly scoped — five files, one pattern, no runtime dependency on Phase 1 (just logical ordering). Independently committable.
+- **Phase 3** (smoke tests) correctly depends on both prior phases and serves as the integration proof.
+
+The dependency graph is correct: Phase 3 needs both 1 and 2; Phases 1 and 2 are functionally independent but logically ordered.
+
+### 3. Technical Approach
+
+**Sound on all key decisions. One minor note:**
+
+- **`pyproject.toml` configuration**: The plan correctly uses `[tool.setuptools.packages.find] where = ["src"]`, `dynamic = ["version"]` with `attr = "ai_observe.__version__"`, and `[tool.setuptools.package-data]` for static assets. I verified the `src/` layout and `__version__` location — these are correct.
+
+- **Static asset serving**: I verified `server.py` line 35: `_STATIC_DIR = Path(__file__).resolve().parent / "static"` and the `read_bytes()` call at line 287. The plan's Approach A (keep filesystem reads, declare package-data) is correct — setuptools unpacks wheels into `site-packages`, so `Path(__file__)` resolves to the installed location and the static directory will be alongside the module. No `importlib.resources` change is needed unless the smoke test says otherwise.
+
+- **Shim pattern**: I verified all five shims. They all follow the same structure (ROOT/src splice + direct import). The try/except pattern in the plan is clean and correct. The plan correctly preserves `codex`'s `error_prefix="codex-observe"` kwarg.
+
+- **Entry points**: I verified `main_generic` signature at `observe.py:118` and `main` at `viewer/__main__.py:52`. The console script targets in the plan are accurate.
+
+- **Minor note on `ai-observe-viewer` console script target**: The plan specifies `ai-observe-viewer = "ai_observe.viewer.__main__:main"`. This is correct and will work. The `main` function accepts `argv=None` and parses `sys.argv` when called with no args — standard console-script-compatible pattern.
+
+### 4. Testability
+
+**Strong.** The test strategy is layered:
+
+- **Phase 1**: Manual verification (build + inspect). Appropriate for a config-only phase — automated assertions come in Phase 3.
+- **Phase 2**: Unit tests for both shim branches (installed vs. fallback). The plan correctly identifies subprocess-driven testing to avoid import-cache bleed, which is the right call for testing import-fallback logic.
+- **Phase 3**: Full integration smoke suite. Key design decisions are sound:
+  - Session-scoped build fixture (build once).
+  - `--no-build-isolation --no-deps` for offline robustness (zero runtime deps makes `--no-deps` safe).
+  - Outside-checkout enforcement via temp CWD + scrubbed PYTHONPATH.
+  - Viewer HTTP test via `ViewerServer` + urllib — the existing `test_viewer_server.py` already demonstrates this pattern (line 47: `_open_sse`), so the approach is proven in this codebase.
+  - The hard static-asset test is clearly called out as the arbiter.
+
+**One consideration**: The plan says Phase 2 will author unit tests for shim branches. The builder should be aware that the existing shims use `if __name__ == "__main__"` guards, so `runpy.run_path()` or subprocess execution will be needed to exercise them. The plan already anticipates this ("Prefer subprocess execution") — good.
+
+### 5. Risk Assessment
+
+**Comprehensive.** The risk table covers the real risks:
+
+- The `package-data` footgun (the actual hard problem) is correctly identified as medium-probability, high-impact, and is mitigated by the Phase 1 wheel inspection + Phase 3 hard test.
+- The `dynamic` version `attr` under `src/` layout is a known gotcha — correctly called out and mitigated by the `where = ["src"]` discovery config.
+- PEP 639 + setuptools version pinning — correctly addressed.
+- Import-cache bleed for shim testing — correctly identified and mitigated.
+- Socket binding races for viewer HTTP tests — correctly mitigated with OS-chosen port + bounded retry.
+
+No significant risks are missing.
+
+### 6. Missing Steps or Concerns
+
+**None blocking.** Two minor observations:
+
+1. **`MANIFEST.in` decision**: The plan correctly says "add only if needed" and defers to sdist inspection. This is the right approach — modern setuptools with `pyproject.toml` + `license-files` + `package-data` should handle it. But the builder should know: if `LICENSE`/`NOTICE` don't appear in the sdist, `MANIFEST.in` with `include LICENSE NOTICE` is the fix. The plan already anticipates this.
+
+2. **Phase 2 shim test location**: The plan says tests go in `tests/` but doesn't name the file. This is a minor gap — the builder will need to decide (e.g., `tests/test_shim_resilience.py`). Not a blocker; just a naming decision.
+
+---
+
+**Overall**: This is an unusually thorough plan. Every codebase claim I verified (file paths, function signatures, static asset list, shim structure, strace gating logic) matched the actual source. The three-phase breakdown is clean, the dependency graph is correct, the technical approach is sound, and the test strategy is layered with appropriate rigor. A builder can follow this plan successfully.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, codebase-accurate plan with clean phase decomposition; all spec requirements covered, technical approach verified against source, no blocking issues.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

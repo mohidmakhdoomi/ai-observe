@@ -52,3 +52,18 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
      platform-failure, shim two-path matrix, wheel excludes tests.
 - Static-asset hardening (importlib.resources) is contingency only — Approach A keeps
   filesystem reads; the hard smoke test is the arbiter.
+- Architect confirmed: prefer install-from-sdist; hard static-asset test is the arbiter.
+
+### Plan phase — 3-way review done → GATE
+- Verdicts: Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES (HIGH).
+- Codex's two concrete points addressed:
+  1. No root README — `readme` now points at existing `docs/observe.md` (SPIR B owns docs
+     rewrite; minimal root README is the documented fallback).
+  2. sdist offline install — concrete recipe: wheel via `pip install --no-deps <wheel>`
+     (no network); sdist via pre-provision `setuptools>=77 wheel` then
+     `--no-build-isolation --no-deps`, guarded-skip + build-path-validation fallback.
+- Claude notes: named shim test file `tests/test_shim_resilience.py`; MANIFEST.in fallback
+  already anticipated.
+- Committed "[Spec 20] Plan with multi-agent review".
+- **STATE: plan-approval gate pending.** Will notify architect, STOP, wait for human
+  `porch approve 20 plan-approval`.
