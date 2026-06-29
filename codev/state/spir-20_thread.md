@@ -91,3 +91,25 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
   - No MANIFEST.in needed — license-files + package-data already ship everything.
 - 208 existing tests still pass. Build artifacts cleaned from worktree.
 - Signaling PHASE_COMPLETE via `porch done 20`; porch runs 3-way impl review then commits.
+
+### Phase 1 review — LESSON
+- iter1 impl review: Claude APPROVE (read working tree), but Gemini + Codex REQUEST_CHANGES
+  because the deliverables were UNTRACKED → outside the git-diff review scope.
+- **Lesson: the impl consult reviews the COMMITTED branch diff, not the working tree.**
+  Must `git add` + commit phase deliverables BEFORE signaling, then rebuttal + re-verify.
+- Fixed by committing pyproject/LICENSE/NOTICE (0477f54) + rebuttal. iter2: unanimous
+  APPROVE. porch advanced to phase_2.
+
+### Implement Phase 2 — resilient shims
+- Rewrote all 5 bin/* shims (ai-observe, claude, codex, gemini, opencode) to the
+  try-installed-import / except-fallback-to-checkout-src pattern. Preserved each entry call
+  (main_generic; main_shim("claude"/"gemini"/"opencode"); codex keeps
+  error_prefix="codex-observe").
+- New test: tests/test_shim_resilience.py (4 tests):
+  - In-process branch detection: sentinel ai_observe module proves the INSTALLED branch is
+    taken without prepending src; removing src proves the FALLBACK branch splices src and
+    resolves the real entry. (Skips fallback test if ai_observe is installed in the env.)
+  - Subprocess matrix: runs `python bin/<shim>` in installed (PYTHONPATH=src) and
+    bare-checkout (no PYTHONPATH, cwd outside repo) modes; uses AI_OBSERVE_DISABLE +
+    AI_OBSERVE_REAL_<X> + marker (existing house idiom) to prove dispatch reaches a target.
+- 212 tests pass (208 + 4). Committing deliverables BEFORE porch done (Phase 1 lesson).
