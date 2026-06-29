@@ -1,0 +1,20 @@
+id: '20'
+title: packaging-make-ai-observe-inst
+protocol: spir
+phase: specify
+plan_phases: []
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: pending
+  plan-approval:
+    status: pending
+  pr:
+    status: pending
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-29T13:45:54.022Z'
+updated_at: '2026-06-29T13:45:54.023Z'
