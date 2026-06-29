@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 1
-build_complete: true
+iteration: 2
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -45,5 +45,21 @@ history:
         verdict: APPROVE
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-20/codev/projects/20-packaging-make-ai-observe-inst/20-phase_1-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase_2
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-20/codev/projects/20-packaging-make-ai-observe-inst/20-phase_2-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-20/codev/projects/20-packaging-make-ai-observe-inst/20-phase_2-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-20/codev/projects/20-packaging-make-ai-observe-inst/20-phase_2-iter1-claude.txt
 started_at: '2026-06-29T13:45:54.022Z'
-updated_at: '2026-06-29T14:21:08.242Z'
+updated_at: '2026-06-29T23:29:53.290Z'
