@@ -257,6 +257,33 @@ gh issue view 42
 Update status as projects progress:
 - `conceived` → `specified` → `planned` → `implementing` → `committed` → `integrated`
 
+## Working with Project Labels
+
+If your project uses prefix-structured labels (e.g. `area/*`, `team/*`, `priority/*`) to organize issues, the recipes below are the architect-specific bulk operations — substitute `<prefix>` and `<value>` for your project's actual labels. (Skip this section if your project doesn't use prefix-structured labels.)
+
+**Operational recipes:**
+
+```bash
+# Confirm the current label vocabulary (use before any label op to catch drift)
+gh label list --search "<prefix>/"
+
+# Group: tally open issues by <prefix>/* label
+gh issue list --state open --limit 500 --json number,title,labels --jq \
+  'group_by([.labels[].name | select(startswith("<prefix>/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("<prefix>/")).name): \(length)"'
+
+# Edit: change a label on a single issue
+gh issue edit <N> --remove-label <prefix>/<old> --add-label <prefix>/<new>
+
+# Audit: find open issues with no <prefix>/* label
+gh issue list --state open --limit 500 --json number,title,labels \
+  --jq '.[] | select([.labels[].name] | any(startswith("<prefix>/")) | not) | "#\(.number) \(.title)"'
+
+# Bulk-move: relabel all open <prefix>/<old> issues to <prefix>/<new>
+for n in $(gh issue list --state open --limit 500 --label <prefix>/<old> --json number --jq '.[].number'); do
+  gh issue edit "$n" --remove-label <prefix>/<old> --add-label <prefix>/<new>
+done
+```
+
 ## Handling Blocked Builders
 
 When a builder reports blocked:
