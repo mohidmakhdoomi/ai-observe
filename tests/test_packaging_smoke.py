@@ -99,6 +99,15 @@ def _venv_script(venv: Path, name: str) -> Path:
 
 
 def setUpModule() -> None:
+    # The suite builds real artifacts with the running interpreter's build
+    # backend. Modern venvs ship without setuptools; skip clearly rather than
+    # erroring if it is unavailable here.
+    probe = _run([sys.executable, "-c", "import setuptools"])
+    if probe.returncode != 0:
+        raise unittest.SkipTest(
+            "packaging smoke tests require setuptools (PEP 517 build backend) in the "
+            "test interpreter; run with an interpreter that has setuptools installed"
+        )
     tmp = Path(tempfile.mkdtemp(prefix="aio-pkg-smoke-"))
     _STATE["tmp"] = tmp
     try:
@@ -183,7 +192,10 @@ class _ViewerProc:
                 with urllib.request.urlopen(self.url + path, timeout=5) as resp:
                     return resp.status, resp.read()
             except urllib.error.HTTPError as exc:
-                return exc.code, exc.read()
+                try:
+                    return exc.code, exc.read()
+                finally:
+                    exc.close()
             except urllib.error.URLError as exc:  # connection not ready yet
                 last = exc
                 time.sleep(0.1)
@@ -272,22 +284,30 @@ class ArtifactContentTests(unittest.TestCase):
         self.assertTrue(any(out.glob("*.whl")))
 
     def test_install_from_sdist_best_effort(self):
-        """Best-effort install-from-sdist (architect-preferred). Uses a
-        system-site venv so the build backend is available offline; skips if the
-        environment cannot build/install the sdist."""
+        """Best-effort install-from-sdist (architect-preferred) into a CLEAN
+        venv, pre-provisioning the build backend per the phase recipe. Skips if
+        the backend cannot be provisioned (e.g. offline)."""
         venv = _STATE["tmp"] / "sdist-venv"
-        r = _run([sys.executable, "-m", "venv", "--system-site-packages", venv])
+        r = _run([sys.executable, "-m", "venv", venv])
         if r.returncode != 0:
-            self.skipTest(f"could not create system-site venv: {r.stderr}")
+            self.skipTest(f"could not create venv: {r.stderr}")
         py = _venv_python(venv)
+        # Pre-provision the build backend in the clean venv (may need network).
+        prov = _run([py, "-m", "pip", "install", "setuptools>=77", "wheel"])
+        if prov.returncode != 0:
+            self.skipTest(f"could not provision build backend in clean venv (offline?):\n{prov.stderr}")
         r = _run([py, "-m", "pip", "install", "--no-build-isolation", "--no-index",
                   "--no-deps", _STATE["sdist"]])
         if r.returncode != 0:
-            self.skipTest(f"install-from-sdist not feasible offline here:\n{r.stdout}\n{r.stderr}")
-        check = _run([py, "-c", "import ai_observe; print(ai_observe.__version__)"],
+            self.skipTest(f"install-from-sdist not feasible here:\n{r.stdout}\n{r.stderr}")
+        check = _run([py, "-c", "import ai_observe; print(ai_observe.__version__); print(ai_observe.__file__)"],
                      cwd=_STATE["tmp"], env=_clean_env())
         self.assertEqual(check.returncode, 0, check.stderr)
-        self.assertEqual(check.stdout.strip(), "0.1.0")
+        version, location = check.stdout.split()
+        self.assertEqual(version, "0.1.0")
+        # Installed into the clean venv, not resolved from the checkout src/.
+        self.assertIn(str(venv), location)
+        self.assertNotIn(str(SRC), location)
 
 
 class InstalledPackageTests(unittest.TestCase):
@@ -353,6 +373,65 @@ class ViewerServingTests(unittest.TestCase):
                 self.assertTrue(body, f"GET {path} returned empty body")
         finally:
             viewer.stop()
+
+
+class InstalledShimMatrixTests(unittest.TestCase):
+    """The shim two-path matrix against the REAL installed artifact: run the
+    checkout bin/* shims with the venv interpreter (which has the wheel
+    installed) and assert both branches dispatch.
+
+    - installed path: venv interpreter sees the installed package -> try-branch.
+    - fallback path: ``-S`` hides the venv's site-packages, so the only way the
+      import succeeds is the checkout src/ fallback.
+    """
+
+    SHIMS = {
+        "ai-observe": None,  # generic: command supplied after `--`
+        "claude": "AI_OBSERVE_REAL_CLAUDE",
+        "codex": "AI_OBSERVE_REAL_CODEX",
+        "gemini": "AI_OBSERVE_REAL_GEMINI",
+        "opencode": "AI_OBSERVE_REAL_OPENCODE",
+    }
+
+    def _marker_tool(self, root: Path) -> Path:
+        tool = root / "marker-tool"
+        tool.write_text(
+            f"#!{sys.executable}\n"
+            "import os\n"
+            "open(os.environ['SHIM_MARKER'], 'w', encoding='utf-8').write('ran')\n",
+            encoding="utf-8",
+        )
+        tool.chmod(0o755)
+        return tool
+
+    def _dispatch(self, shim: str, *, isolated: bool) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            marker = root / "marker.txt"
+            tool = self._marker_tool(root)
+            env = _clean_env(PATH="", AI_OBSERVE_DISABLE="1", SHIM_MARKER=str(marker))
+            real_var = self.SHIMS[shim]
+            if real_var is None:
+                args = ["--", str(tool)]
+            else:
+                env[real_var] = str(tool)
+                args = []
+            cmd = [_STATE["py"], *(["-S"] if isolated else []), ROOT / "bin" / shim, *args]
+            # cwd is the temp dir (outside the checkout).
+            proc = _run(cmd, cwd=root, env=env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "ran")
+            self.assertNotIn("ModuleNotFoundError", proc.stderr)
+
+    def test_installed_interpreter_uses_installed_package(self):
+        for shim in self.SHIMS:
+            with self.subTest(shim=shim):
+                self._dispatch(shim, isolated=False)
+
+    def test_isolated_interpreter_falls_back_to_checkout(self):
+        for shim in self.SHIMS:
+            with self.subTest(shim=shim):
+                self._dispatch(shim, isolated=True)
 
 
 class RuntimeErrorPathTests(unittest.TestCase):

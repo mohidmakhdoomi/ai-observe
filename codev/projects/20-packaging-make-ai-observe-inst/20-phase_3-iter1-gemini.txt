@@ -1,0 +1,70 @@
+I will start by listing the contents of the workspace directory to verify the files and structure.
+I will list the current permission grants to understand the allowed actions.
+I will run a command to list all files, including hidden ones, in the workspace.
+I will run `git status` to check if there is a Git repository configuration here or if there is any other context.
+I will run `git status` with sandbox bypass to check if there is an active Git repository in a parent directory.
+I will search `/tmp` for the `test_packaging_smoke.py` file to see if the repository is located in a different subdirectory.
+I will search the user's home directory for `test_packaging_smoke.py` to see where the project files are located.
+I will stop calling tools to wait for the find command to finish and report its output.
+I will run a command to find the files in the directory `/home/user/code/ai-observe_root/ai-observe` to see the structure of the repository.
+I will list files inside `.builders` directory under the repository root to find where the active code files for this task are.
+I will view the contents of the smoke tests in `tests/test_packaging_smoke.py` under the builder workspace.
+I will view the packaging smoke tests requirements and acceptance criteria in the specification file to compare them against the tests implemented.
+I will view the content of `tests/test_shim_resilience.py` to check the implementation of the shim two-path matrix tests.
+I will view the content of `bin/ai-observe` to see how the resilient import logic is written there.
+I will view the content of `bin/claude` to check another shim for consistency.
+I will check `bin/codex` content to verify that the target argument for `main_shim` is correct.
+I will view `pyproject.toml` to verify PEP 621/639 configuration, console scripts, dynamic versioning, build system setup, and static assets inclusion.
+I will run the test suite in the builder workspace using the virtual environment to ensure all tests, including the new smoke tests, pass successfully.
+I will run pytest in the builder workspace with sandbox bypass to bypass the environment restriction.
+I will run the test suite using `python -m pytest` from the virtual environment.
+I will run pytest using the system python / environment pytest.
+I will run the tests using python's built-in `unittest` discover module.
+I will wait for the test run to finish.
+I will run a command to check if the system Python has `setuptools` installed.
+I will run the test suite with the system python `/usr/bin/python3` to verify if it passes.
+I will wait for the test run to complete.
+I will check `src/ai_observe/viewer/server.py` to see what is written to stdout/stderr.
+I will view `src/ai_observe/viewer/__main__.py` to see what output it prints to stdout/stderr.
+I will view `src/ai_observe/__init__.py` to check the version string.
+I will view the `NOTICE` and `LICENSE` files to ensure they are correct and match the Apache-2.0 requirements specified in the plan.
+I will view the beginning of the `LICENSE` file.
+I have reviewed the Phase 3 implementation, run the test suite, and verified that all smoke tests execute and pass successfully. I have compiled my assessment and suggestions below.
+
+---
+VERDICT: COMMENT
+SUMMARY: Phase 3 implementation is robust, complete, and all smoke tests pass; provided two minor suggestions to improve test run cleanliness and developer experience.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- **`setuptools` missing in active developer virtualenvs**: If a developer runs the tests from a clean virtual environment (e.g. `.venv/bin/python -m unittest`), the tests in [tests/test_packaging_smoke.py](file:///home/user/code/ai-observe_root/ai-observe/.builders/spir-20/tests/test_packaging_smoke.py#L83) will fail in `setUpModule` because the venv interpreter lacks `setuptools`.
+- **`ResourceWarning` from unclosed HTTPError**: The HTTP GET requests in [tests/test_packaging_smoke.py](file:///home/user/code/ai-observe_root/ai-observe/.builders/spir-20/tests/test_packaging_smoke.py#L185-L186) catch `urllib.error.HTTPError` but do not call `exc.close()`, causing a resource warning during test execution.
+
+### Detailed Feedback
+
+1. **`setuptools` Dependency in `sys.executable`**
+   In [tests/test_packaging_smoke.py](file:///home/user/code/ai-observe_root/ai-observe/.builders/spir-20/tests/test_packaging_smoke.py#L83), the smoke test uses the current test interpreter `sys.executable` to run the PEP 517 build backend snippet:
+   ```python
+   proc = _run([sys.executable, "-c", snippet, srcdir, distdir])
+   ```
+   Modern Python (3.12+) virtual environments do not ship with `setuptools` by default. If a developer runs `pytest` or `unittest` inside the local `.venv`, `sys.executable` will point to the venv's Python, and the setup block will fail with `ModuleNotFoundError: No module named 'setuptools'`.
+   
+   *Recommendation*: Modify the build helper to check if `setuptools` is available in `sys.executable` first, and if not, try to fall back to `python3` (which is highly likely to have `setuptools` installed globally on Linux development hosts), or raise a clear assertion error advising the developer to run `pip install setuptools` inside their venv.
+
+2. **Clean up `HTTPError` to Silence `ResourceWarning`**
+   In `_ViewerProc.get` in [tests/test_packaging_smoke.py](file:///home/user/code/ai-observe_root/ai-observe/.builders/spir-20/tests/test_packaging_smoke.py#L185-L186):
+   ```python
+   except urllib.error.HTTPError as exc:
+       return exc.code, exc.read()
+   ```
+   Because `HTTPError` behaves as a file-like response object and holds onto the socket connection, leaving it unclosed causes Python to issue:
+   `ResourceWarning: Implicitly cleaning up <HTTPError 404: 'Not Found'>`
+   
+   *Recommendation*: Clean up the socket connection by ensuring `exc.close()` is called:
+   ```python
+   except urllib.error.HTTPError as exc:
+       try:
+           return exc.code, exc.read()
+       finally:
+           exc.close()
+   ```

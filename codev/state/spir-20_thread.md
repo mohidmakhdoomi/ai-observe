@@ -151,3 +151,15 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
 - Static serving confirmed via Approach A (no viewer/server.py change needed — hard test
   green). importlib.resources NOT required.
 - Full suite: 232 tests pass (213 + 19). Committing before porch done (Phase 1 lesson).
+
+### Phase 3 review iter1 — Codex REQUEST_CHANGES (+Gemini COMMENT), all fixed
+- Claude APPROVE, Gemini COMMENT, Codex REQUEST_CHANGES.
+- Codex 1: phase_3 shim matrix must run against REAL install (not PYTHONPATH=src). Fixed:
+  added InstalledShimMatrixTests running bin/* with the venv interpreter (installed pkg)
+  and `venv/bin/python -S` (fallback to checkout src), all 5 shims, DISABLE+REAL+marker.
+- Codex 2: sdist install used --system-site-packages (masks reqs). Fixed: clean venv +
+  pre-provision `setuptools>=77 wheel` + `--no-build-isolation --no-index --no-deps`; skip
+  if offline; assert resolves to venv not src. RUNS here (network available).
+- Gemini 1: sys.executable may lack setuptools → setUpModule now SkipTest if absent.
+- Gemini 2: HTTPError not closed → added exc.close() in finally.
+- 234 tests pass (213 + 21). Rebuttal written. Commit, porch done → iter2 re-review.
