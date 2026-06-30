@@ -1,0 +1,44 @@
+I'll start by reading the key implementation files and the spec/plan/review documents in parallel.Let me find the actual file locations and read the key files in parallel.Now let me read the bin shims and verify a few more key files:Let me also check the commit history, test run status, and verify there's no `exc.name` edge case issue:Let me verify a few more things — the `.gitignore` additions, check for any debug code or TODOs, and verify the `exc.name` check logic against the actual `ModuleNotFoundError` behavior:Now let me check the branch state relative to main and quickly verify a few edge cases:Let me verify the `docs/observe.md` reference and the static assets exist:Good — all references are valid, all six static assets exist. Let me now do a final check on the entry points to make sure they reference real callables:All the pieces check out. Let me now do a final check — verify that the `exc.name` guard in the shims handles the nested import correctly. The key question: when `from ai_observe.observe import main_generic` triggers a `ModuleNotFoundError`, what's `exc.name`?Good — `exc.name` correctly yields the top-level package name (`ai_observe`) when the package doesn't exist, which matches the guard `if exc.name != "ai_observe": raise`. If a submodule like `ai_observe.observe` is missing (but `ai_observe` itself exists — a broken install), `exc.name` would be `ai_observe.observe`, which is != `ai_observe`, so it correctly re-raises.
+
+I've now reviewed all the critical files. Here is my assessment:
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, well-structured packaging PR that meets every spec acceptance criterion with thorough test coverage and no code quality issues.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Makes `ai-observe` installable via `pip install .` by adding `pyproject.toml` (PEP 621/639, setuptools, `src/` layout), Apache-2.0 `LICENSE`/`NOTICE`, resilient `bin/*` shims that prefer the installed package over checkout imports, and 26 new packaging smoke tests that prove the installed artifact works outside the source checkout. This is SPIR A of 2 — the follow-on (CI + test-reliability + docs) depends on the wheel this produces. Closes #20.
+
+  ## Key Changes
+  - **`pyproject.toml`**: PEP 621 metadata, `setuptools>=77` for PEP 639 SPDX license, dynamic version from `ai_observe.__version__`, two console scripts (`ai-observe`, `ai-observe-viewer`), viewer `static/*` as package-data, `tests/` excluded from wheel.
+  - **Apache-2.0 licensing**: Full `LICENSE` + one-line `NOTICE`, declared via PEP 639 (`license = "Apache-2.0"`, `license-files`), no legacy classifier.
+  - **Resilient `bin/*` shims**: All five shims (`ai-observe`, `claude`, `codex`, `gemini`, `opencode`) catch `ModuleNotFoundError` with a narrow `exc.name == "ai_observe"` guard — broken installs surface instead of silently falling back to checkout `src/`.
+  - **Packaging smoke tests**: 21 tests build a real wheel + sdist, install into a clean venv outside the checkout, and exercise console scripts, viewer static serving (hard criterion), `python -m`, shim two-path matrix, platform-failure simulation, and artifact content assertions. 5 shim-resilience tests cover installed/absent/broken-install branches both in-process and via subprocess.
+  - **Arch/lessons docs**: Added "Packaging and distribution" section to `arch.md` and three new lessons to `lessons-learned.md`.
+
+  ## Detailed Assessment
+
+  **Completeness**: All 17 spec acceptance criteria are met. The three plan phases (metadata+license, shims, smoke tests) are complete with proper commits. Review document exists at `codev/reviews/20-packaging-make-ai-observe-inst.md` and is comprehensive.
+
+  **Code Quality**: 
+  - The `exc.name` guard on `ModuleNotFoundError` is the right narrowing — verified that Python sets `exc.name` to the top-level package (`ai_observe`) when it's missing, and to the submodule name when a deeper import fails. This correctly distinguishes "package not installed" from "broken install."
+  - No debug code, no unresolved TODOs or `REVIEW:` comments in new files.
+  - `pyproject.toml` is well-structured with clear comments explaining design choices.
+  - Test code is clean, uses proper patterns (session-scoped build fixture, subprocess isolation, capability-gated skips with clear reasons).
+
+  **Test Coverage**: Excellent — 26 new tests covering artifact contents, installed-package behavior, viewer static serving, shim two-path matrix (in-process branch detection + subprocess), live observation (Linux-gated), and error paths. The `_ViewerProc` helper handles startup/teardown robustly with bounded retries and proper cleanup.
+
+  **Edge Cases**: Well-handled — ptrace denial detection, offline install robustness (`--no-index --no-deps`), sdist install with pre-provisioned backend, and the broken-install-surfaces test.
+
+  **Branch State**: Up to date with main. 41 commits ahead (includes porch state-machine commits alongside the 3 implementation phase commits).
+
+  ## Test Plan
+  - Run `python -m pytest tests/test_shim_resilience.py tests/test_packaging_smoke.py` on Linux with strace
+  - Verify `pip install .` + `ai-observe --help` in a clean venv
+  - Verify `ai-observe-viewer` serves static assets from the installed wheel outside the checkout
