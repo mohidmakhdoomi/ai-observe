@@ -197,3 +197,6 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
 - Temp verify dir cleaned; worktree clean.
 - Signaling verify ready via `porch done 20` → architect approves verify-approval gate.
   NOT running afx cleanup (architect's step).
+- verify-approval APPROVED. `porch next` → **status: complete, phase: verified**.
+- PROJECT 20 DONE. PR #22 merged to main; SPIR run fully verified. Awaiting architect to
+  close issue #20 + run afx cleanup. Worktree clean.
