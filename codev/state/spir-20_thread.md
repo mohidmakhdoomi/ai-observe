@@ -174,3 +174,10 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
   review) — not half-populated by this packaging spec.
 - Opened **PR #22** (base main) with all 3 phase-commits. Pushed builder/spir-20.
 - Notifying architect PR is up for integration review.
+- Builder 3-way PR review: Codex APPROVE, Claude APPROVE, Gemini lane timed out (agy env,
+  non-blocking). Architect ran independent full CMAP (all APPROVE) + approved + instructed
+  merge.
+- **PR #22 MERGED** (squash, base main) at 2026-06-30T00:07Z. Recorded via
+  `porch done 20 --merged 22`.
+- porch now at `pr` gate (human approval) → notified architect for
+  `porch approve 20 pr`. STOPPED, waiting. Next: verify phase.
