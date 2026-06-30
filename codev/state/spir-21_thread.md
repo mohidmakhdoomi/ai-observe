@@ -44,3 +44,8 @@ No change to core observation semantics.
   fail-loud-on-skip mechanism; _util.py import-mechanics note; line-240 stays fixed sleep.
   Committed "Plan with multi-agent review".
 - **GATE: plan-approval reached — STOPPED, waiting for human/architect approval.**
+- Architect asked to retry the Gemini plan consult for 3-way parity. Re-ran
+  `consult -m gemini --protocol spir --type plan` — **agy timed out again** (no response;
+  consult exited 0, artifact = skip message). No substantive Gemini feedback exists to fold
+  in. Plan review remains effectively 2-way (Codex COMMENT, Claude APPROVE), both folded.
+  Reported back to architect; staying parked at the gate.
