@@ -1,7 +1,7 @@
 id: '20'
 title: packaging-make-ai-observe-inst
 protocol: spir
-phase: verify
+phase: verified
 plan_phases:
   - id: phase_1
     title: Packaging metadata + Apache-2.0 license
@@ -34,7 +34,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-06-29T13:45:54.022Z'
-updated_at: '2026-06-30T00:09:51.208Z'
+updated_at: '2026-06-30T00:09:52.156Z'
 pr_history:
   - phase: review
     pr_number: 22
