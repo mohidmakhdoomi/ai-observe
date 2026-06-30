@@ -24,3 +24,9 @@ No change to core observation semantics.
     - `tests/test_codex_observe.py:116` `time.sleep(30)` is a fake-strace long-runner
       for signal-forwarding tests — intentional, terminated by signal; document, don't poll.
   - strace tests need ptrace; ubuntu-latest may need `kernel.yama.ptrace_scope=0`.
+- Spec drafted + committed. 3-way consult: Gemini APPROVE, Claude APPROVE, Codex COMMENT
+  (all HIGH, no blockers). Folded in: CI artifact-validation clarity (smoke harness is the
+  validator; CI must make it run not skip), import-shadowing pitfall, zero-deps fact,
+  consolidate the two existing poll helpers (`_wait_until`/`_wait_for`), 5th node-gated
+  file (breadcrumb). Committed "Specification with multi-agent review".
+- **GATE: spec-approval reached — STOPPED, waiting for human/architect approval.**
