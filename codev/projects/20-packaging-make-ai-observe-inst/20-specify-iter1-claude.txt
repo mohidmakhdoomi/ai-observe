@@ -1,0 +1,103 @@
+I'll review this spec by verifying its claims against the actual codebase. Let me read the key files referenced.Good — confirmed: `__version__` exists, all six static assets are present, all five bin shims exist, and no `pyproject.toml` yet. Let me now check the entry points and the viewer's static asset serving code.Good — confirmed `env_flag(env, "QUIET")` resolves to `AI_OBSERVE_QUIET`, so the spec's reference is accurate. Now let me check the `main` function signature for `viewer.__main__:main` to ensure the entry point mapping is correct:I've now verified all key claims in the spec against the actual codebase. Here's my review:
+
+---
+
+## Review: Specification 20 — Packaging: make ai-observe installable
+
+### 1. Completeness
+
+**Excellent.** The spec covers all necessary dimensions:
+
+- ✅ Requirements are structured with clear MUST/SHOULD prioritization across 6 functional areas
+- ✅ Acceptance criteria are exhaustive (17 checkboxes, all testable)
+- ✅ Edge cases handled: non-Linux installs, missing `strace`, viewer static-asset footgun, shim fallback
+- ✅ Scope is well-bounded — packaging only, with explicit non-goals (CI, docs, PyPI publishing)
+- ✅ The "hard criterion" for viewer asset serving is called out separately, which is smart given it's the highest-risk item
+
+### 2. Correctness
+
+I verified every factual claim against the codebase:
+
+| Claim | Verified |
+|-------|----------|
+| `__version__ = "0.1.0"` in `src/ai_observe/__init__.py` | ✅ Exact match (line 3) |
+| Entry point `ai_observe.observe:main_generic` | ✅ Function exists, signature `(argv=None, env=None) -> int` — compatible with console_scripts |
+| Entry point `ai_observe.viewer.__main__:main` | ✅ Function exists, signature `(argv=None) -> int` — compatible |
+| 6 viewer static assets | ✅ All 6 confirmed: `index.html`, `index.js`, `aggregator.js`, `table.js`, `treemap.js`, `style.css` |
+| `_STATIC_DIR = Path(__file__).resolve().parent / "static"` | ✅ Exact match at `server.py:35` |
+| 5 bin shims, all using `sys.path.insert(0, ROOT/"src")` | ✅ All 5 identical pattern |
+| `AI_OBSERVE_QUIET` suppresses warning | ✅ `env_flag(env, "QUIET")` → resolves to `AI_OBSERVE_QUIET` via prefix `AI_OBSERVE_` |
+| Linux/strace gating in `backends/strace.py` | ✅ Lines 42-50, raises with clear messages |
+| No existing `pyproject.toml` | ✅ Confirmed absent |
+| `src/` layout with `__init__.py` in `ai_observe`, `backends`, `viewer` | ✅ All three confirmed |
+
+**No contradictions found.** The spec's description of the current state is accurate.
+
+### 3. Feasibility
+
+**High confidence — all standard, well-trodden tooling:**
+
+- **setuptools + PEP 621 + `src/` layout**: Bread-and-butter Python packaging. No novel configuration.
+- **PEP 639 with `setuptools>=77`**: Supported since setuptools 77.0 (released). The `license = "Apache-2.0"` SPDX expression form works.
+- **Dynamic version via `attr`**: Standard setuptools feature (`[tool.setuptools.dynamic] version = {attr = "ai_observe.__version__"}`). No issues.
+- **Package data**: `[tool.setuptools.package-data] "ai_observe.viewer" = ["static/*"]` — straightforward. The `src/` layout auto-discovery will pick up all subpackages.
+- **Shim resilience**: `try: import ai_observe; except ImportError: sys.path.insert(...)` — trivial transformation of existing shims.
+- **Tests exclusion**: With `src/` layout, `tests/` at the repo root is outside the package tree, so auto-discovery won't include it. Explicit exclusion via `packages = {find = {where = ["src"]}}` makes this automatic.
+
+**No technical blockers identified.**
+
+### 4. Edge Cases and Error Scenarios
+
+**Well-covered:**
+
+- ✅ Non-Linux install succeeds but observation fails at runtime with clear error
+- ✅ Viewer asset serving verified in installed wheel outside checkout (the "hard criterion")
+- ✅ Shim dual-mode (installed vs checkout) with clear fallback semantics
+- ✅ sdist includes all necessary files (LICENSE, NOTICE, static assets)
+- ✅ Wheel excludes tests
+
+**One minor gap I'd note:** The spec doesn't explicitly address what happens when both an installed package AND a checkout exist simultaneously (e.g., editable install vs regular install vs `bin/*` shim). The shim resilience section says "prefer installed-package import, fall back to checkout `src/`" — but if someone does `pip install .` in the checkout and then modifies source, the installed version would be stale. This is standard Python packaging behavior though, not really a spec gap — an editable install (`pip install -e .`) would be the answer, and the spec doesn't need to prescribe it.
+
+### 5. Security Considerations
+
+- ✅ Sensitive-data warning preserved by default
+- ✅ Zero runtime dependencies (minimal supply chain)
+- ✅ Explicit `git add` convention preserved
+- ✅ No new network-facing code; viewer already binds `127.0.0.1` only
+
+No security concerns.
+
+### 6. Testing Strategy
+
+**Strong.** The smoke test section is well-designed:
+
+- Tests real built artifacts (wheel + sdist), not checkout source
+- Clean venv isolation outside the checkout
+- Covers the full critical path: build → install → CLI → viewer → asset serving
+- Session-scoped fixture for artifact building (SHOULD, not MUST — reasonable)
+- Platform-gated tests (Linux/strace) with clear skip reasons
+
+**One observation:** The spec wisely includes both "install from wheel" and "install from sdist" as smoke tests, with the fallback of "validate sdist build path" if install-from-sdist is too slow. This is pragmatic.
+
+### 7. Ambiguities
+
+**Very few — the spec is unusually precise.** The only items I'd note:
+
+1. **`--no-browser` flag existence**: The spec assumes `ai-observe-viewer --no-browser` exists for the smoke test. I've confirmed it does exist (viewer `__main__.py` line 36-39). ✅
+
+2. **`main` signature for console scripts**: Both `main_generic(argv=None, env=None)` and viewer's `main(argv=None)` are compatible with setuptools console_scripts. `main_generic` accepts `env` but it defaults to `os.environ`, so calling with no args works. ✅
+
+3. The open question about whether `importlib.resources` is needed — the spec correctly defers this to the smoke test as arbiter, which is the right call. `Path(__file__).parent / "static"` will work with setuptools wheel installs (they unpack to `site-packages/`).
+
+---
+
+**Overall Assessment:** This is an exceptionally well-written packaging specification. Every factual claim I verified against the codebase was accurate. The scope is clean, the acceptance criteria are testable, the risk surface (viewer static assets) is correctly identified and mitigated with the hard smoke test, and the baked decisions are reasonable and correctly honored throughout. A builder would know exactly what to build.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, accurate, and well-scoped packaging spec — all codebase claims verified, no technical blockers, testable acceptance criteria
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

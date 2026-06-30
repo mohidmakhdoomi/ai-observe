@@ -50,3 +50,15 @@ When a product gains a second default event source, old tests that were written 
 ## Make artifact authority explicit when recovery can yield multiple valid outputs
 
 If a recovery flow can leave behind canonical, partial, rebuilt, and diagnostic artifacts at the same time, encode authority in a machine-readable sidecar rather than relying on filename conventions or UI guesses. A small explicit metadata contract keeps CLI behavior, viewer selection, and follow-on tests aligned even when timeout rebuilds and parser-failure modes differ.
+
+## Prove src-layout package data from an installed wheel, not the checkout
+
+A `src/` layout with on-disk static assets (`Path(__file__).parent/"static"`) can pass every checkout test while the *wheel* 404s on those assets, because `package-data` / `include-package-data` was never declared. "It imports" and "the checkout serves it" do not prove "the wheel serves it." Guard the seam with a smoke test that installs the built wheel into a clean venv, runs **outside** the checkout (no `PYTHONPATH=src`), and HTTP-GETs the real static routes. Make the same test the arbiter for whether any `importlib.resources` change is even needed — setuptools installs wheels unpacked, so filesystem reads usually suffice once the data is declared.
+
+## Build each distribution kind in its own interpreter
+
+Calling `setuptools.build_meta.build_sdist` and `build_meta.build_wheel` in the *same* Python process leaves the second artifact unwritten (in-process setuptools/distutils state carries over). When building artifacts programmatically (e.g. in smoke tests without the `build` frontend), run each kind in its own subprocess. Likewise, modern venvs ship without `setuptools`, so an install-from-sdist must pre-provision the build backend in the clean venv (or skip clearly) rather than assuming `--no-build-isolation` will find one.
+
+## Scope import fallbacks to "package absent", not any ImportError
+
+A shim that prefers an installed package but falls back to a checkout path should catch `ModuleNotFoundError` and fall back **only** when the top-level package itself is missing (`exc.name == "<package>"`). Catching broad `ImportError` (or any `ModuleNotFoundError`) makes a broken/incomplete install silently resolve to the checkout copy, masking the real failure. Test all three states — installed, absent→fallback, and present-but-broken→surface — and force the fallback hermetically (a `sys.meta_path` blocker, or `python -S`) so the test holds even where the package is installed.

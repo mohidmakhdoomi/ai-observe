@@ -1,0 +1,78 @@
+I'll read the Phase 2 deliverables — the five `bin/*` shims and the test file. Let me also check the previous iteration's consultation feedback.The shims appear unchanged from their original form. Let me check the git state and find where the actual changes are.Let me look at the actual content of the changed files in this worktree.Good, I can see the actual committed versions. Let me now read the iter-1 consultation feedback and rebuttals to understand what was already discussed, and also verify the original shim patterns for comparison.Let me also check the Codex iter-1 review (the one that requested changes) to confirm all points were addressed, and verify the observe module to confirm entry points exist.Let me verify the entry points exist and the test suite passes in this worktree.All 5 test methods pass with 25 subtests. Let me also confirm the full existing test suite still passes and verify the `main_shim` signature to confirm the codex `error_prefix` arg is correct.All 213 tests pass (208 existing + 5 new), 114 subtests pass. The entry points are confirmed valid. Let me now do a final check on the `.gitignore` changes (part of Phase 2 scope).I've completed my full review of Phase 2. Here is my assessment:
+
+---
+
+## Phase 2 Review: Resilient checkout bin/* shims
+
+### Spec/Plan Adherence ✅
+
+All Phase 2 deliverables are met:
+
+1. **All five shims updated** with the try-installed/fallback-checkout pattern, using narrowed `ModuleNotFoundError` handling per the Codex iter-1 feedback.
+2. **Each shim's dispatch preserved exactly**: `ai-observe` → `main_generic()`, `claude/gemini/opencode` → `main_shim("<tool>")`, `codex` → `main_shim("codex", error_prefix="codex-observe")` — verified against the actual `observe.py` signatures.
+3. **Shebangs** (`#!/usr/bin/env python3`) and **`raise SystemExit(...)`** dispatch preserved.
+4. **Named shims remain checkout-only** — not converted to console scripts.
+5. **Fallback logic is inline per-file** — no new importable runtime module introduced (correct, since shims must work before the package is importable).
+6. **Test file `tests/test_shim_resilience.py`** delivered as planned.
+7. **`.gitignore`** updated with `*.egg-info/` and `build/` — appropriate housekeeping for the newly-buildable package.
+
+### Code Quality ✅
+
+The shim pattern is precise and well-commented:
+
+```python
+except ModuleNotFoundError as exc:
+    if exc.name != "ai_observe":
+        raise  # broken/incomplete install — surface, don't mask
+```
+
+This is a **meaningful improvement** over the plan's original `except ImportError` suggestion. Catching `ModuleNotFoundError` and checking `exc.name` ensures:
+- Missing top-level package (`exc.name == "ai_observe"`) → fall back to checkout ✓
+- Missing submodule in a broken install (`exc.name == "ai_observe.observe"`) → re-raise ✓
+- Import-time errors in installed code (e.g., `SyntaxError`) → not caught at all ✓
+
+Lazy imports (`sys`, `Path` inside the `except` block) keep the installed path zero-overhead. Docstrings explain the two-path behavior clearly.
+
+### Test Coverage ✅
+
+Two complementary layers, both well-designed:
+
+**Layer 1 — In-process branch detection** (`ShimImportBranchTests`): 3 test methods × 5 shims = 15 subtests
+- **Installed path**: Injects sentinel modules; asserts shim binds the sentinel and never touches `sys.path`.
+- **Fallback path**: `_AiObserveBlocker` meta-path finder hermetically forces the fallback **regardless of whether `ai_observe` is installed** — resolves the Codex iter-1 concern about tests skipping in installed environments.
+- **Broken install**: Proves re-raise when `ai_observe` exists but `ai_observe.observe` is absent.
+- `setUp`/`tearDown` properly save and restore `sys.path`, `sys.meta_path`, and `sys.modules`.
+
+**Layer 2 — Subprocess matrix** (`ShimSubprocessMatrixTests`): 2 test methods × 5 shims = 10 subtests
+- Uses `python -S` (drop site-packages) for fallback tests — hermetically forces the checkout path even if `ai_observe` is installed.
+- Uses `PYTHONPATH=src` for installed-mode tests.
+- Runs from temp directories outside the checkout (CWD independence).
+- Marker-tool pattern proves actual dispatch, not just import.
+
+**Total**: 5 methods, 25 subtests — all passing. Full suite: 213 tests, 114 subtests, no regressions.
+
+### Error Handling ✅
+
+- Exception narrowing (`ModuleNotFoundError` + `exc.name` check) is the right approach — it's more precise than `ImportError` while still being correct for all failure modes.
+- The fallback resolves `ROOT/src` from `__file__` (not CWD), ensuring CWD independence.
+- The `__name__ == "__main__"` guard prevents accidental dispatch during testing.
+
+### Codex iter-1 Resolution ✅
+
+Both `REQUEST_CHANGES` items fully addressed:
+1. **`except ImportError` too broad** → narrowed to `ModuleNotFoundError` with `exc.name` guard + `test_broken_installed_package_is_not_masked_by_fallback` proving the behavior.
+2. **Fallback tests not hermetic** → `_AiObserveBlocker` (in-process) + `-S` flag (subprocess) ensure both branches are deterministically exercised regardless of test environment state.
+
+### Minor Observations (non-blocking)
+
+1. The `PATH=""` in subprocess tests is aggressive but correct — `AI_OBSERVE_DISABLE=1` triggers passthrough before any PATH-based binary lookup, and the marker tool uses an absolute shebang.
+2. The `_AiObserveBlocker` design is elegant — it blocks `ai_observe*` until `src/` appears on `sys.path`, which is exactly what the shim's fallback does, so the test naturally exercises the full fallback flow including the real import at the end.
+
+---
+VERDICT: APPROVE
+SUMMARY: All five shims correctly narrowed from ImportError to ModuleNotFoundError with exc.name guard; hermetic two-layer tests prove both import branches plus the broken-install case; 213 tests pass with no regressions.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

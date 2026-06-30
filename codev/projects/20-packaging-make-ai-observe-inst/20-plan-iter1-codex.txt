@@ -1,0 +1,19 @@
+Using direct file inspection to verify the plan against the actual codebase.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong plan overall, but it misses one concrete repo reality and one test-harness detail that builders will need spelled out.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The plan assumes a `readme` can be declared in `pyproject.toml`, but this checkout has no `README*` file at repo root. Phase 1 should explicitly say whether it will add `README.md` or point metadata at an existing file such as `docs/observe.md`; otherwise a required packaging input is underspecified.
+- The sdist smoke path needs one more concrete step for offline/no-build-isolation installs: pre-provision the fresh venv with the build backend (`setuptools>=77`, and whatever else the chosen flow needs) before `pip install --no-build-isolation <sdist>`. The plan hints at this, but not concretely enough for a builder to execute reliably.
+
+Other than that, the plan aligns well with the spec and the current codebase I verified:
+- `src/` layout exists as described.
+- `bin/*` currently hard-splice `src/`.
+- viewer static files are exactly the six listed.
+- `ViewerServer` uses filesystem-based static serving, so the package-data approach is coherent.
+- `ai_observe.__version__ = "0.1.0"` exists.
+- `strace` runtime gating already emits the clear errors the spec references.
+
+The phase ordering and risk treatment are good; after the two clarifications above, this should be ready.

@@ -1,0 +1,55 @@
+I will start by viewing the `pyproject.toml` file to see how the metadata and PEP 621/639 settings are configured.
+I will list the contents of the workspace directory to verify the file locations.
+I will check the git status in the workspace directory to see the state of the repository and locate files.
+I will list the current permission grants to see what access I have.
+I will check the git status with sandboxing bypassed to see the repository state and the files.
+I will run a command to list all files and directories recursively up to 3 levels deep in the workspace to verify if there are any hidden or nested files.
+I will list directories matching `codev` in `/tmp` to see if there is a different worktree or target directory containing the project files.
+I will search for `pyproject.toml` in `/tmp` to locate the target project repository.
+I will check the files inside other `codev-consult-*` directories in `/tmp`.
+I will search inside `/tmp/codev-consult-vhZOM6` to see if the codebase resides there.
+I will search inside `/tmp/codev-consult-YsJ5yQ` to see if the codebase resides there.
+I will check `/tmp/codev-consult-Bc0MNS` next.
+I will check the files and subdirectories under `/home/user` to locate where the codev consult directories or workspace files are actually hosted.
+I will search `/home/user/code/ai-observe_root` to see if it is the target codebase repository.
+I will check the git status inside `/home/user/code/ai-observe_root/ai-observe` to see the actual changed files there.
+I will check the git branches in `/home/user/code/ai-observe_root/ai-observe` to see if there is another branch with the changes.
+I will list the git worktrees to see if the branch `builder/spir-20` is checked out in a different folder.
+I will search for the changed files inside `/home/user/code/ai-observe_root/ai-observe/.builders/spir-20`.
+I will check the git status and diff inside `/home/user/code/ai-observe_root/ai-observe/.builders/spir-20` to see if there are any uncommitted or committed changes on the `builder/spir-20` branch.
+I will read the `pyproject.toml` file from the worktree.
+I will view the `NOTICE` file.
+I will view the `LICENSE` file.
+I will list the modified files on the branch compared to the main branch using git to make sure we review all files modified in the PR.
+I will run `python -m build` to verify that the wheel and sdist build successfully and output files in `dist/`.
+I will locate python3 in the environment.
+I will run the build using `python3 -m build` to see if `build` package is installed.
+I will check if the build module is available in the virtualenv `.venv`.
+I will check the contents of the `.venv` directory to see if there is an interpreter.
+I will run the build using the virtual environment interpreter from the main repository.
+I will check the installed packages in the main repository's virtual environment.
+I will run `pip list` using python directly as a module to avoid shebang path issues.
+I will view the `CLAUDE.md` file to see how testing and building are typically run.
+I will run the existing unit tests via the virtual environment interpreter to ensure everything currently passes and that there are no regressions.
+I will check the status of the test suite execution.
+I will wait for the test suite task to complete.
+I will view `codev/state/spir-20_thread.md` to check the builder's implementation notes and logs.
+I will view the `__init__.py` file of the `ai_observe` package to verify the version matches "0.1.0".
+I will verify the version of setuptools installed in the virtual environment.
+I will check the version of setuptools in the system python.
+I will list the files in the static assets directory of the viewer module to verify they are all present.
+I will run a python command to parse `pyproject.toml` using `tomllib` to verify it is syntactically valid TOML.
+I will run `pip wheel` with no dependencies and no build isolation to test building the wheel from `pyproject.toml` using the system packages.
+I will inspect the contents of the built wheel to ensure the static assets and correct files are included, and that the `tests/` directory is successfully excluded.
+I will print the contents of `entry_points.txt` inside the wheel to verify the console scripts.
+I will clean up the temporary build files I generated.
+I will run a build again to extract and print only the metadata related to license expressions and classifiers, to make sure PEP 639 requirements are met exactly.
+Based on my direct inspection of the project files from disk (`pyproject.toml`, `LICENSE`, `NOTICE`) and verifying that a clean wheel build correctly packaging all static files, excludes the `tests/` directory, and respects PEP 639 metadata, I find the implementation of Phase 1 to be fully complete and compliant with both the specification and plan.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 (packaging metadata and license) is fully compliant, builds cleanly, and packages all required files.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

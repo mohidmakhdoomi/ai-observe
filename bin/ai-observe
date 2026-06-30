@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
-"""Generic ai-observe command wrapper."""
-from pathlib import Path
-import sys
+"""Generic ai-observe command wrapper.
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+Prefers the installed `ai_observe` package; falls back to the checkout `src/`
+directory only when the package is not importable, so the same shim works in
+both installed and source-checkout workflows.
+"""
+try:
+    from ai_observe.observe import main_generic
+except ModuleNotFoundError as exc:
+    # Fall back to the checkout src/ ONLY when the package itself is absent.
+    # A deeper import error (a broken/incomplete install) must surface rather
+    # than be masked by silently importing the checkout copy.
+    if exc.name != "ai_observe":
+        raise
+    import sys
+    from pathlib import Path
 
-from ai_observe.observe import main_generic
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from ai_observe.observe import main_generic
 
 if __name__ == "__main__":
     raise SystemExit(main_generic())

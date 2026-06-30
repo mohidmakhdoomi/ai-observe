@@ -1,0 +1,73 @@
+I need to read the actual changed files to review this phase. Let me start by reading the key deliverables and verifying against the codebase.The files aren't at the repo root — they're likely in the builder's worktree. Let me find them.Good — I'm inside the builder's worktree. The implementation files (`pyproject.toml`, `LICENSE`, `NOTICE`) are here. Let me read the key implementation files and verify against the spec/plan.Good. Now let me verify the codebase claims and check supporting files.Good — `__version__` is `"0.1.0"`, the entry points exist, and `docs/observe.md` exists. Now let me verify the viewer static assets and check for the `main` function in `viewer/__main__.py`, and also check if a `MANIFEST.in` was created.All six static assets confirmed. Entry point functions exist. No `MANIFEST.in` — let me verify whether that's okay by checking if the plan anticipated it. Now let me read the codev project files and status.Now let me verify the spec and plan files exist and read the consultation artifacts to ensure quality:Good — the in-checkout import works as expected. Now let me verify the build actually works and inspect artifact contents:Excellent. Now let me check the key acceptance criteria for Phase 1 more specifically — entry points, no `tests/` in wheel, metadata:Now let me verify the existing test suite still passes:Pytest isn't available in this environment. The builder's thread confirms 208 existing tests still pass. Let me check the remaining changed files for completeness:Now let me do a quick check on what the git diff actually shows for implementation files vs. just plan/spec files:Now I have the full picture. The three Phase 1 implementation files (`pyproject.toml`, `LICENSE`, `NOTICE`) exist in the worktree but are uncommitted (still `??` in git status). The builder's thread confirms the implementation is complete and verified. Let me do a final check of the `build/` and egg-info artifacts (those are from my verification build, not the builder's):Let me verify the long description from `docs/observe.md` was embedded correctly in the METADATA:Everything checks out. Let me clean up the build artifacts I created:Here is my review.
+
+---
+
+## Phase 1 Review: Packaging metadata + Apache-2.0 license
+
+### Spec Adherence
+
+I verified every Phase 1 acceptance criterion against the actual files and a real build:
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| `pyproject.toml` with PEP 621, setuptools, src layout, requires-python >=3.10 | ✅ | File verified line-by-line |
+| PEP 639: `license = "Apache-2.0"`, `license-files = ["LICENSE", "NOTICE"]`, setuptools>=77 | ✅ | pyproject.toml:15-16, build-system:3 |
+| No legacy Apache classifier | ✅ | METADATA confirmed; comment in pyproject.toml line 13-14 explicitly notes this |
+| `LICENSE` (full Apache-2.0) + copyright line | ✅ | 202-line file, `Copyright 2025-2026 Mohid Makhdoomi` at line 189 |
+| `NOTICE` (one-line attribution) | ✅ | 4 lines, proper attribution |
+| Zero runtime dependencies | ✅ | No `dependencies` key in pyproject.toml |
+| Console scripts = exactly `ai-observe` + `ai-observe-viewer` | ✅ | entry_points.txt verified from wheel |
+| No `claude`/`codex`/`gemini`/`opencode` scripts | ✅ | Only 2 entries in `[project.scripts]` |
+| Dynamic version from `ai_observe.__version__` | ✅ | `dynamic = ["version"]`, `attr = "ai_observe.__version__"` → resolves to `0.1.0` |
+| `packages.find where = ["src"]` | ✅ | pyproject.toml:48-49 |
+| Package-data ships all 6 static assets | ✅ | Wheel contains all 6 under `ai_observe/viewer/static/` |
+| Wheel excludes `tests/` | ✅ | No `tests/` paths in wheel contents |
+| LICENSE + NOTICE in wheel | ✅ | Under `ai_observe-0.1.0.dist-info/licenses/` |
+| `readme` points at existing `docs/observe.md` | ✅ | Long description correctly embedded in METADATA (line 28+) |
+| Project URLs (homepage, repository) | ✅ | pyproject.toml:34-36 |
+| Classifiers include `Operating System :: POSIX :: Linux` | ✅ | pyproject.toml:24 |
+
+### Code Quality
+
+The `pyproject.toml` is clean, well-commented, and follows PEP 621 conventions precisely. The comment explaining why the named shim binaries are not entry points (lines 38-40) is helpful for future contributors. The SPDX/PEP 639 comment (lines 13-14) prevents someone from accidentally adding the legacy classifier later.
+
+The `LICENSE` file is the standard, unmodified Apache-2.0 text with the copyright line in the appendix section — correct placement. The `NOTICE` file is appropriately minimal.
+
+No `MANIFEST.in` was needed — the build output confirms `license-files` and `package-data` declarations are sufficient to ship everything in both wheel and sdist. This aligns with the plan's "add MANIFEST.in only if an sdist inspection shows a gap" guidance.
+
+### Build Verification
+
+I independently built the wheel using `setuptools.build_meta` and confirmed:
+- Wheel name: `ai_observe-0.1.0-py3-none-any.whl` ✅
+- All 6 viewer static assets present ✅
+- No `tests/` directory in wheel ✅
+- LICENSE and NOTICE shipped under `dist-info/licenses/` ✅
+- `License-Expression: Apache-2.0` in METADATA ✅
+- Version `0.1.0` resolved dynamically ✅
+- `Requires-Python: >=3.10` ✅
+- Long description from `docs/observe.md` embedded correctly ✅
+
+### Test Coverage
+
+Phase 1's test plan specifies manual/inline verification (build + content inspection) with automated assertions deferred to Phase 3. This is appropriate — the builder verified the build and the 208 existing tests still pass (per their thread log). Formal automated smoke tests for artifact contents are Phase 3 scope.
+
+### Plan Alignment
+
+The implementation matches every Phase 1 deliverable in the plan:
+- `pyproject.toml` with all specified sections ✅
+- `LICENSE` + `NOTICE` ✅
+- No `MANIFEST.in` (not needed) ✅
+- No SPDX per-file headers (noted as optional/encouraged) ✅
+
+### Procedural Note
+
+The three implementation files (`pyproject.toml`, `LICENSE`, `NOTICE`) exist in the worktree but are not yet committed (git status shows them as `??` untracked). The builder's thread indicates they're signaling phase completion for the review gate — the commit presumably follows review approval. This is not a code issue; just noting it for completeness.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 deliverables are complete and correct — pyproject.toml, LICENSE, NOTICE all verified against spec with a successful wheel build proving all criteria (static assets packaged, tests excluded, PEP 639 license resolved, correct entry points).
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

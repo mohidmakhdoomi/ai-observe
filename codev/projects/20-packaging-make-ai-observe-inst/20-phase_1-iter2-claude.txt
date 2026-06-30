@@ -1,0 +1,64 @@
+I'll read the key Phase 1 deliverables and relevant source files to verify the implementation.The files are in a builder worktree. Let me find the correct paths.Good, the files are in the current working directory. Let me read all the Phase 1 deliverables.Good. Now let me verify the viewer static assets exist and check the existing entry point signatures referenced by pyproject.toml.Good, the entry points exist and match. Let me verify a few more things — check for MANIFEST.in, verify the build works, and inspect the artifact contents.Build succeeds. Now let me inspect the wheel and sdist contents to verify acceptance criteria.Now let me check the entry_points.txt and verify there's no legacy license classifier:Let me now verify the key negative criteria — no `tests/` in the wheel, and that existing tests still pass:All 208 existing tests pass. Let me also do a quick check — verify the version is correctly resolved and that `python -c "import ai_observe"` still works from the checkout:Now let me check the consultation files that are part of the changed file list to understand what prior reviewers flagged:I've completed a thorough review. Let me summarize my findings.
+
+## Phase 1 Review: Packaging metadata + Apache-2.0 license
+
+### Spec Adherence — ✅ Complete
+
+I verified every Phase 1 acceptance criterion against the actual built artifacts:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| PEP 621 + setuptools + src layout | ✅ | `pyproject.toml` lines 1-4, 48-49 |
+| `name = "ai-observe"` | ✅ | Line 7 |
+| `requires-python = ">=3.10"` | ✅ | Line 10 |
+| PEP 639: `license = "Apache-2.0"` | ✅ | Line 15; wheel METADATA shows `License-Expression: Apache-2.0` |
+| `license-files = ["LICENSE", "NOTICE"]` | ✅ | Line 16; wheel has `dist-info/licenses/LICENSE` and `licenses/NOTICE` |
+| `setuptools>=77` pinned | ✅ | Line 3 |
+| **No** legacy license classifier | ✅ | Verified in wheel METADATA — absent |
+| Zero runtime dependencies | ✅ | No `dependencies` key in pyproject.toml |
+| Dynamic version from `__version__` | ✅ | Line 46; resolves to `0.1.0` |
+| `packages.find where=["src"]` | ✅ | Lines 48-49 |
+| Console scripts: exactly `ai-observe` + `ai-observe-viewer` | ✅ | Lines 42-43; verified in wheel `entry_points.txt` |
+| No `claude`/`codex`/`gemini`/`opencode` scripts | ✅ | Not present in entry_points.txt |
+| All 6 viewer static assets in wheel | ✅ | All 6 files present in wheel listing |
+| No `tests/` in wheel | ✅ | Verified — zero `tests/` paths in wheel |
+| LICENSE + NOTICE in both wheel and sdist | ✅ | Wheel: `dist-info/licenses/`; sdist: root |
+| Classifiers inc. `POSIX :: Linux` | ✅ | Lines 17-30 |
+| Project URLs (SHOULD) | ✅ | Lines 34-36 |
+| Existing 208 tests pass | ✅ | Ran full suite: `208 passed` |
+
+### Code Quality — ✅ Excellent
+
+The `pyproject.toml` is clean, well-organized, and thoughtfully commented:
+- Comment on line 2 explains *why* `setuptools>=77` is pinned (PEP 639 SPDX)
+- Comment on lines 13-14 warns against adding the legacy license classifier
+- Comment on lines 38-40 explains *why* named shims aren't entry points
+- Comment on lines 51-52 documents the viewer static-asset strategy
+
+### LICENSE and NOTICE — ✅ Correct
+
+- `LICENSE`: full, unmodified Apache-2.0 text with `Copyright 2025-2026 Mohid Makhdoomi` at line 189.
+- `NOTICE`: minimal three-line attribution — project name, copyright, license reference. Appropriate for a zero-dependency project.
+
+### Design Decisions — ✅ Sound
+
+- **`readme = {file = "docs/observe.md"}`**: Good call per the plan — avoids creating a stub README that SPIR B would immediately replace, and the existing doc is substantive.
+- **No `MANIFEST.in`**: Correct — the build proved LICENSE/NOTICE/static assets ship without one. PEP 639's `license-files` and `package-data` cover everything.
+- **Sdist includes `tests/`**: This is fine — the spec's MUST is wheel exclusion only. Including tests in the sdist is standard practice.
+
+### Test Coverage — Phase-appropriate
+
+Phase 1's test plan explicitly defers automated artifact assertions to Phase 3. The builder's manual verification (build + inspect + test suite run) is the planned coverage for this phase. This is correct scoping.
+
+### Risk check: the viewer static-asset footgun
+
+The `package-data` declaration (`"ai_observe.viewer" = ["static/*"]`) correctly targets the `ai_observe.viewer` subpackage with a `static/*` glob. I confirmed all six assets appear in the wheel at their expected paths (e.g. `ai_observe/viewer/static/index.html`). The existing `Path(__file__).parent / "static"` serving path in `viewer/server.py` will resolve these from the installed site-packages location. The hard smoke test in Phase 3 will confirm end-to-end.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers a correct, complete, spec-compliant pyproject.toml + Apache-2.0 license; wheel/sdist build cleanly with all required contents; all 208 existing tests pass.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

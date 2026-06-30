@@ -139,6 +139,33 @@ The browser aggregation model keeps filtering client-side:
 - source-visibility changes replay that buffer
 - rebuild / partial artifact switching reconnects to the selected artifact stream, not to raw trace data
 
+## Packaging and distribution
+
+`ai-observe` is an installable package (Spec 20), not only a checkout:
+
+- PEP 621 metadata in `pyproject.toml`, `setuptools` backend, `src/` layout,
+  `requires-python >=3.10`. Version is single-sourced from `ai_observe.__version__`
+  via `[tool.setuptools.dynamic]`.
+- License is **Apache-2.0** declared with PEP 639 (`license = "Apache-2.0"`,
+  `license-files = ["LICENSE", "NOTICE"]`); the build backend is pinned `setuptools>=77`
+  so the SPDX expression resolves. No legacy `License ::` classifier.
+- Default console scripts are **only** `ai-observe` (`ai_observe.observe:main_generic`)
+  and `ai-observe-viewer` (`ai_observe.viewer.__main__:main`). The named tool shims
+  (`claude`/`codex`/`gemini`/`opencode`) are deliberately **not** entry points — they would
+  shadow real tools — and remain checkout-only `bin/*` scripts.
+- The checkout `bin/*` shims prefer the installed package and fall back to splicing the
+  checkout `src/` onto `sys.path` only when the top-level package is absent
+  (`except ModuleNotFoundError` with `exc.name == "ai_observe"`), so a broken/incomplete
+  install surfaces instead of being masked.
+- Viewer static assets (`viewer/static/*`) ship as `package-data`. Serving still reads them
+  from disk via `Path(__file__).parent/"static"`; setuptools installs wheels unpacked, so
+  this resolves in an installed wheel without `importlib.resources`. The guarantee is held by
+  a smoke test that serves `/static/*` from a clean-venv wheel install **outside** the
+  checkout (the src-layout `package_data` footgun).
+- Installation may succeed off-Linux; live observation stays Linux+`strace`-only and fails
+  with a clear runtime error (see Backend selection). `tests/` ships in the sdist but is
+  excluded from the wheel.
+
 ## Deferred kernel backends
 
 The backend seam is specifically meant to keep future options possible:

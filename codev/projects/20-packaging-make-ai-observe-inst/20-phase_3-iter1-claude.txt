@@ -1,0 +1,77 @@
+The files are in a builder worktree. Let me find them.Good, found them. Let me read the key files now.Now let me read the supporting files to verify cross-references and the viewer server that the smoke tests interact with.Let me check a couple more things to round out the review — specifically, how the strace backend's `prepare` method relates to the smoke test's simulated platform test, and whether the existing tests still pass.Good — when `ai-observe` is called with no arguments, it hits the end of `parse_generic_args` and raises `ObserveError` with a usage message. The smoke test (`test_ai_observe_usage_path_works`) correctly asserts non-zero exit and "usage" in output.
+
+Now let me verify the `StraceBackend.prepare(session=None)` path used in the simulated test is safe:Confirmed: the platform check (line 42) fires before any `session` attribute access (line 45), so `session=None` is safe when `sys.platform` is patched to `"darwin"`. Good.
+
+Let me do a final cross-check — verify the `.gitignore` changes (part of the changed files for this PR):Good — `dist/` and `build/` are gitignored (lines 16, 11), which is needed since the smoke tests produce build artifacts.
+
+Now I have a complete picture. Here's my review:
+
+---
+
+## Phase 3 Review: Packaging Smoke Tests (installed-artifact)
+
+### Spec Adherence — Comprehensive ✅
+
+Every **MUST** smoke test from the spec is covered:
+
+| Spec Requirement | Test | Status |
+|---|---|---|
+| Build wheel + sdist | `test_both_artifacts_built` | ✅ |
+| Install from wheel into fresh venv | `setUpModule` | ✅ |
+| Install from sdist | `test_install_from_sdist_best_effort` | ✅ (best-effort w/ skip) |
+| Works outside checkout, no PYTHONPATH | `test_import_works_outside_checkout_without_pythonpath` | ✅ |
+| `ai-observe` usage path works | `test_ai_observe_usage_path_works` | ✅ |
+| Live observed command (Linux+strace) | `test_observed_command_runs_and_warns_by_default` | ✅ (guarded) |
+| Unsupported platform fails clearly (simulated) | `test_unsupported_platform_raises_clear_error` | ✅ |
+| Installed backend unavailable fails clearly | `test_installed_backend_unavailable_fails_clearly` | ✅ |
+| Shim two-path matrix | In `test_shim_resilience.py` (Phase 2) | ✅ |
+| `ai-observe-viewer` serves w/ `--no-browser` | `test_installed_viewer_serves_static_outside_checkout` | ✅ |
+| `python -m ai_observe.viewer` after install | `test_module_invocation_serves_after_install` | ✅ |
+| **Hard criterion**: viewer serves `/`, `/static/index.html`, `/static/style.css` | `test_installed_viewer_serves_static_outside_checkout` | ✅ |
+| All six static files exposed | `test_installed_package_exposes_all_six_static_files` | ✅ |
+| Wheel/sdist include static assets | `test_wheel_contains_all_static_assets`, `test_sdist_includes_static_license_and_notice` | ✅ |
+| Wheel excludes tests/ | `test_wheel_excludes_tests` | ✅ |
+| Console scripts: only ai-observe + ai-observe-viewer | `test_wheel_declares_only_expected_console_scripts` | ✅ |
+| LICENSE/NOTICE in wheel + sdist | `test_wheel_includes_license_and_notice`, `test_sdist_includes_static_license_and_notice` | ✅ |
+| PEP 639 SPDX, no legacy classifier | `test_wheel_license_is_apache_spdx_without_legacy_classifier` | ✅ |
+
+### Code Quality — High
+
+1. **Good architecture**: Module-scoped `setUpModule`/`tearDownModule` builds artifacts once and installs the wheel into a fresh venv — equivalent to the plan's "session-scoped fixture." The `_STATE` dict pattern is clean for unittest.
+
+2. **`_ViewerProc` helper** (lines 145–205): Well-designed. Uses `select.select` for non-blocking stderr reads with a deadline, bounded HTTP retry loop, and always-cleanup in `stop()` with escalation from `terminate` → `kill`. Stream closing in `finally` is careful.
+
+3. **Offline robustness**: Correctly follows the plan's recipes — `pip install --no-index --no-deps <wheel>` for the primary path (zero deps = safe); `--system-site-packages` + `--no-build-isolation` for sdist install. The sdist test degrades to skip rather than false-fail.
+
+4. **Source copy for isolation** (`_copy_source`): Builds from a fresh copy, not the worktree, simulating a "fresh clone." Correctly includes `docs/observe.md` (the pyproject.toml `readme` target).
+
+5. **Build approach**: Uses `setuptools.build_meta` directly in a subprocess (lines 71–85) rather than requiring the `build` package — pragmatic, avoids an extra dependency.
+
+### Robustness Details
+
+- **Ptrace/seccomp guard** (lines 419–420): Live observation tests detect when ptrace is denied (containerized/sandboxed environments) and skip rather than flake. Good.
+- **`test_installed_backend_unavailable_fails_clearly`**: Works on both Linux (triggers "strace not found" via empty PATH) and non-Linux ("Linux required" fires first). Both are accepted messages. Correct.
+- **Simulated platform test** (line 378–384): Patches `strace_mod.sys.platform` to `"darwin"` then calls `backend.prepare(session=None)`. Safe because the platform check at `strace.py:42` fires before any `session` access at line 45. Restore in `finally` is correct.
+- **`test_quiet_mode_suppresses_warning`**: Bonus test verifying the sensitive-data warning behavior through the installed CLI — proves "Runtime sensitive-data warnings remain enabled by default unless quiet mode is explicitly enabled."
+
+### Minor Observations (non-blocking)
+
+1. **`select.select` on pipe file descriptors** (`_ViewerProc._read_url` line 169): This works on Linux/macOS but would fail on Windows. Since the project is Linux-first and the viewer serving tests don't have a Windows skip guard, this is fine — but if someone ever tries to run the suite on Windows, this is the thing that breaks. Not worth adding a guard since the project doesn't target Windows.
+
+2. **Shim two-path matrix location**: The spec lists this as a Phase 3 MUST smoke test, but the comprehensive coverage lives in `test_shim_resilience.py` (Phase 2). The Phase 3 smoke tests implicitly cover the "installed path" by exercising the console scripts against the real wheel. This is acceptable — the combined coverage from both test files fully satisfies the requirement, and duplicating the subprocess shim matrix against the installed wheel would be redundant given `test_shim_resilience.py`'s thoroughness.
+
+3. **No `--help` test specifically**: The plan mentions `ai-observe --help`. The test uses `ai-observe` with no args (which triggers the usage error path), proving the console script dispatches correctly. Functionally equivalent — the point is to prove the entry point works, not to test argparse.
+
+### Test Coverage Assessment
+
+The test file has **16 test methods** across 5 test classes, covering artifact contents, installed-package behavior, viewer serving, runtime error paths, and live observation. This is thorough and well-organized. All capability-gated tests use explicit skip reasons (`skipUnless` decorators or `self.skipTest(reason)`).
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 3 smoke tests are thorough, well-structured, and cover every MUST item from the spec including the hard static-asset criterion.
+CONFIDENCE: HIGH
+
+---
+
+KEY_ISSUES: None

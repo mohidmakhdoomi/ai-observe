@@ -1,0 +1,73 @@
+I will view the plan file to understand the scope and acceptance criteria for `phase_2`.
+I will list the workspace directory contents to verify the structure and locate the files.
+I will check the active permission grants to see what we can access.
+I will run a command to list all files in the workspace to see if files exist but were not captured by list_dir.
+I will run `git status` to see what git repository context we are in.
+I will run `ls -la` to see if there are hidden files or directories in the workspace.
+I will check the environment variables to locate the correct directory or find any other relevant path.
+I will run `ls -la /tmp` to inspect what files are present in the temporary directory.
+I will run `ls -la /home/user/code/codev_root/codev` to check if the repository is located there.
+I will run a command to display `/tmp/codev-role-1782775828064.md` to see if it contains context about our role or the workspace.
+I will run `ls -la` with BypassSandbox set to true to check if the repository files are visible when executing outside the sandbox.
+I will check the path `/home/user/code/codev_root/codev` by listing its contents outside the sandbox.
+I will check the git status of the project root `/home/user/code/codev_root/codev` to find where the implementation code for this phase is located.
+I will list the contents of `/home/user/code/codev_root/codev/codev` to check if that is where the files are located.
+I will list `/home/user/code/codev_root` to see what repositories are cloned alongside it.
+I will run `ls -la` on `/home/user/code/codev_root/tmp` to see if the work tree or temporary checkouts are there.
+I will search the filesystem for `test_shim_resilience.py` to locate the workspace where the files are.
+I am waiting for the file search to complete.
+I will list the contents of the `/home/user/code/ai-observe_root/ai-observe` directory to verify the workspace structure.
+I will run `git status` inside `/home/user/code/ai-observe_root/ai-observe` to see the current branch and working tree state.
+I will list all local and remote branches in the `ai-observe` repository to see if the implementation is on another branch.
+I will run `git worktree list` to see where the branch `builder/spir-20` is checked out.
+I will list the files in the `builder/spir-20` worktree.
+I will view the modified `bin/ai-observe` shim file in the `spir-20` worktree.
+I will view the `bin/claude` shim file to check its implementation.
+I will view the `bin/codex` shim file.
+I will view the `bin/gemini` shim file.
+I will view the `bin/opencode` shim file.
+I will view the new test file `tests/test_shim_resilience.py` to see the test coverage for the resilient shims.
+I will run the shim resilience tests using pytest in Standard Sandbox Mode.
+I will run the shim resilience tests using pytest with BypassSandbox set to true.
+I will run pytest using the project's virtual environment.
+I will run the shim resilience tests using the main worktree's virtual environment.
+I will list the binaries in the virtual environment directory to see what is available.
+I will run the shim resilience tests using Python's built-in `unittest` module in the virtual environment.
+I will run the unittest by specifying the module name relative to the worktree directory.
+I will run all tests in the test suite using Python's `unittest` module to ensure that our changes did not break any existing tests.
+I am waiting for the full test run to complete.
+I will view the original `bin/claude` shim from the main branch/worktree to compare it.
+I will view the original `bin/codex` shim.
+I will view the original `bin/gemini` shim.
+I will view the original `bin/opencode` shim.
+I will list the `20-packaging-make-ai-observe-inst` directory inside the project worktree to see if there is any existing review/rebuttal context for `phase_2`.
+I will view `20-phase_2-iter1-rebuttals.md` to see if there are any previous comments, concerns, or rebuttals regarding the phase_2 implementation.
+I will view `20-phase_2-iter2-context.md` to see if there is any further context for iteration 2.
+I will view `20-phase_2-iter2-codex.txt` to see the results of Codex's review of iteration 2.
+I will view `pyproject.toml` to see if there are any configuration dependencies or issues related to the shims.
+I will check the permissions of the shims in the `bin/` directory to ensure they are executable.
+I have reviewed the implementation of **Phase 2 (Resilient checkout bin/* shims)** on the `builder/spir-20` branch, verifying the codebase directly against the specification and plan.
+
+### Review Details
+
+1. **Spec Adherence & Plan Alignment**: 
+   - All five shims (`ai-observe`, `claude`, `codex`, `gemini`, `opencode`) correctly implement the try-installed-then-fallback pattern.
+   - The fallback is scoped narrowly to catch `ModuleNotFoundError` only when the top-level `ai_observe` package itself is absent (`exc.name == "ai_observe"`), allowing deeper import errors in a broken/incomplete installation to surface immediately rather than being silently masked.
+   - The original entry point targets and command-dispatch behaviors are fully preserved.
+
+2. **Code Quality & Maintenance**:
+   - The code is clean, idiomatic, and highly readable.
+   - File modes are correctly configured as executable (`-rwxr-xr-x`).
+
+3. **Test Coverage**:
+   - The test coverage in [test_shim_resilience.py](file:///home/user/code/ai-observe_root/ai-observe/.builders/spir-20/tests/test_shim_resilience.py) is exceptionally thorough, employing a meta-path importer blocker (`_AiObserveBlocker`) to hermetically test both the installed and fallback branches within the same process.
+   - It also runs subprocess execution matrix tests using `python -S` to guarantee checkout-fallback isolation, and tests that a broken install fails cleanly.
+   - All tests (both the 208 existing tests and the new shim resilience tests) pass successfully.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 is fully implemented and tested, with robust, narrow fallback logic in all shims and highly hermetic tests.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

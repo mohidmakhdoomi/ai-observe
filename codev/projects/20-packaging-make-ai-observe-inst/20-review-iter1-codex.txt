@@ -1,0 +1,25 @@
+Using direct file inspection to review the PR against the actual spec/plan and changed code.---
+VERDICT: APPROVE
+SUMMARY: The PR appears complete and well-aligned with the spec/plan; packaging, shim behavior, and installed-artifact coverage are all thoughtfully implemented.
+CONFIDENCE: MEDIUM
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR makes `ai-observe` installable as a standard Python package without changing its core observation behavior. It adds packaging metadata and licensing, hardens the checkout shims to prefer installed imports, and introduces smoke tests that validate the installed artifact outside the source tree.
+
+  ## Key Changes
+  - Added `pyproject.toml` with setuptools/PEP 621/639 metadata, dynamic versioning, package data for viewer static assets, and the `ai-observe` / `ai-observe-viewer` console scripts.
+  - Added Apache-2.0 `LICENSE` and `NOTICE`, and updated `bin/*` shims to fall back to `src/` only when the top-level `ai_observe` package is absent.
+  - Added packaging-focused tests covering wheel/sdist contents, installed viewer static serving, real-install invocation paths, runtime error clarity, and shim branch behavior.
+
+  ## Test Plan
+  - Run `python3 -m unittest -q tests.test_shim_resilience tests.test_packaging_smoke`
+  - Build and inspect artifacts from `pyproject.toml`
+  - Install the built wheel into a clean venv outside the checkout and verify `ai-observe`, `ai-observe-viewer`, and `python -m ai_observe.viewer`
+
+Notes:
+- I verified the implementation against the actual spec, plan, review doc, shims, `pyproject.toml`, and the new tests on disk.
+- I could not fully reproduce the smoke suite in this sandbox because the environment has no usable writable temp directory, but the test design and code path coverage look sound, and the PR is otherwise PR-ready.

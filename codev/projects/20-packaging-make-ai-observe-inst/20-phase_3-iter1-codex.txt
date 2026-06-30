@@ -1,0 +1,9 @@
+Using filesystem reads to verify the actual phase_3 implementation and tests.Running the phase_3 smoke test module to verify behavior against real built artifacts.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 adds strong installed-artifact coverage, but it misses the real-install shim matrix promised for this phase and weakens the sdist install check with `--system-site-packages`.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/test_packaging_smoke.py` does not implement the phase_3 “shim two-path matrix” against a real install. The only shim matrix coverage is in `tests/test_shim_resilience.py`, and its “installed” branch is simulated with `PYTHONPATH=src`, not an installed wheel/venv (`tests/test_shim_resilience.py:217-241`). Phase 3 explicitly called for proving the shim paths against the installed artifact.
+- The sdist install check is not a fresh venv install as planned/spec’d; it uses `python -m venv --system-site-packages` and relies on ambient host packages instead of pre-provisioning the backend in a clean venv (`tests/test_packaging_smoke.py:274-289`). That can mask missing build/install requirements and does not match the documented phase_3 recipe.
