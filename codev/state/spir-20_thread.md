@@ -181,3 +181,19 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
   `porch done 20 --merged 22`.
 - porch now at `pr` gate (human approval) → notified architect for
   `porch approve 20 pr`. STOPPED, waiting. Next: verify phase.
+
+### Verify phase
+- pr gate approved. PR #22 already merged (squash). Fetched origin/main — contains the
+  packaging files, identical to worktree (no diff).
+- END-TO-END VERIFY (built wheel from merged source → fresh venv → OUTSIDE checkout, no
+  PYTHONPATH):
+  - import ai_observe → 0.1.0, resolves to venv site-packages (not src). ✓
+  - `ai-observe` console script: usage path (rc 2) ✓; real strace observation captured a
+    schema-v2 `modify` event for the written file, sensitive-data warning on by default. ✓
+  - `ai-observe-viewer` console script: GET / + /static/{index.html,index.js,style.css}
+    all 200 with bytes. ✓
+  - `python -m ai_observe.viewer`: same, all 200. ✓
+  - HARD CRITERION confirmed live: static served from installed wheel outside checkout. ✓
+- Temp verify dir cleaned; worktree clean.
+- Signaling verify ready via `porch done 20` → architect approves verify-approval gate.
+  NOT running afx cleanup (architect's step).
