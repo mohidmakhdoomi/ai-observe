@@ -87,10 +87,22 @@ actually flake under the matrix; this list is evidence, not a fixed work order.
   poll loops (`src/ai_observe/observe.py`, `src/ai_observe/viewer/server.py`) sleep on
   their poll interval by design. These are not flakiness and must not be "fixed".
 - **Node-gated parity tests:** `tests/test_viewer_table_js.py`,
-  `tests/test_viewer_index_js.py`, `tests/test_viewer_treemap.py`, and
-  `tests/test_viewer_aggregator.py` call `shutil.which("node")` and `SkipTest` when absent.
-  Without Node in CI they **silently skip**, hiding JS/Python parity regressions — hence
-  the Node.js 20 requirement.
+  `tests/test_viewer_index_js.py`, `tests/test_viewer_treemap.py`,
+  `tests/test_viewer_aggregator.py`, **and `tests/test_viewer_breadcrumb.py`** (5 files)
+  call `shutil.which("node")` and `SkipTest` when absent. Without Node in CI they
+  **silently skip**, hiding JS/Python parity regressions — hence the Node.js 20
+  requirement. These parity tests drive the viewer's static `*.js` with `node` directly and
+  use only the Node standard library; there is no root `package.json`, so **no `npm
+  install` step is required** (the plan must confirm this still holds).
+- **Existing poll helpers to consolidate (not reinvent):** the suite already has **two**
+  near-identical poll-until helpers — `_wait_until()` in `tests/test_live_trace.py`
+  (timeout ~2.0s, interval ~0.02s) and `_wait_for()` in `tests/test_viewer_tailer.py`
+  (timeout ~3.0s, interval ~0.02s). The reliability work should **consolidate these into a
+  single shared helper** (e.g. `tests/_util.py`) and reuse it, rather than adding a third
+  variant. `tests/test_viewer_server.py` has ~7 fixed-sleep sites (around lines 153, 187,
+  221, 240, 313, 331, 344) that wait for tailer/SSE state that is queryable — the prime
+  conversion targets. `tests/test_packaging_smoke.py` already uses bounded retry +
+  deadline-based reads internally, so it is **not** a reliability target.
 - **Loopback HTTP:** viewer/server tests already bind `port=0` (ephemeral) and connect on
   `127.0.0.1`. CI must permit loopback HTTP. The ephemeral-port discipline is already in
   place; the plan should verify no fixed-port server bind remains in test/smoke paths.
@@ -174,22 +186,42 @@ matrix over `python-version: ["3.10", "3.12", "3.13"]` on `ubuntu-latest`. Each 
    `sudo sysctl kernel.yama.ptrace_scope=0` (with a guard/echo if the key is absent).
 4. Provision the build/test toolchain in the job venv (e.g. `pip install build` +
    whatever the smoke harness needs to build without isolation).
-5. **Run the unittest suite** from the source tree (`python -m unittest discover -s tests`
-   or the repo's existing invocation) — this is where Node-gated parity tests and
-   loopback/strace tests run for real.
-6. **Build** wheel + sdist, **install from the built artifact into a clean venv**, and run
-   the **installed-artifact smoke tests** (`tests/test_packaging_smoke.py`) so they
-   execute against the real install rather than skipping. The smoke harness already builds
-   internally; the workflow's job is to ensure its capability gates are *satisfied* (build
-   tooling present, online or pre-provisioned) so the smoke assertions actually run on at
-   least the matrix legs, rather than silently skipping.
+5. **Run the unittest suite.** `ai_observe` must be importable for the suite (it is the
+   package under test). The plan picks the mechanism — `pip install -e .` (editable) into
+   the job venv, or `PYTHONPATH=src` — matching whatever SPIR A's local runs use. This is
+   where Node-gated parity tests and loopback/`strace` tests run for real.
+6. **Build + validate the artifact.** Two related but distinct things, and the spec is
+   explicit about both because a reviewer flagged that they can be conflated:
+   - **(a) Artifact validation is the smoke harness's job, against a freshly built
+     artifact.** `tests/test_packaging_smoke.py` builds wheel + sdist in `setUpModule()`,
+     installs them into a **clean venv** (`--no-index --no-deps`), and runs the
+     installed-artifact assertions **outside the checkout** — which is precisely "build →
+     install from artifact in a clean venv → run smoke tests from the installed artifact".
+     The harness's clean-venv-outside-checkout subprocess design is what defeats the
+     **import-shadowing** pitfall (running from repo root would otherwise resolve
+     `import ai_observe` to `src/` instead of the install); CI must not undo this by, e.g.,
+     exporting `PYTHONPATH=src` into the smoke subprocesses.
+   - **(b) CI's job is to make that harness actually *run*, not skip.** The harness is
+     capability-gated (it skips cleanly when build tooling is absent or it cannot provision
+     offline). CI must satisfy those gates — provision the build backend / `build` and any
+     install tooling — so the smoke assertions execute on the matrix, and a **silent skip
+     must not be mistakable for a pass** (surface skip counts; the plan decides whether to
+     hard-fail on an unexpected smoke skip).
+   - **Run placement:** because `test_packaging_smoke.py` lives under `tests/`, a plain
+     `unittest discover -s tests` already includes it. The plan must choose **one** of:
+     (i) run the whole suite once via discover (smoke included), or (ii) exclude smoke from
+     the main run and run it as a distinct, clearly-reported step — to avoid double-building
+     or a gated skip hiding in a large run. Zero runtime dependencies (confirmed by SPIR A:
+     "Zero runtime dependencies") means `--no-deps` clean-venv installs are safe.
 
 - **Pros:** one source of truth; matrix gives the flakiness signal the issue wants;
   mirrors the real user path (build → install → run installed).
 - **Cons:** must ensure the smoke tests don't *skip* in CI (the whole point is to run them
   against the artifact); ptrace/sysctl handling must be robust across runner images.
-- **Risk:** runner image changes (apt, sysctl availability). Mitigated by guarding the
-  sysctl call and pinning action major versions.
+- **Risk:** runner image changes (apt, sysctl availability) and import shadowing if the
+  main-suite import mechanism leaks into smoke subprocesses. Mitigated by guarding the
+  sysctl call, pinning action major versions, and keeping the smoke harness's own clean-venv
+  isolation intact.
 
 **Approach B (rejected): two separate workflows (lint/test vs build/package).** More
 files, duplicated setup, and splits the "matrix reveals flakiness" signal. Rejected for
@@ -265,10 +297,11 @@ the rest.
 
 **Important (affect design):**
 1. Should CI **fail** if the installed-artifact smoke tests *skip* (e.g. build tooling
-   unexpectedly missing) rather than run? The intent of the issue is that they *run* in CI.
-   Default: make the CI environment satisfy the smoke harness's capability gates so they
-   run; if they cannot, surface it loudly (don't let a silent skip count as success).
-   Resolve in plan.
+   unexpectedly missing) rather than run? **Resolved (per consultation):** the intent is
+   that they *run* in CI. CI provisions the build backend so the harness's capability gates
+   are satisfied, and the workflow surfaces skip counts so a silent smoke skip cannot pass
+   as success; whether to hard-fail on an unexpected smoke skip is a plan-phase
+   implementation choice (bias: yes, fail loudly).
 2. Where does the release checklist live — `RELEASING.md`, a `README.md` section, or
    `docs/`? Default: `RELEASING.md`. Easily changed.
 3. Should `pyproject.toml`'s `readme` be repointed to the new root `README.md`? Default:
@@ -346,5 +379,33 @@ Derived directly from the issue's acceptance criteria. Each is verifiable.
 
 ## Consultation Log
 
-_(Populated during the 3-way consultation that porch runs after this draft. Reviewer
-feedback from Gemini / Codex / Claude and the resulting changes will be summarized here.)_
+### Specify iter 1 — 3-way (Gemini / Codex / Claude)
+
+**Verdicts:** Gemini APPROVE (HIGH), Claude APPROVE (HIGH), Codex COMMENT (HIGH). No
+blocking issues; all reviewers verified the spec's claims against the repo (no `.github/`,
+no `README.md`/`RELEASING.md`, `docs/viewer.md` shows checkout-style `PYTHONPATH=src`
+usage, umask assertion and timing sleeps exist as cited).
+
+**Changes made in response:**
+- **CI artifact validation clarified (Codex):** spec now states explicitly that the smoke
+  harness builds + clean-venv-installs + runs against the freshly built artifact (that *is*
+  the build→install→run-installed criterion), that CI's job is to satisfy the harness's
+  capability gates so it runs rather than silently skips, and that the plan must choose a
+  single run placement for `test_packaging_smoke.py` (inside `unittest discover` vs a
+  distinct reported step) to avoid double-building / skip-as-success.
+- **Import shadowing (Gemini):** documented as a CI pitfall; resolved by keeping the smoke
+  harness's clean-venv-outside-checkout isolation intact and not leaking `PYTHONPATH=src`
+  into smoke subprocesses; main suite gets `ai_observe` via editable install or
+  `PYTHONPATH=src` (plan picks).
+- **Dependencies (Gemini):** recorded that SPIR A confirmed **zero runtime dependencies**,
+  so `--no-deps` clean-venv installs are safe; noted JS parity tests use Node stdlib only
+  (no root `package.json`, no `npm install`) pending plan confirmation.
+- **Poll-helper consolidation (Claude):** spec now names the **two** existing helpers
+  (`_wait_until` in `test_live_trace.py`, `_wait_for` in `test_viewer_tailer.py`) to
+  consolidate rather than inventing a third, and the ~7 `test_viewer_server.py` sleep sites
+  as prime conversion targets.
+- **5th Node-gated file (Claude):** added `test_viewer_breadcrumb.py` to the Node-gated
+  list.
+- **Open question #1** (smoke skip = failure?) resolved in line with reviewer intent.
+
+Consultation artifacts: `codev/projects/21-ci-test-reliability-docs-relea/21-specify-iter1-{gemini,codex,claude}.txt`.
