@@ -91,7 +91,12 @@ Copied from the spec's acceptance criteria (the binding list):
 - [ ] `tests/test_viewer_server.py` fixed-sleep synchronization sites (~lines 153, 187,
       221, 240, 313, 331, 344) converted to poll-until-condition where the awaited state is
       queryable (SSE/tailer catch-up); any genuinely un-pollable wait left as a documented
-      fixed sleep.
+      fixed sleep. Note: the ~line-240 `time.sleep(0.3)` ("once both are likely subscribed")
+      waits for two SSE clients to subscribe — there is no easy queryable predicate for
+      "both subscribed", so this one is expected to **stay a documented fixed sleep**.
+- [ ] `tests/test_viewer_smoke_e2e.py` `time.sleep(0.1)` (~line 59) included in the audit:
+      convert to poll-until if the awaited state (server up / first event tailed) is
+      queryable, else classify and document as an intentional fixed wait.
 - [ ] `tests/test_codex_observe.py` directory-mode assertion made umask-independent: drop
       the exact `0o755` assertion on the **test-created** `obs` dir (or wrap that `mkdir`
       in an explicit `umask`), while **keeping** the product-set `0o600` assertions on
@@ -102,6 +107,12 @@ Copied from the spec's acceptance criteria (the binding list):
       long-runner; product poll loops are not test code and are unchanged).
 
 #### Implementation Details
+- **Import mechanics:** there is no `tests/__init__.py`, so `tests/` is not a package;
+  under `python -m unittest discover -s tests` the discovered modules import siblings as
+  top-level modules (`from _util import poll_until`). Verify this import resolves under the
+  exact invocation CI uses (Phase 2) before relying on it; if an editable install changes
+  `sys.path` ordering, confirm `_util` still resolves (it should, since discover adds the
+  start dir to `sys.path`).
 - Shared helper lives in `tests/_util.py`; signature unifies the two existing helpers
   (`_wait_until` timeout≈2.0/interval≈0.02 in `test_live_trace.py`; `_wait_for`
   timeout≈3.0/interval≈0.02 in `test_viewer_tailer.py`). Use the **more generous** timeout
@@ -170,12 +181,26 @@ Copied from the spec's acceptance criteria (the binding list):
       (kept in this PR per the issue's rationale).
 
 #### Implementation Details
-- **Run placement decision (from spec):** choose **one** of —
-  (i) run the whole suite once via `unittest discover -s tests` (smoke included), or
-  (ii) exclude `test_packaging_smoke.py` from the main discover run and run it as a
-  distinct, clearly-reported step. Bias: **(ii)** — run the main suite first, then run the
-  smoke module as its own step so its build/install/run is visible and a skip is obvious.
-  Document the chosen approach in the workflow.
+- **Run placement decision (from spec) — concrete mechanism:** use **(ii)**, two steps:
+  - **Main suite step**, excluding the smoke module so it isn't double-built. Concrete
+    options (pick one, document in-workflow): run discover but exclude smoke via
+    `python -m unittest discover -s tests -p 'test_*.py'` combined with either (a) a
+    dedicated pattern that omits `test_packaging_smoke.py` (rename-free approach:
+    enumerate modules, or run `discover` then a second explicit run), or (b) the simplest
+    robust form — `python -m unittest discover -s tests` minus smoke by passing an explicit
+    module list, or setting an env var the smoke module reads to self-skip in the main run.
+    Bias: keep it boring — run discover for everything **except** smoke by giving the main
+    step an explicit exclusion, and run smoke alone in the next step.
+  - **Smoke step**, explicit and visible: `python -m unittest tests.test_packaging_smoke`
+    (or `python -m unittest -v tests/test_packaging_smoke.py` per the repo's import style).
+  - **Fail-loud-on-skip mechanism (concrete):** capture the smoke step's result and fail
+    the job if it reports `OK (skipped=N)` with N>0 for the *core* installed-artifact cases.
+    Implementation options: (a) run with `-v` and `grep` the output for `... skipped` /
+    `OK (skipped=` and `exit 1` if matched on the smoke step; or (b) set an env flag (e.g.
+    `AI_OBSERVE_CI=1`) that the smoke harness's capability gate treats as "must run" so a
+    would-be skip becomes a failure. Bias: (a) is zero-product-code; (b) is cleaner but
+    edges toward changing the harness (SPIR-A territory) — default to (a) unless a tiny,
+    clearly-SPIR-B-scoped env check is acceptable. Document the chosen mechanism.
 - **Import shadowing guard:** the smoke harness already isolates itself in a clean venv
   outside the checkout; the workflow must **not** export `PYTHONPATH=src` into the smoke
   step's subprocesses. If the main suite uses `PYTHONPATH=src`, scope it to the main-suite
@@ -340,7 +365,17 @@ All three land as separate commits on `builder/spir-21` in one PR.
 - Avoid import shadowing → Phase 2 implementation detail.
 - Consolidate the two existing poll helpers, not invent a third → Phase 1 deliverable.
 
-**Plan Adjustments**: (to be populated after this plan's own 3-way review.)
+**Plan Adjustments** (after this plan's 3-way review — Codex COMMENT/HIGH, Claude
+APPROVE/HIGH, Gemini lane skipped/agy timeout):
+- **Codex #1** — added `tests/test_viewer_smoke_e2e.py` (`time.sleep(0.1)`) to Phase 1's
+  audit/conversion scope, and flagged the `test_viewer_server.py` ~line-240 two-SSE-client
+  sleep as an expected documented fixed sleep.
+- **Codex #2** — Phase 2 now specifies the concrete two-step run mechanism (main suite
+  excluding smoke + a distinct smoke step) and a concrete fail-loud-on-skip mechanism
+  (grep the smoke step output for skips and `exit 1`, vs. an env flag), with a bias toward
+  the zero-product-code grep approach.
+- **Claude** — added `tests/_util.py` import-mechanics note (no `tests/__init__.py`;
+  resolves under `discover`; verify under the CI invocation).
 
 ## Approval
 - [ ] Expert AI Consultation Complete (porch-run)
