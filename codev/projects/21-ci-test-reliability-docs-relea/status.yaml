@@ -1,7 +1,7 @@
 id: '21'
 title: ci-test-reliability-docs-relea
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-06-30T14:51:04.503Z'
+updated_at: '2026-06-30T14:51:09.331Z'
