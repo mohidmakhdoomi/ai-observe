@@ -163,3 +163,14 @@ Builder: spir-20 | Protocol: SPIR (strict) | Issue #20
 - Gemini 1: sys.executable may lack setuptools → setUpModule now SkipTest if absent.
 - Gemini 2: HTTPError not closed → added exc.close() in finally.
 - 234 tests pass (213 + 21). Rebuttal written. Commit, porch done → iter2 re-review.
+- iter2: unanimous APPROVE. porch advanced to REVIEW phase.
+
+### Review phase
+- Wrote codev/reviews/20-...md with required `## Architecture Updates` + `## Lessons
+  Learned Updates` sections (porch checks grep for these).
+- Updated COLD docs: arch.md (+"Packaging and distribution" section), lessons-learned.md
+  (+3 lessons: wheel-static footgun, build-each-kind-own-interpreter, narrow import
+  fallback). HOT placeholder files left for a dedicated governance pass (documented in
+  review) — not half-populated by this packaging spec.
+- Opened **PR #22** (base main) with all 3 phase-commits. Pushed builder/spir-20.
+- Notifying architect PR is up for integration review.
