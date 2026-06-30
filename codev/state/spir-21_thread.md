@@ -30,3 +30,17 @@ No change to core observation semantics.
   consolidate the two existing poll helpers (`_wait_until`/`_wait_for`), 5th node-gated
   file (breadcrumb). Committed "Specification with multi-agent review".
 - **GATE: spec-approval reached — STOPPED, waiting for human/architect approval.**
+- spec-approval APPROVED by architect.
+
+### Plan (in progress)
+- Plan drafted: 3 dependency-ordered phases in ONE PR —
+  1. Test reliability (shared `tests/_util.py` poll helper, sleep→poll conversions, umask
+     determinism in test_codex_observe.py).
+  2. CI (`.github/workflows/ci.yml`: ubuntu-latest × py3.10/3.12/3.13, strace + Node 20,
+     ptrace sysctl, suite + build + clean-venv install + installed-artifact smoke).
+  3. Docs (root README, align docs/observe.md + docs/viewer.md, RELEASING.md).
+- 3-way consult: Codex COMMENT (HIGH), Claude APPROVE (HIGH), Gemini skipped (agy timeout).
+  Folded in: added test_viewer_smoke_e2e.py to Phase 1 scope; concrete CI run-placement +
+  fail-loud-on-skip mechanism; _util.py import-mechanics note; line-240 stays fixed sleep.
+  Committed "Plan with multi-agent review".
+- **GATE: plan-approval reached — STOPPED, waiting for human/architect approval.**
