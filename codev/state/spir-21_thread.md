@@ -51,3 +51,11 @@ No change to core observation semantics.
   Reported back to architect; staying parked at the gate.
 - Session resumed (2026-07-13). Porch confirms still parked at plan-approval gate;
   architect already notified. No action taken — waiting for approval.
+- Architect asked to re-run the Gemini plan consult (3rd attempt). Ran
+  `consult -m gemini --protocol spir --type plan --issue 21` (first try without `--issue`
+  exited 1: multi-project auto-detect ambiguity). This time agy responded in 63.3s:
+  **VERDICT: APPROVE, CONFIDENCE: HIGH, KEY_ISSUES: None** — no substantive feedback to
+  fold in. Artifact written to
+  codev/projects/21-ci-test-reliability-docs-relea/21-plan-iter1-gemini.txt.
+  Plan review is now a full 3-way: Codex COMMENT (folded), Claude APPROVE, Gemini APPROVE.
+  Still parked at plan-approval gate.
