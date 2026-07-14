@@ -49,3 +49,5 @@ No change to core observation semantics.
   consult exited 0, artifact = skip message). No substantive Gemini feedback exists to fold
   in. Plan review remains effectively 2-way (Codex COMMENT, Claude APPROVE), both folded.
   Reported back to architect; staying parked at the gate.
+- Session resumed (2026-07-13). Porch confirms still parked at plan-approval gate;
+  architect already notified. No action taken — waiting for approval.
