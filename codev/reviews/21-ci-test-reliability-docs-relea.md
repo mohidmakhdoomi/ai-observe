@@ -72,11 +72,13 @@ observation semantics:
   517 backend against the host interpreter without isolation).
 - **Review phase (product code, architect-directed)**: the plan scoped
   reliability fixes to test-side changes, but the CI matrix revealed the
-  flakiness in the viewer *shutdown* path (a CPython `join()` race — see
-  **Flaky Tests**). Fixing it required a minimal, targeted product change
-  (`_join_thread_safely` in `viewer/server.py`); viewer shutdown is not
-  observation semantics, so this stays within the spec's "no change to core
-  observation semantics" constraint. No broader refactor was undertaken.
+  flakiness in the viewer *shutdown* path — two independent races (a CPython
+  `join()` tstate race and a start→stop socket-close race; see **Flaky
+  Tests**). Fixing them required minimal, targeted product changes in
+  `viewer/server.py` (`_join_thread_safely`; join-before-`server_close()`
+  reorder; a `_serve_forever` teardown-exception guard). Viewer shutdown is
+  not observation semantics, so these stay within the spec's "no change to
+  core observation semantics" constraint. No broader refactor was undertaken.
 - No other deviations; `pyproject.toml`'s `readme` was left pointing at
   `docs/observe.md` per the plan's default.
 
@@ -298,10 +300,41 @@ test-side sleep/umask assertion.
   200/200 in a single interpreter (in-process, the configuration that most
   readily reproduces an in-interpreter teardown race); full suite green.
 
-Beyond this one race, no flaky tests were encountered. No tests were skipped;
-the phase-1 work removed the known timing/umask flakiness sources, and the
-suite ran green on every check during all three phases, under both `umask 022`
-and `077`.
+### Matrix-revealed: `test_cli_calls_webbrowser_open_and_swallows_failure` (start→stop socket race)
+
+Fixing the `join()` race above and re-running CI surfaced a *second*,
+independent race in the same shutdown path — again product code, again only
+under the matrix.
+
+- **Failed run**: GitHub Actions run `29376085389`, `test (3.13)` leg, job
+  `87229731386`. Five of six legs on the same commit passed — intermittent.
+- **Test**: `tests/test_viewer_server.py::CLITests.test_cli_calls_webbrowser_open_and_swallows_failure`
+  (asserts a clean one-shot shutdown prints no `Traceback` to stderr).
+- **Traceback (summary)**: `Exception in thread ViewerServer` →
+  `socketserver.serve_forever` → `selectors.register` →
+  `_fileobj_to_fd` → `ValueError: Invalid file descriptor: -1`.
+- **Root cause**: `start()` returns as soon as the *kernel* accepts a loopback
+  probe connection, which can happen before the serve thread's
+  `serve_forever()` reaches `selector.register(self)`. On an immediate
+  `stop()`, the previous `stop()` ordering closed the listening socket
+  (`server_close()`) *before* the serve thread finished its selector setup, so
+  `register()` saw a `-1` fd and raised inside the thread — printing an
+  unhandled traceback (which the test forbids). Not observation semantics.
+- **Fix (product code, minimal/targeted, same shutdown path)**:
+  (1) **prevent** — `stop()` now joins the serve thread *before*
+  `server_close()`, so the socket stays open until the thread is provably done
+  touching it; (2) **defense-in-depth** — the serve loop runs inside a
+  `_serve_forever()` wrapper that swallows a `ValueError`/`OSError` *only while
+  `self._stopped`* (benign teardown noise), and re-raises otherwise so genuine
+  serve errors still surface.
+- **Confidence**: the three shutdown-path CLI tests passed 360/360 in a single
+  interpreter (in-process — the configuration that reproduces these races most
+  readily); full suite green.
+
+Beyond these two shutdown-path races, no flaky tests were encountered. No tests
+were skipped; the phase-1 work removed the known timing/umask flakiness
+sources, and the suite ran green on every check during all three phases, under
+both `umask 022` and `077`.
 
 ## Follow-up Items
 

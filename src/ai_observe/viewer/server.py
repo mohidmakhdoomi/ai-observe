@@ -398,7 +398,7 @@ class ViewerServer:
             stream.start()
 
         self._serve_thread = threading.Thread(
-            target=self._httpd.serve_forever,
+            target=self._serve_forever,
             name="ViewerServer",
             daemon=True,
         )
@@ -415,6 +415,20 @@ class ViewerServer:
         else:
             raise RuntimeError("ViewerServer failed to start accepting connections")
 
+    def _serve_forever(self) -> None:
+        # Thread target wrapping the stdlib accept loop. A stop() that races
+        # ahead of this loop's socket/selector setup can surface from inside
+        # the thread as a ValueError ("Invalid file descriptor: -1") or an
+        # OSError. When we are already stopping that is benign teardown noise,
+        # so swallow it rather than let the thread print an unhandled
+        # traceback. Anything raised while NOT stopping is a genuine serve
+        # error and is re-raised unchanged.
+        try:
+            self._httpd.serve_forever()
+        except (ValueError, OSError):
+            if not self._stopped:
+                raise
+
     def stop(self) -> None:
         if self._stopped:
             return
@@ -425,12 +439,18 @@ class ViewerServer:
             self._httpd.shutdown()
         except Exception:  # noqa: BLE001 - defensive
             pass
+        # Join the serve thread BEFORE closing the listening socket. On an
+        # immediate start->stop the serve loop may not have reached its
+        # selector.register() yet; closing the socket first makes that
+        # register() see a -1 fd and raise inside the thread. Waiting for the
+        # thread to finish guarantees it is done touching the socket, so the
+        # close below cannot race the accept-loop setup.
+        if self._serve_thread is not None:
+            _join_thread_safely(self._serve_thread, timeout=5.0)
         try:
             self._httpd.server_close()
         except OSError:
             pass
-        if self._serve_thread is not None:
-            _join_thread_safely(self._serve_thread, timeout=5.0)
         for stream in self._streams.values():
             stream.stop()
 

@@ -201,3 +201,19 @@ No change to core observation semantics.
 - Documented in review doc: Flaky Tests (run id, leg, traceback, root cause, fix,
   confidence) + Deviations + follow-up. Committing, pushing, waiting for matrix green,
   then re-requesting pr gate (NOT self-approving).
+
+### Review — second shutdown-path race (re-run of CI after join fix)
+- After the join() fix, CI re-run failed a DIFFERENT leg (run 29376085389, py3.13,
+  job 87229731386): `test_cli_calls_webbrowser_open_and_swallows_failure` — serve
+  thread raised `ValueError: Invalid file descriptor: -1` at
+  socketserver.serve_forever -> selectors.register. 5/6 legs passed → intermittent.
+- Root cause: start() returns once the kernel accepts a loopback probe, which can
+  precede serve_forever()'s selector.register(); an immediate stop() closed the
+  socket (server_close) before that register() → -1 fd → unhandled traceback in thread
+  (the test forbids "Traceback" in stderr). Same shutdown path, different race.
+- Fix (product, minimal, same path): (1) prevent — stop() now joins the serve thread
+  BEFORE server_close(), so socket stays open until thread is done; (2) defense —
+  _serve_forever() wrapper swallows ValueError/OSError only while self._stopped,
+  re-raises otherwise. No observation-semantics change.
+- Verified: 360/360 in-process across the 3 shutdown-path CLI tests; full suite green.
+  Documented both races in review doc. Committing, pushing, re-checking full matrix.
