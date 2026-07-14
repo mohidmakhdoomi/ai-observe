@@ -25,7 +25,9 @@ Treat all of these as sensitive:
 - `.jsonl.rebuilt`
 - `.meta.json`
 
-Store `.codev/observe/` carefully. Redaction is not implemented.
+Store `.codev/observe/` carefully, and keep it **out of commits, uploads, and
+public logs until you have reviewed its contents**. Redaction is not
+implemented.
 
 ## Quick start
 

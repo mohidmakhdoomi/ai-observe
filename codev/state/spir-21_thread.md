@@ -124,3 +124,34 @@ No change to core observation semantics.
 - ci.yml landed in porch's re-iter commit 258ac02 (same sweep pattern as phase_1).
 - phase_3 scope: README.md (security-forward front door), docs/observe.md +
   docs/viewer.md aligned with packaged usage, RELEASING.md local checklist.
+
+### Implement — phase_3 docs (build complete)
+- README.md (new): CI badge; severe sensitive-data warning as prominent blockquote near
+  top (all 5 artifact extensions + full contents warning: absolute paths, argv/prompts,
+  raw syscall text, file metadata, snapshot diagnostics/sidecar); what-it-does with
+  provenance framing; requirements (Linux+strace runtime vs install-anywhere); pip
+  install .; quick start with packaged CLI (ai-observe / ai-observe-viewer /
+  python -m ai_observe.viewer); artifact locations; checkout-only opt-in named-shim
+  workflow (symlink into user dir + PATH prepend, explicitly NOT installed by default);
+  ptrace/Yama/container (SYS_PTRACE+seccomp) caveats; loopback-only viewer; watched-roots
+  + snapshot limitations incl. #18; links into docs/ instead of duplicating.
+- RELEASING.md (new): 8 ordered steps — version check/bump (single-source __init__),
+  full test run (zero-skip), CI green on release commit, python -m build, wheel/sdist
+  content inspection, clean-venv --no-index install outside checkout (+ smoke module for
+  sdist path), e2e observed command from temp dir, viewer static-asset serving smoke.
+- docs/viewer.md: invocation + practical workflow now packaged-first (ai-observe-viewer /
+  python -m), checkout PYTHONPATH=src form preserved as secondary.
+- docs/observe.md: quick start restructured — installed CLI first (ai-observe examples,
+  was bin/ai-observe), named shims reframed as checkout-only opt-in with symlink/copy
+  guidance + absolute-path recursion warning. pyproject readme NOT repointed (per plan).
+- Verified: link/anchor/CLI-name consistency script passes; e2e walkthrough (bin/ai-observe
+  observed command → demo.{jsonl,meta.json,trace}, generated.txt in events); viewer
+  --no-browser on 127.0.0.1:7878 serves index + static assets (200s).
+
+### Implement — phase_3 iter1 rebuttal
+- iter1 verdicts: Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES (2 doc issues,
+  both legit). Fix 1: docs/observe.md severe-risk section now carries the spec-required
+  "keep .codev/observe/ out of commits/uploads/public logs until reviewed" (doubly
+  important: that file is the pyproject readme). Fix 2: RELEASING.md provisions
+  build+setuptools>=77 in the intro (step 2's zero-skip smoke run needs the PEP 517
+  backend), step 4 now just runs python -m build. Rebuttal written; porch done.

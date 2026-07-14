@@ -5,6 +5,14 @@ Checklist for cutting a local release from a clean checkout on Linux with
 (`.github/workflows/ci.yml`), so a green CI run on the release commit means
 steps 2–6 should hold locally too. Publishing to PyPI is out of scope.
 
+Provision the build tooling up front — the test run in step 2 includes the
+packaging smoke tests, which need the PEP 517 backend in the running
+interpreter:
+
+```bash
+python3 -m pip install --upgrade build "setuptools>=77"
+```
+
 Work through the steps in order.
 
 ## 1. Version check / bump
@@ -37,8 +45,9 @@ badge. Do not release from a commit CI has not validated.
 
 ## 4. Build wheel + sdist
 
+Using the tooling provisioned up front:
+
 ```bash
-python3 -m pip install --upgrade build "setuptools>=77"
 python3 -m build
 ```
 
