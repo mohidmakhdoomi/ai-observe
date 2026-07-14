@@ -1,12 +1,16 @@
-The implementation plan correctly addresses all constraints and requirements specified in the approved spec. I have verified via filesystem inspection that the referenced files (`test_codex_observe.py`, `test_viewer_server.py`, etc.) match the plan's assumptions, including the umask assertions and timing-sensitive sleeps. 
+This plan is exceptionally well-structured and highly pragmatic. It rigorously adheres to the spec's requirements and honors all baked decisions while displaying a deep understanding of the repository's current state.
 
-I additionally confirmed via a codebase search that the test files (`test_viewer_server.py`, `test_viewer_smoke_e2e.py`) already use `port=0` for server bindings, satisfying the spec's constraint around ephemeral ports.
+### Strengths
+1. **Excellent Phase Sequencing**: The dependency order (Test Reliability -> CI -> Docs) is perfectly reasoned. You must have a deterministic test suite before setting up CI, and the CI needs to exist before the README can accurately badge or describe it.
+2. **Deep Technical Empathy**: The plan correctly identifies the nuances of the codebase, such as `tests/` not being a package (no `__init__.py`) and the `sys.path` implications, as well as the risk of import shadowing during the smoke test step.
+3. **Pragmatic Testing Adjustments**: The umask fix strategy (dropping the assertion on the test-created directory while keeping it for product-set files) is exactly right. The targeted conversion of `time.sleep()` to a shared `poll_until` helper will significantly reduce flakiness without changing product semantics.
+4. **Zero-Product-Code CI Verification**: The choice to use `grep` on the verbose test output to fail loud on silent smoke test skips is a robust, non-intrusive solution that avoids modifying the SPIR-A harness.
 
-The plan's explicit choice to run the `test_packaging_smoke.py` suite as an isolated step and detect `skipped` via output grepping is an excellent, low-risk approach that avoids modifying the SPIR-A harness while still guaranteeing the CI gate fails loudly if the artifact isn't truly tested. The plan accurately handles the import shadowing risk by preserving the harness's clean virtualenv isolation.
+I have no significant concerns with this plan. It provides a clear, executable path for the builder.
 
 ---
 VERDICT: APPROVE
-SUMMARY: The plan exhaustively covers the spec's requirements with a sound, risk-mitigated technical approach.
+SUMMARY: Comprehensive, well-sequenced plan that perfectly addresses the spec while demonstrating a deep understanding of the codebase's mechanics.
 CONFIDENCE: HIGH
 ---
 KEY_ISSUES:

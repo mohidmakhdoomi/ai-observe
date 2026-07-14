@@ -59,3 +59,7 @@ No change to core observation semantics.
   codev/projects/21-ci-test-reliability-docs-relea/21-plan-iter1-gemini.txt.
   Plan review is now a full 3-way: Codex COMMENT (folded), Claude APPROVE, Gemini APPROVE.
   Still parked at plan-approval gate.
+- Architect requested delete + verbatim re-run: removed the artifact, then ran
+  `consult -m gemini --protocol spir --type plan --project-id 21 --output "codev/projects/21-ci-test-reliability-docs-relea/21-plan-iter1-gemini.txt"`.
+  Exit 0, agy completed in 52.3s. VERDICT: APPROVE, CONFIDENCE: HIGH, KEY_ISSUES: None.
+  Artifact rewritten in place (1578 bytes) and recommitted. Still parked at plan-approval.
