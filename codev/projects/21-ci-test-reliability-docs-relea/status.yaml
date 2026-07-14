@@ -1,7 +1,7 @@
 id: '21'
 title: ci-test-reliability-docs-relea
 protocol: spir
-phase: implement
+phase: review
 plan_phases:
   - id: phase_1
     title: 'Test reliability: shared poll helper + umask determinism'
@@ -11,8 +11,8 @@ plan_phases:
     status: complete
   - id: phase_3
     title: 'Documentation: README + aligned docs + release checklist'
-    status: in_progress
-current_plan_phase: phase_3
+    status: complete
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -78,4 +78,4 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_3-iter1-claude.txt
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T05:35:49.611Z'
+updated_at: '2026-07-14T05:37:39.415Z'
