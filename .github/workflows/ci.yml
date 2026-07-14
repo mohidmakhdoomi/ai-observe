@@ -74,7 +74,11 @@ jobs:
       - name: Run unit test suite (excluding packaging smoke, fail on skip)
         working-directory: tests
         run: |
-          set -o pipefail
+          # GitHub Actions' default shell is `bash -eo pipefail`, but we set
+          # both flags explicitly so a failing unittest run aborts the step
+          # (errexit) and the pipe to `tee` cannot mask a non-zero exit
+          # (pipefail) regardless of any future default-shell change.
+          set -eo pipefail
           mods=$(ls test_*.py | grep -v '^test_packaging_smoke\.py$' | sed 's/\.py$//')
           python -m unittest -v $mods 2>&1 | tee "$RUNNER_TEMP/suite-output.txt"
           if grep -E "\.\.\. skipped|skipped=[0-9]" "$RUNNER_TEMP/suite-output.txt"; then
@@ -96,7 +100,9 @@ jobs:
       - name: Packaging smoke tests (installed artifact, fail on skip)
         working-directory: tests
         run: |
-          set -o pipefail
+          # errexit + pipefail (see the main suite step): a failing smoke run
+          # aborts the step and the pipe to `tee` cannot mask its exit code.
+          set -eo pipefail
           python -m unittest -v test_packaging_smoke 2>&1 | tee "$RUNNER_TEMP/smoke-output.txt"
           if grep -E "\.\.\. skipped|skipped=[0-9]" "$RUNNER_TEMP/smoke-output.txt"; then
             echo "::error::packaging smoke tests skipped in CI; the installed artifact was not validated"

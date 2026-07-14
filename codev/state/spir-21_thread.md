@@ -168,3 +168,16 @@ No change to core observation semantics.
   12-topic cap; flagged for MAINTAIN.
 - Consultation artifacts committed (precedent: projects 1/11/15/20 tracked on main).
 - Next: push branch, open PR (Closes #21), porch done --pr.
+
+### Review — iteration 1 rebuttal (resumed session)
+- 3-way review verdicts: Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES (all HIGH).
+- Codex's 3 points, resolved in `21-review-iter1-rebuttals.md`:
+  1. "CI masks failing tests (pipefail w/o set -e)" — mechanism claim is wrong (GHA
+     default shell is `bash -eo pipefail`, errexit already aborts a failing run), BUT
+     accepted the robustness critique: hardened both CI test steps to explicit
+     `set -eo pipefail` + comments so the guarantee is self-evident. Only real code change.
+  2. "branch behind main (1 36)" — the 1 main-only commit is framework md files, no
+     conflict; integration is architect-driven; not rebasing a pushed PR unilaterally.
+  3. "commit hygiene: phase 2/3 in chore(porch) commits" — accurate but a strict-mode
+     porch orchestration artifact; not rewriting pushed history (cosmetic, out of lane).
+- Committing ci.yml hardening + rebuttal, then `porch done 21` for re-verification.

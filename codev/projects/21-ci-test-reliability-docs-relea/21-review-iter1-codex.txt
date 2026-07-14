@@ -1,0 +1,23 @@
+Using direct file reads to review the PR against the actual repo state and the supplied diff.I found one likely documentation/runtime-command mismatch and am verifying it directly against the repo layout before concluding.I found a CI correctness concern in the workflow shell logic; verifying with a minimal shell reproduction so I don’t overstate it.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Good test/doc work overall, but the new CI workflow can falsely pass failing tests because the shell steps mask unittest exit codes.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `.github/workflows/ci.yml` masks real test failures in both test-running steps. Each step does `set -o pipefail` and then runs `python -m unittest ... | tee ...`, but without `set -e` or an explicit check of the pipeline status, the script continues to the later `grep` and can exit 0 if there were no skips. In bash, `pipefail` alone does not abort the script. Result: a failing suite/smoke run can be reported as green.
+- The branch is not up to date with `main` in this checkout (`git rev-list --left-right --count main...HEAD` shows `1 36`), so it should be rebased/merged before PR handoff if `main` is the target branch.
+- Commit hygiene does not fully match the stated `[Spec XXXX][Phase]` convention for all implementation phases; much of the phase 2/3 work appears in `chore(porch): ...` commits rather than spec/phase-formatted commits.
+
+PR_SUMMARY: |
+  ## Summary
+  This PR adds continuous validation and hardens the test suite for ai-observe without changing core observation semantics. It introduces a GitHub Actions matrix, replaces several timing-sensitive sleeps with polling-based synchronization, and adds release/documentation guidance centered on packaged usage and security warnings.
+
+  ## Key Changes
+  - Add `.github/workflows/ci.yml` for Ubuntu + Python 3.10/3.12/3.13, with Node 20, `strace`, build steps, and installed-artifact smoke validation.
+  - Consolidate polling helpers into `tests/_util.py` and update viewer/live-trace tests to use bounded polling instead of fixed sleeps where practical.
+  - Add a security-forward `README.md`, align `docs/observe.md` and `docs/viewer.md` to packaged-first usage, and add `RELEASING.md`.
+
+  ## Test Plan
+  - Run `python3 -m unittest discover -s tests`.
+  - Verify the GitHub Actions matrix passes on Python 3.10, 3.12, and 3.13.
+  - Manually confirm `ai-observe --session demo -- <cmd>` produces artifacts and `ai-observe-viewer <jsonl>` serves the local viewer correctly.
