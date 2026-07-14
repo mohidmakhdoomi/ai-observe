@@ -63,3 +63,24 @@ No change to core observation semantics.
   `consult -m gemini --protocol spir --type plan --project-id 21 --output "codev/projects/21-ci-test-reliability-docs-relea/21-plan-iter1-gemini.txt"`.
   Exit 0, agy completed in 52.3s. VERDICT: APPROVE, CONFIDENCE: HIGH, KEY_ISSUES: None.
   Artifact rewritten in place (1578 bytes) and recommitted. Still parked at plan-approval.
+
+### Implement — phase_1: test reliability (build complete)
+- plan-approval gate APPROVED by human in-session; porch advanced to implement/phase_1.
+- Added `tests/_util.py` with `poll_until(predicate, timeout=3.0, interval=0.02)`
+  (consolidates `_wait_until`/`_wait_for`; final re-check at deadline; imported via the
+  `_aggregator_oracle` precedent: `sys.path.insert(0, ROOT/"tests")`).
+- Converted sleep→poll: viewer_server 153/187/221 (tailer catch-up via
+  `broadcaster_for(...).snapshot_len()`), 313 (both rebuilt+partial artifact tailers),
+  smoke_e2e setUp (first event tailed), tailer truncation test (poll the "truncated"
+  warning), tailer shutdown-fragment test (poll `tailer._buf`).
+- Documented intentional fixed sleeps: viewer_server 240 (two-SSE-subscribers not
+  queryable), 331 + 344 (initial empty-file scan, negative check); tailer negative checks
+  (initial empty, incomplete line); live_trace negative checks (3 sites); codex_observe
+  fake-strace `time.sleep(30)` long-runner + 0.3s signal-test startup grace.
+- Umask: dropped the test-created-dir `0o755` assertion in test_codex_observe (product
+  only chmods dirs it creates, 0o700); kept all product-set `0o600` assertions.
+  Audit: remaining chmod(0o755) uses are explicit sets on fake exes (umask-independent);
+  only mode assertions left are product-set 0o600 (codex_observe 2 sites, live_trace
+  rebuilt/meta) — none ambient-umask-dependent.
+- Verified: full suite 234/234 OK under umask 022 AND umask 077; 3x stability loop on
+  viewer_server OK; direct-file invocation of all touched test modules OK.

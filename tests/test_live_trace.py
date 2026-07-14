@@ -12,9 +12,11 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))  # tests/_util.py is here
 
 from ai_observe import codex_observe
 from ai_observe.trace_parser import ParserFailure, TraceParser, parse_trace_file
+from _util import poll_until  # noqa: E402
 
 
 SAMPLE_LINE_A = '123 1714932000.000001 openat(AT_FDCWD, "a.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</tmp/work/a.txt>\n'
@@ -30,15 +32,6 @@ def _make_parser():
         active_artifacts=set(),
         include_log_writes=False,
     )
-
-
-def _wait_until(predicate, timeout=2.0, interval=0.02):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return predicate()
 
 
 def _wrapper_env(td: Path, extra: dict | None = None) -> dict:
@@ -140,14 +133,14 @@ class LiveTracerUnitTests(unittest.TestCase):
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write(SAMPLE_LINE_A)
                 fh.flush()
-            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
+            self.assertTrue(poll_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
             mid = self.jsonl_path.read_text(encoding="utf-8")
             self.assertEqual(mid.count("\n"), 1)
             self.assertIn("a.txt", mid)
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write(SAMPLE_LINE_B)
                 fh.flush()
-            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 2))
+            self.assertTrue(poll_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 2))
         finally:
             tracer.request_stop()
             tracer.join(2.0)
@@ -161,12 +154,15 @@ class LiveTracerUnitTests(unittest.TestCase):
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write('123 1714932000.000001 openat(AT_FDCWD, "u.txt", O_WRONLY|O_CREAT|O_EXCL <unfinished ...>\n')
                 fh.flush()
-            time.sleep(0.05)  # past poll interval
+            # Intentional fixed sleep (negative check): wait past the poll
+            # interval to assert nothing was emitted; "no event" has no
+            # queryable completion condition to poll for.
+            time.sleep(0.05)
             self.assertEqual(self.jsonl_path.read_text(encoding="utf-8"), "")
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write('123 1714932000.000002 <... openat resumed> , 0600) = 3</tmp/work/u.txt>\n')
                 fh.flush()
-            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
+            self.assertTrue(poll_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
         finally:
             tracer.request_stop()
             tracer.join(2.0)
@@ -183,12 +179,14 @@ class LiveTracerUnitTests(unittest.TestCase):
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write(head)
                 fh.flush()
+            # Intentional fixed sleep (negative check): see
+            # test_unfinished_resumed_pair_across_poll_boundary.
             time.sleep(0.05)
             self.assertEqual(self.jsonl_path.read_text(encoding="utf-8"), "")
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write(tail)
                 fh.flush()
-            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
+            self.assertTrue(poll_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
         finally:
             tracer.request_stop()
             tracer.join(2.0)
@@ -200,6 +198,8 @@ class LiveTracerUnitTests(unittest.TestCase):
             with self.trace_path.open("a", encoding="utf-8") as fh:
                 fh.write(SAMPLE_LINE_A.rstrip("\n"))  # no trailing newline
                 fh.flush()
+            # Intentional fixed sleep (negative check): see
+            # test_unfinished_resumed_pair_across_poll_boundary.
             time.sleep(0.05)
             self.assertEqual(self.jsonl_path.read_text(encoding="utf-8"), "")
         finally:
@@ -226,7 +226,7 @@ class LiveTracerUnitTests(unittest.TestCase):
                 fh.write('123 1714932000.000001 creat("/tmp/work/inside/in.txt", 0600) = 3</tmp/work/inside/in.txt>\n')
                 fh.write('123 1714932000.000002 creat("/tmp/work/outside/out.txt", 0600) = 4</tmp/work/outside/out.txt>\n')
                 fh.flush()
-            self.assertTrue(_wait_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
+            self.assertTrue(poll_until(lambda: self.jsonl_path.read_text(encoding="utf-8").count("\n") >= 1))
         finally:
             tracer.request_stop()
             tracer.join(2.0)

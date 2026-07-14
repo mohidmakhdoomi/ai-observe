@@ -3,14 +3,15 @@ from pathlib import Path
 import json
 import sys
 import tempfile
-import time
 import unittest
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))  # tests/_util.py is here
 
 from ai_observe.viewer.server import ViewerServer  # noqa: E402
+from _util import poll_until  # noqa: E402
 
 
 class AssetParser(HTMLParser):
@@ -56,7 +57,8 @@ class ViewerSmokeE2ETests(unittest.TestCase):
         self.srv = ViewerServer(self.path, port=0, poll_interval=0.05)
         self.srv.start()
         self.addCleanup(self.srv.stop)
-        time.sleep(0.1)
+        # Wait until the tailer has picked up the pre-written event.
+        self.assertTrue(poll_until(lambda: self.srv.broadcaster_for(None).snapshot_len() >= 1))
 
     def get(self, rel):
         with urllib.request.urlopen(self.srv.url + rel.lstrip("/"), timeout=3.0) as resp:
