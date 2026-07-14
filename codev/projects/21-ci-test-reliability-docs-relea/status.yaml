@@ -23,8 +23,9 @@ gates:
     requested_at: '2026-06-30T15:00:41.077Z'
     approved_at: '2026-07-14T01:45:45.457Z'
   pr:
-    status: pending
+    status: approved
     requested_at: '2026-07-14T23:09:46.983Z'
+    approved_at: '2026-07-14T23:58:37.838Z'
   verify-approval:
     status: pending
 iteration: 1
@@ -79,10 +80,10 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_3-iter1-claude.txt
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T23:09:46.983Z'
+updated_at: '2026-07-14T23:58:37.839Z'
 pr_history:
   - phase: review
     pr_number: 23
     branch: builder/spir-21
     created_at: '2026-07-14T05:42:37.738Z'
-pr_ready_for_human: true
+pr_ready_for_human: false
