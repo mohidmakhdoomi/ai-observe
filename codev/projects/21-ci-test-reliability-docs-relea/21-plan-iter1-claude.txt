@@ -1,0 +1,83 @@
+I'll review the plan by first verifying its claims against the actual codebase. Let me read the key files referenced.Good — confirmed no `.github/workflows/`, no `README.md`, no `RELEASING.md` (the gaps the plan addresses). Now let me read the actual test files to verify the plan's specific claims about poll helpers, sleep sites, and umask assertions.All the plan's specific claims check out. Let me verify a few more things — the pyproject.toml readme field, the docs files, and the existing test structure.Let me also check the test_viewer_server.py sleep sites more carefully to see if the conditions are queryable, and verify the packaging smoke test's structure.Let me verify one more thing — the line 240 sleep in `test_viewer_server.py` (the "once both are likely subscribed" comment) and whether there's an `__init__.py` in tests/ that might conflict with `_util.py`.Now I have a thorough picture. Let me also quickly check the e2e smoke test sleep and verify there's no `package.json` at root (the plan mentions this).Good — confirmed no `package.json`. Now I have all the verification I need. Let me compile my review.
+
+---
+
+## Plan Review: CI + test-reliability + docs/release checklist
+
+### 1. Spec Coverage — ✅ Thorough
+
+Every spec acceptance criterion is mapped to a phase deliverable. I verified:
+
+- **CI requirements** (matrix 3.10/3.12/3.13, strace, Node.js 20, loopback HTTP, ptrace sysctl, build + clean-venv install, smoke-run-not-skip) → Phase 2 deliverables.
+- **Test reliability** (poll helpers consolidated, umask determinism, documented intentional sleeps) → Phase 1 deliverables.
+- **Docs** (README with security warnings, docs alignment, RELEASING.md) → Phase 3 deliverables.
+- **Regression guard** (suite passes under both umasks, product-set `0o600` preserved) → Phase 1 acceptance criteria.
+
+No spec requirement is missing from the plan. No phase exceeds spec scope.
+
+### 2. Phase Breakdown — ✅ Well-structured
+
+The three-phase linear dependency chain (`test reliability → CI → docs`) is logically sound:
+
+- **Phase 1 before Phase 2** is correct: a flaky suite would produce false CI failures and waste iteration time debugging the workflow vs. the tests.
+- **Phase 2 before Phase 3** is correct: the README references CI (badge, workflow name).
+- Each phase produces an independently committable unit. The single-PR constraint is respected.
+- Phase sizes are appropriate — none is trivially small or unmanageably large.
+
+### 3. Technical Approach — ✅ Sound, with one minor observation
+
+**Verified claims against the codebase:**
+
+| Claim | Verified |
+|-------|----------|
+| Two existing poll helpers (`_wait_until` @ test_live_trace.py:35, `_wait_for` @ test_viewer_tailer.py:63) | ✅ Exact signatures, timeouts, intervals match |
+| 7 fixed-sleep sites in test_viewer_server.py (~lines 153, 187, 221, 240, 313, 331, 344) | ✅ All 7 confirmed |
+| Umask-sensitive `0o755` assertion at test_codex_observe.py:67 on a test-created dir | ✅ Line 67, `obs.mkdir()` at line 62, no explicit chmod |
+| Product-set `0o600` assertions at lines 68-69 (and 289-290) | ✅ These are product-set, correct to keep |
+| 5 Node-gated test files with `shutil.which("node")` + `SkipTest` | ✅ All 5 confirmed |
+| `test_packaging_smoke.py` uses bounded retry, not bare sleeps | ✅ Has its own timeout/deadline discipline |
+| Intentional `time.sleep(30)` in fake-strace (test_codex_observe.py:116) | ✅ Confirmed |
+| No `package.json` at root | ✅ Confirmed |
+| No `tests/__init__.py` (no conflict with `_util.py`) | ✅ Confirmed absent |
+| `pyproject.toml` readme points to `docs/observe.md` | ✅ Line 9 |
+| `docs/viewer.md` shows `PYTHONPATH=src` checkout-style usage | ✅ Lines 12 and 147 |
+
+**Minor observation (not blocking):** The line 240 sleep in `test_viewer_server.py` (`time.sleep(0.3)` with comment "Once both are likely subscribed") is genuinely hard to poll-convert — you can't easily query whether two SSE clients are subscribed to the server. The plan correctly identifies this category ("keep a documented fixed sleep where the awaited state isn't queryable") but lists it among "prime conversion targets." The builder will discover this during implementation; the plan's conservative-conversion guidance is sufficient mitigation. The line 59 sleep in `test_viewer_smoke_e2e.py` is also a candidate — worth noting but the plan already covers this file in scope.
+
+### 4. Testability — ✅ Clear
+
+- Phase 1's test plan is elegant: the existing tests *are* the tests; the verification is running them under both umasks.
+- Phase 2's test plan is the workflow itself — push the branch and inspect CI logs.
+- Phase 3's test plan (manual README walkthrough + link verification) is appropriate for docs.
+- Each phase has explicit acceptance criteria that a reviewer can check mechanically.
+
+### 5. Risk Assessment — ✅ Well-identified
+
+The risk table covers the real threats:
+- ptrace attachment failure on runners (known runner-image variability)
+- Silent smoke skips (the core "CI says green but nothing ran" risk)
+- Import shadowing (real pitfall, correctly identified)
+- Over-aggressive sleep→poll conversion (the line 240 case above)
+- Late-discovered matrix flakiness (correctly scoped to Phase 2)
+
+One risk not explicitly called out but low-probability: **`tests/_util.py` import mechanics**. Since there's no `tests/__init__.py`, the new `_util.py` will be importable via `from _util import poll_until` only if test files run from within the `tests/` directory (which `unittest discover -s tests` does). This is standard and should work, but worth the builder verifying the import works with the actual invocation command used in CI.
+
+### 6. Builder Clarity — ✅ Excellent
+
+The plan is unusually well-specified for builder consumption:
+- File paths and line numbers are exact and verified.
+- Decision points are resolved (e.g., bias toward option (b) for umask, option (ii) for run placement, editable install vs PYTHONPATH).
+- The conversion pattern is stated as a template (`time.sleep(X); assert cond` → `assert poll_until(lambda: cond, timeout=...)`).
+- Non-targets are explicitly listed (don't touch `test_packaging_smoke.py`, don't touch product code).
+
+A builder should be able to follow this plan with minimal ambiguity.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Plan is thorough, accurately verified against the codebase, with sound phasing and clear builder guidance; no spec gaps or significant technical issues.
+CONFIDENCE: HIGH
+
+---
+KEY_ISSUES:
+- None

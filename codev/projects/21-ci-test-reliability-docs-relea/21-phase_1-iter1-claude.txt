@@ -1,0 +1,61 @@
+I'll read all the changed test files and check for the expected `tests/_util.py` shared helper.Now let me read the new shared helper and check the git diff to understand exactly what changed:Let me read from the correct worktree path:Let me verify the `broadcaster_for` and `snapshot_len` APIs exist on the server/tailer classes that the tests now depend on:Good — those are existing server APIs, not newly introduced. Let me verify the `_Broadcaster` is a public-enough API and check the umask audit scope:Let me verify the import pattern works by checking for the `_aggregator_oracle` precedent mentioned in the `_util.py` docstring:Good — the import pattern matches the established `_aggregator_oracle` precedent exactly. Now let me run a quick check to make sure the tests actually pass:All tests pass. Let me also run the codex_observe tests and verify the umask 077 scenario:All tests pass, including the umask-sensitive test under `umask 077`. Now I have everything I need for a thorough review.
+
+---
+
+## Phase 1 Review: Test reliability — shared poll helper + umask determinism
+
+### 1. Spec/Plan Adherence
+
+**Deliverable checklist:**
+
+| Plan Deliverable | Status | Notes |
+|---|---|---|
+| New `tests/_util.py` with `poll_until` | ✅ | Consolidates `_wait_until` + `_wait_for`; default timeout=3.0 (the more generous of the two); default interval=0.02 |
+| `test_live_trace.py` imports shared helper; local `_wait_until` removed | ✅ | All 5 call sites migrated to `poll_until` |
+| `test_viewer_tailer.py` imports shared helper; local `_wait_for` removed | ✅ | All 8 call sites migrated to `poll_until` |
+| `test_viewer_server.py` sleep conversions (~7 sites) | ✅ | 4 converted to `poll_until`; 3 documented as intentional fixed sleeps (the expected outcome per the plan) |
+| `test_viewer_smoke_e2e.py` `time.sleep(0.1)` audited | ✅ | Converted to `poll_until` — the server startup readiness *is* queryable via `broadcaster_for(None).snapshot_len()` |
+| `test_codex_observe.py` umask fix | ✅ | Dropped the `0o755` assertion on the test-created dir; kept `0o600` assertions on product-set artifacts |
+| Umask audit across all tests | ✅ | All remaining `st_mode`/`S_IMODE` assertions are on product-set `0o600` modes |
+| Intentional sleeps documented inline | ✅ | fake-strace `time.sleep(30)`, signal-forwarding startup sleep, and all kept "negative check" sleeps have clear inline comments |
+
+### 2. Code Quality
+
+**`tests/_util.py`** — Clean, well-documented, correct implementation. The docstring explains provenance (consolidating two helpers), usage pattern, and the final-check semantics. The `bool(predicate())` return on timeout is correct (matches both prior helpers' semantics).
+
+**Import mechanics** — The `sys.path.insert(0, str(ROOT / "tests"))` pattern follows the established `_aggregator_oracle` precedent exactly. The comment `# tests/_util.py is here` on each insert is a nice consistency touch. The `# noqa: E402` suppresses the expected linter complaint.
+
+**Sleep documentation** — Every kept fixed sleep has a well-written comment explaining *why* it can't be polled (e.g., "no queryable completion condition", "not observable from public server state"). This is excellent — future readers won't mistake these for flakiness.
+
+**Poll conversions** — The `broadcaster_for(None).snapshot_len()` approach is smart: it queries actual server-side event counts rather than guessing timing. The `test_truncation_reopens_from_zero` conversion in `test_viewer_tailer.py` (polling for the "truncated" warning) and the `test_shutdown_warns_once_on_incomplete_trailing_fragment` conversion (polling for `self.tailer._buf`) are particularly good — they replaced timing-dependent sleeps with semantically meaningful conditions.
+
+**No third poll-helper variant** — Confirmed: no new local helpers were introduced. The two old ones were removed; all call sites now use the single shared `poll_until`.
+
+### 3. Test Coverage
+
+No reduction in test coverage — all existing tests continue to pass. The changes are purely in synchronization mechanics, not in what's asserted. The product-set `0o600` assertions are preserved. The test verified passing under both default umask and `umask 077`.
+
+### 4. Error Handling / Edge Cases
+
+The `poll_until` helper's final `bool(predicate())` call handles the edge case where the condition becomes true right at the deadline. This is correct and matches the prior `_wait_until` behavior. The `_wait_for` helper previously returned `False` on timeout (no final check), so `poll_until` is strictly *more* forgiving — which is the right direction for CI tolerance.
+
+### 5. Potential Concerns (minor, non-blocking)
+
+- **`time.sleep(0.1)` in `test_viewer_tailer.py:test_empty_file_then_append` (line 114)** — This is a "negative check" sleep documented as intentional. Correct classification; no queryable condition for "no events emitted".
+
+- **`time.sleep(0.15)` in `test_viewer_tailer.py:test_partial_line_buffered_then_completed` (line 171)** — Documented as intentional negative check. Correct.
+
+- **`time.sleep(0.3)` in `test_codex_observe.py:test_signal_escalation` (line 341)** — Documented as intentional: process startup grace with no observable readiness signal. Correct.
+
+- **`time import` left in `test_viewer_tailer.py`** — Still needed for the intentional `time.sleep()` calls that remain.
+
+- **`time import` removed from `test_viewer_smoke_e2e.py`** — Correctly removed since no `time.sleep()` calls remain in that file. ✅
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 1 fully delivers all planned items: shared poll helper consolidates two existing helpers, all convertible sleep sites use bounded polling, umask assertion is deterministic, intentional sleeps are clearly documented, and all tests pass under both umask 022 and 077.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

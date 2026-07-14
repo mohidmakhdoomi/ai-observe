@@ -155,3 +155,16 @@ No change to core observation semantics.
   important: that file is the pyproject readme). Fix 2: RELEASING.md provisions
   build+setuptools>=77 in the intro (step 2's zero-skip smoke run needs the PEP 517
   backend), step 4 now just runs python -m build. Rebuttal written; porch done.
+
+### Review phase — phase_3 approved; review doc + governance updates + PR
+- phase_3 iter2: unanimous APPROVE (all HIGH). All plan phases complete → review phase.
+- Review doc written (codev/reviews/21-...) with full consultation feedback across
+  specify/plan/3 implement phases, deviations (grep anchoring, setuptools provisioning),
+  arch + lessons routing.
+- Governance: arch-critical.md gets its first real HOT fact (CI fails loud on any skip)
+  + populated arch.md map (9 topics); arch.md gains "Continuous integration" section;
+  lessons-learned.md gains 2 cold lessons (anchored grep gates; stage-new-files/commit
+  sweep). lessons-critical map left starter — flat 15-heading cold doc would bust the
+  12-topic cap; flagged for MAINTAIN.
+- Consultation artifacts committed (precedent: projects 1/11/15/20 tracked on main).
+- Next: push branch, open PR (Closes #21), porch done --pr.

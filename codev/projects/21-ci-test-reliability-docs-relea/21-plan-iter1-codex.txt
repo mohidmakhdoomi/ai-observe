@@ -1,0 +1,15 @@
+---
+VERDICT: COMMENT
+SUMMARY: Strong, spec-aligned plan with good phase ordering; tighten two implementation details to avoid an execution gap.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- Phase 1 does not explicitly cover `tests/test_viewer_smoke_e2e.py`, which the spec calls out as a timing-sensitive candidate (`time.sleep(0.1)` exists there now). Add it to the reliability audit/conversion list or explicitly classify it as an intentional fixed wait.
+- Phase 2 chooses the “separate smoke step” direction but does not yet specify the exact unittest invocation/exclusion method or the exact fail-loud mechanism for an unexpected smoke skip. That detail matters because `test_packaging_smoke.py` is currently discoverable under `tests/`, so the builder needs a concrete way to avoid double-running or silently skipping it.
+
+A few verification notes from the repo:
+- The plan’s references are accurate: there is currently no `.github/`, no root `README.md`, and no `RELEASING.md`.
+- `pyproject.toml` does point `readme` at `docs/observe.md`, and the installed entry points are `ai-observe` and `ai-observe-viewer`.
+- The two existing poll helpers are real (`_wait_until` in `tests/test_live_trace.py`, `_wait_for` in `tests/test_viewer_tailer.py`), and the fixed sleeps in `tests/test_viewer_server.py` match the cited lines.
+- `docs/viewer.md` still shows checkout-style `PYTHONPATH=src` usage, so the docs phase is well motivated.

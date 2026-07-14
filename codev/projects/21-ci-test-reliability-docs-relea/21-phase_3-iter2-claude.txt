@@ -1,0 +1,77 @@
+I'll read the Phase 3 deliverables — `README.md`, `docs/observe.md`, `docs/viewer.md`, and `RELEASING.md` — to verify the implementation and confirm the iteration-1 fixes were applied.The files are in the builder's worktree. Let me find them there.I've read all four Phase 3 deliverables. Let me now verify the two iteration-1 fixes were applied correctly by cross-referencing the specific lines.
+
+## Phase 3 Review
+
+### README.md — Spec Checklist
+
+| Requirement | Status | Location |
+|---|---|---|
+| Very prominent sensitive-data warning near top | ✅ | Lines 8–18: blockquote with ⚠️, lists all five artifact types + contents warning |
+| What the tool does | ✅ | Lines 22–33 |
+| Install (`pip install .`) | ✅ | Lines 48–57 |
+| Quick start with packaged CLI | ✅ | Lines 59–88: `ai-observe`, `ai-observe-viewer`, `python -m ai_observe.viewer` |
+| Artifact locations | ✅ | Lines 67–76 |
+| Checkout-only opt-in named-shim workflow | ✅ | Lines 95–116: explicit "not installed by `pip install`" + symlink/prepend pattern |
+| Linux/strace/ptrace/container caveats | ✅ | Lines 119–131 |
+| Loopback-only viewer | ✅ | Lines 90–93 |
+| Watched-roots + snapshot limitations | ✅ | Lines 134–148 |
+| #18 limitation | ✅ | Lines 139–143: links the issue, explains ephemeral-file gap |
+| Full security/privacy artifact-contents warning | ✅ | Lines 12–14: absolute paths, argv, raw syscall, file metadata, snapshot diagnostics |
+| "Keep `.codev/observe/` out of commits/uploads/logs" | ✅ | Lines 16–17 |
+| Off-Linux install / Linux-only runtime | ✅ | Lines 37–40 |
+| CI badge | ✅ | Line 3 |
+
+Everything required by the spec is present. The warning is genuinely prominent (blockquote at the very top after the one-liner, visually distinct with the ⚠️ header). The README is well-structured — it summarizes and links into `docs/` rather than duplicating the full reference.
+
+### docs/observe.md — Iteration 1 Fix #1 (Codex)
+
+**Before (old):** `Store .codev/observe/ carefully. Redaction is not implemented.`
+
+**After (line 28–29):** `Store .codev/observe/ carefully, and keep it **out of commits, uploads, and public logs until you have reviewed its contents**. Redaction is not implemented.`
+
+✅ Fix applied correctly. The keep-out-of-commits warning is now present in the docs that serve as the `pyproject.toml` readme (i.e., what a PyPI-style consumer would see).
+
+The quick-start section (lines 33–76) now leads with the installed CLI (`ai-observe ...`) and presents the named shims as checkout-only opt-in — properly aligned with packaged usage.
+
+### docs/viewer.md — Packaged-Usage Alignment
+
+Lines 7–21 now show the installed invocation first (`ai-observe-viewer`, `python -m ai_observe.viewer`) and the `PYTHONPATH=src` checkout path second. The practical workflow section (lines 150–155) uses `ai-observe-viewer` and clarifies that `codex` refers to the checkout shim. No stale checkout-only phrasing contradicts the installed CLI. ✅
+
+### RELEASING.md — Iteration 1 Fix #2 (Codex)
+
+**The prerequisite/order issue** is fixed:
+
+- **Lines 8–13:** Build tooling (`build`, `setuptools>=77`) is provisioned **up front**, before any numbered step, with the rationale that step 2's smoke tests need the PEP 517 backend.
+- **Step 2 (line 36):** "zero skips" requirement is now satisfiable on a machine that follows the document top-to-bottom.
+- **Step 4 (line 48):** "Using the tooling provisioned up front" — references what was already installed, runs only `python3 -m build`.
+
+✅ Fix applied correctly. The document is now internally consistent: provision once, use twice.
+
+**Checklist coverage (all 8 listed steps):**
+
+| Step | Content | Present |
+|---|---|---|
+| 1 | Version check/bump | ✅ |
+| 2 | Full test run (zero skips) | ✅ |
+| 3 | CI status | ✅ |
+| 4 | Wheel + sdist build | ✅ |
+| 5 | Wheel/sdist content inspection | ✅ |
+| 6 | Clean-venv install from built artifacts | ✅ |
+| 7 | End-to-end observed command | ✅ |
+| 8 | Viewer static-asset serving smoke test | ✅ |
+
+The commands mirror what CI does, and the document explicitly says so (line 5). Sensitive-artifact cleanup is included (line 106, line 122–123). The checklist is practical and followable.
+
+### Minor Observations (non-blocking)
+
+- The README badge URL (line 3) assumes the GitHub repo is `mohidmakhdoomi/ai-observe` — should match the actual repo. This is a cosmetic detail, not a blocker.
+- `RELEASING.md` step 6 shows `python3 -m unittest -v tests.test_packaging_smoke` — this dotted-module import form requires the test runner's cwd context to be correct; the smoke harness handles this internally, so it's fine for the local-release workflow where the user is in the checkout.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 3 delivers all spec-required documentation with both iteration-1 fixes (keep-out-of-commits warning in docs/observe.md, RELEASING.md prerequisite ordering) correctly applied; README is prominent and complete, docs are aligned with packaged usage, and the release checklist is coherent top-to-bottom.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

@@ -1,0 +1,65 @@
+I'll review this spec by verifying its claims against the actual codebase. Let me check the key files it references.Now let me look at the specific test files referenced for timing issues and verify the existing test helper structure:Good, I've now verified the key claims. Let me also check a couple more things for completeness:I now have a thorough understanding of the codebase state. Let me verify one more claim — the `_wait_until` helper in test_live_trace.py vs the `_wait_for` in test_viewer_tailer.py:I've now verified all the major claims in the spec against the actual codebase. Here's my review:
+
+---
+
+## Specification Review: CI + Test Reliability + Docs/Release
+
+### 1. Completeness — ✅ Excellent
+
+The spec is exceptionally thorough. Every gap it claims exists is confirmed:
+- **No `.github/` directory** — confirmed, no CI at all.
+- **No `README.md`** — confirmed.
+- **No `RELEASING.md`** — confirmed.
+- **`pyproject.toml` readme points to `docs/observe.md`** — confirmed (line 9).
+- **Umask-sensitive assertion** — confirmed at `test_codex_observe.py:67`: `stat.S_IMODE(obs.stat().st_mode) == 0o755` on a `test-created` directory via `obs.mkdir()`. The spec's analysis that adjacent `0o600` assertions (lines 68–69) are product-set and safe is correct.
+- **Node-gated tests** — confirmed in 5 files (`test_viewer_aggregator.py`, `test_viewer_index_js.py`, `test_viewer_table_js.py`, `test_viewer_breadcrumb.py`, `test_viewer_treemap.py`).
+
+### 2. Technical Feasibility — ✅ Sound
+
+- The CI approach (single workflow, matrix, two stages per leg) is standard and well-supported. `ubuntu-latest` + `actions/setup-python` + `actions/setup-node@v4` is bread-and-butter GitHub Actions.
+- `sudo sysctl kernel.yama.ptrace_scope=0` is the correct incantation for `ubuntu-latest` runners, which do restrict ptrace by default. The guarded fallback is prudent.
+- The polling helper approach is proven — the codebase **already has two** poll-until helpers:
+  - `_wait_until()` in `test_live_trace.py:35` (timeout=2.0, interval=0.02)
+  - `_wait_for()` in `test_viewer_tailer.py:63` (timeout=3.0, interval=0.02)
+  
+  These are nearly identical. The spec says "reuse/extend an existing helper if one exists" — the plan should consolidate these two into a shared `tests/_util.py` rather than creating a third.
+
+### 3. Edge Cases / Error Scenarios — ✅ Well Covered
+
+- The spec explicitly handles the "smoke tests skip silently in CI" risk (open question #1) with a sound default: make the CI environment satisfy capability gates so they run; surface any silent skip loudly.
+- The spec correctly distinguishes intentional sleeps (fake-strace `time.sleep(30)` at line 116, product poll loops) from flakiness-inducing sleeps.
+- The spec correctly notes that `test_packaging_smoke.py`'s `_ViewerProc` class already has bounded retry logic (lines 189–202: 20 attempts × 0.1s) and a deadline-based URL reader (line 171), so the smoke test file itself is already well-written — the reliability work targets the *other* test files.
+
+### 4. Security Considerations — ✅ Appropriate
+
+- The sensitive-data warning requirement is repeated multiple times and positioned as non-negotiable, which is correct for a tool that captures raw syscall traces, command arguments, and file paths.
+- The spec correctly notes that `.trace`, `.jsonl`, `.jsonl.partial`, `.jsonl.rebuilt`, and `.meta.json` all need the warning treatment.
+- `sysctl kernel.yama.ptrace_scope=0` in CI is a security relaxation, but it's appropriate — it's on ephemeral CI runners, and the spec correctly notes the container/`SYS_PTRACE` caveat for future documentation.
+
+### 5. Testing Strategy — ✅ Clear
+
+The success criteria are concrete and testable. The "run under `umask 077` and `umask 022`" verification is a particularly good acceptance test since it directly exercises the fix.
+
+### 6. Ambiguities / Minor Observations
+
+**Minor (none block progress):**
+
+1. **Existing poll helpers duplication**: The spec says "add a bounded retry/poll helper (in a shared test util, e.g. `tests/_util.py` or reuse/extend an existing helper if one exists)." This is the right call, but the plan should be explicitly aware that there are TWO existing helpers to consolidate, not zero or one.
+
+2. **`test_viewer_server.py` fixed sleeps**: Lines 153, 187, 221, 240, 313, 331, 344 all use `time.sleep()` for tailer catch-up synchronization. These are the core flakiness candidates in that file — the spec identifies the file correctly but the plan will need to assess which of these 7 sites can be replaced with a poll (most can, since they wait for SSE/tailer state that's queryable).
+
+3. **`test_codex_observe.py` lines 334, 339**: The `time.sleep(0.3)` at line 334 waits for subprocess startup before sending a signal, and the `time.sleep(0.05)` loop at 339 polls for a marker file. The spec correctly classifies the `time.sleep(30)` as intentional, but these two sleeps are actual synchronization that could benefit from polling (the line-339 loop already IS polling, just with a fixed initial delay at 334). Good spec; the plan will sort it out.
+
+4. **`test_viewer_breadcrumb.py`** uses `shutil.which("node")` (line 42) — this file is in the grep results but wasn't listed in the spec's "Node-gated parity tests" list. Very minor; the spec lists 4 files, the codebase has 5 Node-gated files.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, technically accurate spec with verified claims; all gaps, flakiness candidates, and acceptance criteria are sound and actionable.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None (minor observation: spec lists 4 Node-gated test files but test_viewer_breadcrumb.py is a 5th; the plan should include it)
+```

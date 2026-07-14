@@ -1,0 +1,81 @@
+The files are in the builder worktree. Let me read them from the correct location.Now let me check the original docs to understand what changed, and verify the CI badge URL and pyproject.toml readme setting.I've read all four Phase 3 deliverables. Let me do a final cross-check against the spec's acceptance criteria checklist for this phase.Here's my review of Phase 3 (Documentation: README + aligned docs + release checklist).
+
+---
+
+## Review
+
+### README.md — Spec Adherence
+
+All required elements are present and well-placed:
+
+| Requirement | Status | Location |
+|---|---|---|
+| Very prominent sensitive-data warning near top | ✅ | Lines 8–18, blockquoted with ⚠️, immediately after the one-liner |
+| Full artifact-contents warning (abs paths, argv/prompts, raw syscall, metadata, snapshot diags) | ✅ | Lines 11–13, consolidated in the top warning |
+| "Keep `.codev/observe/` out of commits/uploads/logs" | ✅ | Lines 16–17 |
+| What it does | ✅ | Lines 22–33 |
+| Install instructions (`pip install .`) | ✅ | Lines 48–57 |
+| Quick start with packaged CLI | ✅ | Lines 59–88 (`ai-observe`, `ai-observe-viewer`, `python -m`) |
+| Artifact locations | ✅ | Lines 68–80 |
+| Checkout-only opt-in named-shim workflow | ✅ | Lines 95–116, explicitly notes shims NOT installed by default |
+| Linux/strace/ptrace/container caveats | ✅ | Lines 118–131, includes SYS_PTRACE + seccomp + sysctl |
+| Loopback-only viewer behavior | ✅ | Lines 90–93 |
+| Watched-roots + snapshot limitations | ✅ | Lines 134–148 |
+| #18 limitation (ephemeral files between snapshots) | ✅ | Lines 139–143, links to issue |
+| Off-Linux install / Linux-only runtime note | ✅ | Lines 37–40 |
+| CI status badge | ✅ | Line 3, URL matches `pyproject.toml` repository URL |
+
+The README is clean, well-structured, and security-forward. It links into `docs/` for the full reference rather than duplicating verbatim — exactly what the plan called for.
+
+### docs/observe.md — Alignment with Packaged Usage
+
+- ✅ Quick start now leads with "Install and observe a command" using the packaged `ai-observe` CLI (not `bin/ai-observe`)
+- ✅ Named shims section retitled to "(checkout-only, opt-in)" with explanation that they're deliberately not installed
+- ✅ `bin/ai-observe` examples replaced with `ai-observe`
+- ✅ Checkout fallback preserved: "From a checkout without installing, `bin/ai-observe` behaves the same way"
+- ✅ Added absolute-path safety warning for shim configuration
+
+No stale checkout-only-only phrasing contradicting the installed CLI.
+
+### docs/viewer.md — Alignment with Packaged Usage
+
+- ✅ Invocation section now shows installed path first (`ai-observe-viewer` / `python -m ai_observe.viewer`)
+- ✅ Checkout path preserved as secondary (`PYTHONPATH=src python3 -m ...`)
+- ✅ Practical workflow updated: `ai-observe-viewer` replaces `PYTHONPATH=src python3 -m ...`, codex noted as "the opt-in checkout shim"
+
+### RELEASING.md — Release Checklist Completeness
+
+All required steps present in order:
+
+1. ✅ Version check/bump — single-sourced from `ai_observe.__version__`
+2. ✅ Full test run — zero skips required
+3. ✅ CI status — all three matrix legs
+4. ✅ Wheel + sdist build
+5. ✅ Wheel/sdist content inspection — checks viewer static assets, tests exclusion, license files, no artifact leak
+6. ✅ Clean-venv install from built artifacts — outside the checkout, `--no-index --no-deps`
+7. ✅ One end-to-end observed command — from a tmpdir using the venv
+8. ✅ Viewer static-asset serving smoke test — proves installed wheel serves static files
+
+The checklist mirrors CI and mentions the sensitive-data cleanup for the temp directory. Local, non-PyPI scope is explicit.
+
+### pyproject.toml readme
+
+Correctly **not** repointed — still `docs/observe.md`, matching the plan's "default is leave it" decision. The plan noted this should be flagged to the architect if it seems right; since `docs/observe.md` now has proper packaged-usage content and serves as the detailed reference, the current setup is reasonable.
+
+### Quality Notes
+
+- The README structure (warning → what → requirements → install → quick start → shims → caveats → limitations → docs links → development → license) is a good user flow.
+- Consistent use of links into `docs/` avoids duplication drift.
+- `RELEASING.md` step numbering and commands are clear and copy-pasteable.
+- No broken intra-repo links detected.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 3 delivers a complete, well-structured README with prominent security warnings, properly aligned docs, and a thorough release checklist — all spec requirements met.
+CONFIDENCE: HIGH
+
+---
+
+KEY_ISSUES:
+- None

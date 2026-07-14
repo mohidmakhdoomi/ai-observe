@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The CI workflow is close, but it does not fully provision the packaging smoke build backend and can still pass if the main strace-backed test silently skips.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `.github/workflows/ci.yml:48-49` installs `build` but not `setuptools>=77`, while `pyproject.toml:1-4` requires that backend version and `tests/test_packaging_smoke.py:101-118` builds with the host interpreter’s `setuptools.build_meta` (no isolation). As written, CI does not guarantee the smoke harness can actually build on the runner.
+- `.github/workflows/ci.yml:59-63` has no fail-loud check for skips in the main suite, but `tests/test_codex_observe.py:420-454` can still self-skip on ptrace denial. That means a matrix leg can go green without actually executing the required strace-backed coverage for the non-smoke suite.

@@ -1,0 +1,64 @@
+Now let me read the test files that were modified to verify Phase 1 work is in place (since Phase 2 depends on it), and also check if there's a `tests/test_packaging_smoke.py` to understand the smoke harness:Now let me check the test files that have Node-gating skip logic, to verify those would be caught by the grep:Let me verify the test file changes are consistent with the CI expectations:Good — all three test files import from `_util` correctly with the `sys.path.insert` pattern. Let me now check the smoke test file for any skip-related patterns that would interact with the CI grep, specifically the `@unittest.skipUnless` decorators:Now let me verify the `test_viewer_smoke_e2e.py` changes and the `test_codex_observe.py` permission changes (Phase 1 work that Phase 2 depends on):Good — the `0o755` assertion on the test-created directory has been removed (replaced with a comment explaining why), while the product-set `0o600` assertions are preserved. The `test_viewer_smoke_e2e.py` now uses `poll_until` instead of a fixed sleep.
+
+Let me do a final check — verify the test names that contain "skipped" to confirm the grep anchoring is correct:I've reviewed the full CI workflow and its interaction with the test infrastructure. Here's my assessment:
+
+---
+
+## Phase 2 Review: CI GitHub Actions Matrix Workflow
+
+### Spec Adherence ✅
+
+All Phase 2 deliverables from the plan are met:
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Triggers on push + pull_request | ✅ | Lines 14-16 |
+| Matrix: 3.10, 3.12, 3.13 on ubuntu-latest | ✅ | Lines 20-24 |
+| Node 20 installed | ✅ | Lines 35-37 |
+| strace installed | ✅ | Line 40 |
+| ptrace relaxed with guard | ✅ | Line 46, `|| echo` fallback |
+| Build tooling with setuptools≥77 | ✅ | Line 55 |
+| Main suite excludes smoke | ✅ | Lines 78 (`grep -v`) |
+| Smoke runs as distinct step | ✅ | Lines 96-104 |
+| Fail-on-skip for both steps | ✅ | Lines 80-83, 101-103 |
+| Container/SYS_PTRACE caveat documented | ✅ | Lines 1-7 |
+| Import-shadowing guard | ✅ | No `PYTHONPATH` exported; comment at line 63 |
+
+### Iteration 1 Fixes ✅
+
+All three fixes from the builder's rebuttal are correctly applied:
+
+1. **Codex #1 (setuptools≥77):** `pip install --upgrade pip build "setuptools>=77"` with a comment explaining why the explicit backend pin is needed (line 48-55).
+
+2. **Codex #2 (main suite skip detection):** The main suite step now tees verbose output and greps for skips (lines 76-83), mirroring the smoke step's mechanism.
+
+3. **Anchored grep pattern:** `grep -E "\.\.\. skipped|skipped=[0-9]"` correctly targets unittest's own skip markers. Verified against the two test names containing "skipped" (`test_malformed_line_skipped_with_warning`, `test_unsupported_future_schema_version_skipped`) — these appear in verbose output as `... ok` lines and do not match.
+
+### Code Quality ✅
+
+- **Shell correctness:** `set -o pipefail` is explicit (GHA defaults to `-eo pipefail` anyway, so this is defense-in-depth). The `2>&1` merge is necessary because unittest writes to stderr. If the suite fails, `-e` terminates before the grep runs — the skip check only fires on otherwise-green runs.
+- **Module discovery:** `ls test_*.py | grep -v '^test_packaging_smoke\.py$' | sed 's/\.py$//'` is a clean way to enumerate test modules while excluding smoke. Running `python -m unittest -v $mods` from `working-directory: tests` correctly resolves sibling imports (including `_util`).
+- **Action versions pinned:** `@v4`/`@v5` major-version pins are appropriate — stable enough to avoid surprise, flexible enough to get security patches.
+- **Comments are excellent:** each step has a clear rationale comment; the import-shadowing guard is explicitly documented; the container caveat is prominent.
+
+### Potential Concerns (non-blocking)
+
+1. **No branch filter on `push` trigger** (line 15): The workflow fires on every push to every branch. Many projects filter to `main`/`master` and rely on `pull_request` for feature branches. This is a style choice, not a bug — the spec says "on every push/PR" without branch restrictions, and for a project without many contributors, full coverage is arguably better. Non-blocking.
+
+2. **`python -m build` step output not captured:** The standalone build step (line 86-87) produces `dist/` artifacts that the smoke step doesn't consume (smoke builds its own via the PEP 517 backend directly). This is fine — it validates the `build` frontend independently. The artifacts in `dist/` are simply unused. Non-blocking.
+
+### Phase 1 Dependencies Verified
+
+The Phase 1 changes that Phase 2 depends on are in place:
+- `tests/_util.py` with `poll_until` helper — present and correctly structured
+- All consuming test files (`test_viewer_server.py`, `test_live_trace.py`, `test_viewer_tailer.py`, `test_viewer_smoke_e2e.py`) import via `sys.path.insert(0, str(ROOT / "tests"))` + `from _util import poll_until` — consistent with the CI's `working-directory: tests` execution model
+- Umask-dependent `0o755` assertion removed from `test_codex_observe.py` (line 67-71 now has an explanatory comment); product-set `0o600` assertions preserved (lines 72-73)
+
+---
+VERDICT: APPROVE
+SUMMARY: CI workflow is complete, correct, and properly addresses all iteration 1 feedback; anchored skip detection, explicit setuptools pin, and two-step suite/smoke separation all verified against actual files.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

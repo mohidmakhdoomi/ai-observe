@@ -1,0 +1,17 @@
+---
+VERDICT: COMMENT
+SUMMARY: Strong, feasible spec with good security/testing scope, but the CI artifact-validation path should be clarified so implementation can’t satisfy it while only exercising the smoke harness’s self-built artifacts.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The main ambiguity is CI artifact validation: `tests/test_packaging_smoke.py` currently builds and installs its **own** artifacts in `setUpModule()`, so the spec should clarify whether CI must also explicitly test the workflow-built wheel/sdist, or whether satisfying the smoke harness’s gates is sufficient. As written, an implementation could “build artifacts” and separately run the smoke harness without ever proving the workflow-built artifacts were the ones exercised.
+- Related minor ambiguity: if CI runs `python -m unittest discover -s tests`, that already includes `test_packaging_smoke.py`. The spec should state whether packaging smoke is expected to run as part of the main suite, as a distinct step, or both, to avoid accidental double-running or a capability-gated skip being mistaken for success.
+
+Verified against the repo:
+- There is currently no `.github/` workflow directory.
+- There is no root `README.md` or `RELEASING.md`.
+- `docs/viewer.md` still shows checkout-style usage (`PYTHONPATH=src python3 -m ...`), so the alignment work is real.
+- The cited umask-sensitive assertion exists in `tests/test_codex_observe.py`.
+- The cited timing-sensitive `time.sleep()` usage exists in the viewer/live-trace tests.
+
+Everything else looks technically sound, well-scoped, and behavior-preserving.

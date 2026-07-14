@@ -1,0 +1,14 @@
+VERDICT: APPROVE
+SUMMARY: The CI matrix workflow correctly implements Phase 2, explicitly fixing the setuptools dependency and skip-masking issues while incorporating robust checks against false positives.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+The builder's updates to `.github/workflows/ci.yml` successfully address the previous iteration's feedback. Specifically:
+- **Build Tooling (Codex issue 1)**: Explicitly provisioning `"setuptools>=77"` correctly fulfills the `pyproject.toml` PEP 639 requirement, preventing the build backend from failing in modern environments where it isn't bundled.
+- **Fail-Loud Skips (Codex issue 2 & Defect 3)**: Teeing the output to `$RUNNER_TEMP` and checking for skips via `grep -E "\.\.\. skipped|skipped=[0-9]"` is a zero-product-code, highly effective solution. It accurately ensures that missing Node or `strace`/`ptrace` capabilities fail the CI job instead of silently bypassing coverage. The anchored regex correctly prevents false positives on test names containing the word "skipped".
+- **Import Shadowing Guard**: Avoiding an editable install or setting `PYTHONPATH=src` in the workflow is verified as safe because the individual tests inject `src/` into `sys.path` themselves (e.g., `sys.path.insert(0, str(ROOT / "src"))`). This guarantees that the smoke step's clean virtual environment isn't accidentally bypassed.
+- **Documentation**: The container/ptrace limitations are well documented in the workflow file header.
+
+The implementation is robust, fulfills the phase 2 specification, and is ready to proceed.

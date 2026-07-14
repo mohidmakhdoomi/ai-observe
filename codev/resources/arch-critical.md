@@ -7,11 +7,15 @@ and keeps the map in sync with arch.md's top-level sections.
 STARTER: replace the examples below with YOUR project's facts and arch.md sections. -->
 
 ## Critical facts (consult before deciding)
-- <A system-shape fact that should change implementation choices — e.g. "all persistent state lives in X; never write it directly.">
-- <An invariant a contributor must not violate — e.g. "service A only talks to service B through the queue.">
-- <Keep to <=10, one line each; demote weaker facts into arch.md.>
+- CI fails loud on ANY unittest skip (main suite and packaging smoke): capability-gated skips are a local-dev affordance only — a test gated on a capability CI doesn't provision turns the matrix red, not silently green.
 
 ## Map of arch.md (consult when…)
-- <Top-level arch.md section> — consult when <situation>.
-- <Top-level arch.md section> — consult when <situation>.
-- <List your arch.md's top-level sections here; keep <=12, top-level only.>
+- Layered observer architecture — consult when changing what the product promises to observe or report.
+- Backend abstraction — consult when adding/selecting event backends or touching ordering invariants.
+- Generic command observer core — consult when touching shims, resolvers, or the compatibility facade.
+- Artifact contract — consult when changing session artifacts, sidecar authority, or recovery flows.
+- Provenance model — consult when emitting or consuming events (schema/source/confidence fields).
+- Browser viewer invariants — consult when changing the viewer server, sanitization, or UI data flow.
+- Packaging and distribution — consult when touching pyproject, entry points, package data, or shims-vs-install behavior.
+- Continuous integration — consult when changing the CI workflow, test invocation, or skip gating.
+- Deferred kernel backends — consult when tempted to add fanotify/inotify/eBPF.

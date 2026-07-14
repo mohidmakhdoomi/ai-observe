@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Implementation is correct but tests/_util.py is missing from the commit scope
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `tests/_util.py` is missing from the canonical file list for this PR. Your thread log says you added it, but you likely forgot to `git add tests/_util.py` before committing. Without this file in the commit, the test suite will fail with an `ImportError` for `poll_until` in CI or on any other machine. Please explicitly stage and commit this new file.
+
+Otherwise, the implementation matches the plan perfectly: the sleep-to-poll conversions are correct, the documented fixed sleeps are well-justified, and the umask assertion fix correctly avoids asserting on the test-created directory mode while preserving the product-set `0o600` assertions.
