@@ -84,3 +84,43 @@ No change to core observation semantics.
   rebuilt/meta) — none ambient-umask-dependent.
 - Verified: full suite 234/234 OK under umask 022 AND umask 077; 3x stability loop on
   viewer_server OK; direct-file invocation of all touched test modules OK.
+
+### Implement — phase_1 approved; phase_2 CI (build complete)
+- phase_1 iter2 review: unanimous APPROVE (Gemini HIGH, Codex MEDIUM, Claude HIGH). Iter1
+  had flagged only the untracked tests/_util.py — staged + rebutted; porch swept it into
+  its re-iter commit. NOTE: porch's phase-advance commits only status.yaml — the builder
+  must commit implementation files itself; phase_1 test changes committed as 71392c6.
+- phase_2: added .github/workflows/ci.yml — push+PR triggers; ubuntu-latest ×
+  py 3.10/3.12/3.13 (fail-fast off); checkout@v4 / setup-python@v5 / setup-node@v4
+  (Node 20, no npm install — parity tests are Node-stdlib-only); apt strace; guarded
+  `sysctl kernel.yama.ptrace_scope=0`; `pip install build`; main suite from tests/ cwd via
+  explicit module list excluding test_packaging_smoke (keeps _util.py resolvable, no
+  PYTHONPATH leak into smoke's clean venv); `python -m build`; smoke as separate -v step
+  with fail-loud-on-skip (grep "skipped" → exit 1, plan mechanism (a), zero product-code).
+  Container/SYS_PTRACE+seccomp caveat documented in the header comment.
+- Local dry-runs: YAML parses; main-suite invocation 213/213 OK; smoke module 21/21 OK
+  with zero skips; `python -m build` in a scratch venv builds wheel+sdist (stray egg-info
+  removed; *.egg-info/ already gitignored). Real matrix validation happens on push.
+
+### Implement — phase_2 iter1 rebuttal (resumed session)
+- iter1 verdicts: Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES (2 issues).
+- Codex fix 1: "Provision build tooling" now installs `pip build "setuptools>=77"` —
+  pyproject requires setuptools>=77 (PEP 639) and the smoke harness builds via the HOST
+  interpreter's setuptools.build_meta with no isolation, so `build` alone was insufficient.
+- Codex fix 2: main-suite step now has the same fail-loud-on-skip check as smoke (tee to
+  $RUNNER_TEMP, grep, ::error:: + exit 1) — strace tests self-skip on ptrace denial and
+  would otherwise silently drop coverage on a green leg.
+- Bug found while verifying: bare `grep -E "skipped"` false-positives on test NAMES
+  (test_malformed_line_skipped_with_warning, test_unsupported_future_schema_version_skipped
+  in test_viewer_tailer) — every CI leg would have failed with zero real skips. Both greps
+  now anchor on unittest's own markers: `\.\.\. skipped|skipped=[0-9]` (per-test/module
+  "... skipped 'reason'" lines + "OK (skipped=N)" summary).
+- Verified locally: YAML parses; main suite as-CI-runs-it 213/213 OK, anchored grep clean;
+  smoke as-CI-runs-it 21/21 OK, zero skips; anchored grep positively matches both per-test
+  and setUpModule skip fixtures. Rebuttal written; porch done.
+
+### Implement — phase_2 approved; phase_3 docs (starting)
+- phase_2 iter2: unanimous APPROVE (all HIGH). Codex confirmed both iter1 gaps covered.
+- ci.yml landed in porch's re-iter commit 258ac02 (same sweep pattern as phase_1).
+- phase_3 scope: README.md (security-forward front door), docs/observe.md +
+  docs/viewer.md aligned with packaged usage, RELEASING.md local checklist.
