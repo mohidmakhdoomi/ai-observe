@@ -8,11 +8,11 @@ plan_phases:
     status: complete
   - id: phase_2
     title: 'CI: GitHub Actions matrix workflow (suite + build + installed-artifact smoke)'
-    status: in_progress
+    status: complete
   - id: phase_3
     title: 'Documentation: README + aligned docs + release checklist'
-    status: pending
-current_plan_phase: phase_2
+    status: in_progress
+current_plan_phase: phase_3
 gates:
   spec-approval:
     status: approved
@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -62,4 +62,4 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_2-iter1-claude.txt
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T05:22:17.346Z'
+updated_at: '2026-07-14T05:26:23.671Z'
