@@ -26,8 +26,24 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 1
-build_complete: true
-history: []
+iteration: 2
+build_complete: false
+history:
+  - iteration: 1
+    plan_phase: phase_1
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-claude.txt
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T01:55:59.504Z'
+updated_at: '2026-07-14T01:59:57.228Z'
