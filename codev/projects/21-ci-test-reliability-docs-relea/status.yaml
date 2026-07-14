@@ -1,9 +1,18 @@
 id: '21'
 title: ci-test-reliability-docs-relea
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase_1
+    title: 'Test reliability: shared poll helper + umask determinism'
+    status: in_progress
+  - id: phase_2
+    title: 'CI: GitHub Actions matrix workflow (suite + build + installed-artifact smoke)'
+    status: pending
+  - id: phase_3
+    title: 'Documentation: README + aligned docs + release checklist'
+    status: pending
+current_plan_phase: phase_1
 gates:
   spec-approval:
     status: approved
@@ -18,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T01:45:58.466Z'
+updated_at: '2026-07-14T01:45:59.843Z'
