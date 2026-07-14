@@ -181,3 +181,23 @@ No change to core observation semantics.
   3. "commit hygiene: phase 2/3 in chore(porch) commits" — accurate but a strict-mode
      porch orchestration artifact; not rewriting pushed history (cosmetic, out of lane).
 - Committing ci.yml hardening + rebuttal, then `porch done 21` for re-verification.
+
+### Review — pr gate held: matrix-revealed product race (architect-directed fix)
+- Architect flagged a flaky CI failure I'd missed: run 29309258243, py3.12 leg,
+  `test_default_port_collision_falls_back_to_ephemeral` — AssertionError in
+  CPython `threading._wait_for_tstate_lock` ('assert self._is_stopped') via
+  ViewerServer.stop() -> _serve_thread.join(). Sibling run on same commit passed →
+  intermittent (~1/12 legs). Known CPython join/teardown race (gh-89322/bpo-45274).
+- Fix (product code, minimal): added `_join_thread_safely()` in viewer/server.py;
+  stop() now uses it instead of bare join(). Tolerates the benign AssertionError,
+  lets thread state converge with bounded retries, returns when not-alive/deadline.
+  No change to shutdown ordering or observation semantics. In scope (viewer shutdown
+  != observation semantics), no broader refactor.
+- Regression tests: 2 deterministic tests in test_viewer_server.py (forces join()
+  to assert → swallowed; normal join path). 
+- Verified: affected test 150/150 separate-process, 200/200 in-process (single
+  interpreter — best repro for in-interpreter race); full suite green (215 local,
+  Node/strace-gated skips + smoke excluded).
+- Documented in review doc: Flaky Tests (run id, leg, traceback, root cause, fix,
+  confidence) + Deviations + follow-up. Committing, pushing, waiting for matrix green,
+  then re-requesting pr gate (NOT self-approving).

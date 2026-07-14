@@ -70,6 +70,13 @@ observation semantics:
 - **Phase 2**: `setuptools>=77` is provisioned explicitly alongside `build`
   (pyproject requires it for PEP 639, and the smoke harness invokes the PEP
   517 backend against the host interpreter without isolation).
+- **Review phase (product code, architect-directed)**: the plan scoped
+  reliability fixes to test-side changes, but the CI matrix revealed the
+  flakiness in the viewer *shutdown* path (a CPython `join()` race — see
+  **Flaky Tests**). Fixing it required a minimal, targeted product change
+  (`_join_thread_safely` in `viewer/server.py`); viewer shutdown is not
+  observation semantics, so this stays within the spec's "no change to core
+  observation semantics" constraint. No broader refactor was undertaken.
 - No other deviations; `pyproject.toml`'s `readme` was left pointing at
   `docs/observe.md` per the plan's default.
 
@@ -253,14 +260,54 @@ Routed per the hot/cold two-tier model:
 
 ## Flaky Tests
 
-No flaky tests encountered. No tests were skipped; the phase-1 work removed
-the known timing/umask flakiness sources, and the suite ran green (234/234)
-on every check during all three phases, under both `umask 022` and `077`.
+### Matrix-revealed: `test_default_port_collision_falls_back_to_ephemeral` (CPython join race)
+
+The first real CI runs surfaced exactly the class of flakiness the plan
+predicted the matrix would expose — but in **product** shutdown code, not a
+test-side sleep/umask assertion.
+
+- **Failed run**: GitHub Actions run `29309258243`, `test (3.12)` leg, job
+  `87009317453`. A sibling run on the *same* PR-opening commit passed all
+  legs — intermittent, ~1 failure in 12 legs observed.
+- **Test**: `tests/test_viewer_server.py::CLITests.test_default_port_collision_falls_back_to_ephemeral`
+  (one-shot CLI: start viewer, immediately stop).
+- **Traceback (summary)**:
+  `cli.main()` → `viewer/__main__.py:84 server.stop()` →
+  `viewer/server.py:433 self._serve_thread.join(timeout=5.0)` →
+  CPython `threading._wait_for_tstate_lock` → `AssertionError: assert self._is_stopped`.
+- **Root cause**: a known CPython thread-teardown race (gh-89322 / bpo-45274).
+  When a thread is joined at the exact moment it clears its C-level
+  `_tstate_lock`, `_wait_for_tstate_lock` can observe `lock is None` while
+  `_is_stopped` is not yet visibly `True` and trips its internal assertion.
+  The one-shot CLI path (start → immediate `stop()` → `join()`) hits this
+  window because the serve thread is torn down microseconds after creation.
+  It is **not** an observation-semantics defect — the thread has, in fact,
+  finished when the assertion fires.
+- **Fix (product code, minimal/targeted)**: added
+  `viewer/server._join_thread_safely()` and call it from `ViewerServer.stop()`
+  in place of the bare `join()`. The helper tolerates the benign
+  `AssertionError` from `join()`/`is_alive()`, lets the thread's Python-side
+  state converge with brief bounded retries, and returns once the (daemon)
+  thread is no longer alive or the timeout elapses. No change to shutdown
+  ordering, HTTP handling, or observation behavior.
+- **Regression coverage**: two deterministic tests in `test_viewer_server.py`
+  (`test_join_thread_safely_tolerates_tstate_lock_race` forces `join()` to
+  raise the assertion and asserts it is swallowed;
+  `test_join_thread_safely_joins_live_thread_cleanly` covers the normal path).
+- **Confidence**: the affected test passed 150/150 in separate processes and
+  200/200 in a single interpreter (in-process, the configuration that most
+  readily reproduces an in-interpreter teardown race); full suite green.
+
+Beyond this one race, no flaky tests were encountered. No tests were skipped;
+the phase-1 work removed the known timing/umask flakiness sources, and the
+suite ran green on every check during all three phases, under both `umask 022`
+and `077`.
 
 ## Follow-up Items
 
-- Confirm all three CI matrix legs green on the PR (first real run of the
-  workflow) — part of the verify phase.
+- Confirm all three CI matrix legs green on the PR after the `join()`-race
+  fix, across several runs (the race was ~1-in-12 legs, so a single green
+  sweep is necessary but not fully sufficient) — part of the verify phase.
 - Follow `RELEASING.md` end-to-end once on the merged integration branch
   (verify phase, per the plan's post-implementation tasks).
 - #18 (periodic snapshot reconciliation) remains open and out of scope.

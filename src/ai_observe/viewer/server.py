@@ -430,7 +430,7 @@ class ViewerServer:
         except OSError:
             pass
         if self._serve_thread is not None:
-            self._serve_thread.join(timeout=5.0)
+            _join_thread_safely(self._serve_thread, timeout=5.0)
         for stream in self._streams.values():
             stream.stop()
 
@@ -440,6 +440,41 @@ class ViewerServer:
 
     def __exit__(self, *exc) -> None:
         self.stop()
+
+
+def _join_thread_safely(thread: threading.Thread, timeout: float) -> None:
+    """Join *thread*, tolerating a benign CPython thread-teardown race.
+
+    ``Thread.join()`` can intermittently raise ``AssertionError`` from
+    ``threading._wait_for_tstate_lock`` (``assert self._is_stopped``) when the
+    joined thread clears its C-level tstate lock concurrently with the join —
+    a known CPython race (see gh-89322 / bpo-45274). When it fires, the joined
+    thread's OS-level lock is already gone, so the thread has in fact finished;
+    only the Python-side ``_is_stopped`` flag has not yet been observed as set.
+
+    We therefore treat the assertion as "thread is terminating": let its state
+    converge with brief bounded retries and return once it is no longer alive
+    (or the deadline passes). The serve thread is a daemon, so returning while
+    it is momentarily still visible as alive never blocks interpreter exit.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        try:
+            thread.join(timeout=remaining if remaining > 0 else 0.0)
+            return
+        except AssertionError:
+            # Benign tstate-lock race; fall through to re-check liveness.
+            pass
+        try:
+            alive = thread.is_alive()
+        except AssertionError:
+            # is_alive() shares the same _wait_for_tstate_lock path; the state
+            # is still converging, so treat as alive and retry.
+            alive = True
+        if not alive or time.monotonic() >= deadline:
+            return
+        time.sleep(0.01)
 
 
 def assert_loopback(host: str) -> None:

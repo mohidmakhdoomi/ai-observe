@@ -563,6 +563,40 @@ class CLITests(unittest.TestCase):
         t.join(timeout=10.0)
         self.assertEqual(opened_with, [])
 
+    def test_join_thread_safely_tolerates_tstate_lock_race(self):
+        # Regression for a CPython thread-teardown race (gh-89322 / bpo-45274):
+        # Thread.join() can raise AssertionError from _wait_for_tstate_lock
+        # ("assert self._is_stopped") while the joined thread clears its
+        # C-level tstate lock. It surfaced in CI (run 29309258243, py3.12 leg)
+        # as ViewerServer.stop() -> _serve_thread.join() aborting the one-shot
+        # viewer shutdown. _join_thread_safely must swallow that assertion and
+        # return once the thread is no longer alive, not propagate it.
+        class RacingThread:
+            def __init__(self):
+                self.join_calls = 0
+
+            def join(self, timeout=None):
+                self.join_calls += 1
+                raise AssertionError("simulated _wait_for_tstate_lock race")
+
+            def is_alive(self):
+                return False
+
+        rt = RacingThread()
+        # Must not raise even though join() always asserts.
+        viewer_server._join_thread_safely(rt, timeout=1.0)
+        self.assertGreaterEqual(rt.join_calls, 1)
+
+    def test_join_thread_safely_joins_live_thread_cleanly(self):
+        # Normal path: a real, briefly-running thread joins without error and
+        # is observed stopped afterward.
+        started = threading.Event()
+        th = threading.Thread(target=started.set)
+        th.start()
+        self.assertTrue(started.wait(timeout=2.0))
+        viewer_server._join_thread_safely(th, timeout=2.0)
+        self.assertFalse(th.is_alive())
+
 
 if __name__ == "__main__":
     unittest.main()
