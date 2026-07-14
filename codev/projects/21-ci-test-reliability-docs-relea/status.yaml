@@ -1,7 +1,7 @@
 id: '21'
 title: ci-test-reliability-docs-relea
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase_1
     title: 'Test reliability: shared poll helper + umask determinism'
@@ -29,58 +29,10 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
-history:
-  - iteration: 1
-    plan_phase: phase_1
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_1-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase_2
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_2-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_2-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_2-iter1-claude.txt
-  - iteration: 1
-    plan_phase: phase_3
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_3-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_3-iter1-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/ai-observe_root/ai-observe/.builders/spir-21/codev/projects/21-ci-test-reliability-docs-relea/21-phase_3-iter1-claude.txt
+build_complete: false
+history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T23:58:37.839Z'
+updated_at: '2026-07-14T23:58:45.191Z'
 pr_history:
   - phase: review
     pr_number: 23
