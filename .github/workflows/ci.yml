@@ -1,0 +1,104 @@
+# CI for ai-observe.
+#
+# Runs on standard ubuntu-latest VM runners (NOT containers). If containerized
+# runners are ever introduced, strace needs explicit ptrace support: grant the
+# SYS_PTRACE capability and relax the seccomp profile (e.g. `docker run
+# --cap-add=SYS_PTRACE --security-opt seccomp=unconfined`), in addition to
+# kernel.yama.ptrace_scope=0.
+#
+# Viewer and smoke tests bind and connect on 127.0.0.1 (loopback HTTP) using
+# ephemeral ports (port=0); standard VM runners allow this without extra
+# configuration.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Node 20 so the JS helper/parity tests run instead of silently
+      # skipping. They use only the Node standard library; there is no root
+      # package.json and no npm install step.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install strace
+        run: sudo apt-get update && sudo apt-get install -y strace
+
+      # ubuntu-latest may restrict ptrace attachment (Yama). Relax it so
+      # strace can attach to child processes. Guarded: a missing sysctl key
+      # logs and continues rather than failing the job.
+      - name: Allow ptrace attach for strace
+        run: sudo sysctl kernel.yama.ptrace_scope=0 || echo "kernel.yama.ptrace_scope not available; continuing"
+
+      # setuptools>=77 is provisioned explicitly: the packaging smoke
+      # harness invokes the PEP 517 backend (setuptools.build_meta) directly
+      # with --no-isolation semantics against the HOST interpreter, and
+      # pyproject.toml requires setuptools>=77 (PEP 639 SPDX license). Newer
+      # Python environments do not bundle setuptools, so `build` alone is
+      # not enough.
+      - name: Provision build tooling
+        run: python -m pip install --upgrade pip build "setuptools>=77"
+
+      # Main suite, excluding the packaging smoke module: smoke runs as its
+      # own clearly-reported step below, so a capability-gated skip cannot
+      # hide inside this large run and the artifact is not built twice in
+      # one unittest invocation. Run from tests/ so sibling modules
+      # (tests/_util.py) resolve exactly as under `discover -s tests`. Each
+      # test file puts src/ on sys.path itself, so no editable install or
+      # PYTHONPATH is needed — and PYTHONPATH must NOT leak src/ into the
+      # smoke step's clean-venv subprocesses (import-shadowing guard).
+      # Fail-loud-on-skip applies here too: every skip gate in the main
+      # suite is an environment capability this workflow provisions (Node
+      # for JS parity tests, strace presence, ptrace attachability), so any
+      # skip on a matrix leg means the leg silently lost coverage — e.g.
+      # strace tests self-skip on ptrace denial — and must fail. The grep
+      # anchors on unittest's own skip markers ("... skipped" result lines
+      # and the "skipped=N" summary), not the bare word, because test NAMES
+      # legitimately contain "skipped" (e.g.
+      # test_malformed_line_skipped_with_warning).
+      - name: Run unit test suite (excluding packaging smoke, fail on skip)
+        working-directory: tests
+        run: |
+          set -o pipefail
+          mods=$(ls test_*.py | grep -v '^test_packaging_smoke\.py$' | sed 's/\.py$//')
+          python -m unittest -v $mods 2>&1 | tee "$RUNNER_TEMP/suite-output.txt"
+          if grep -E "\.\.\. skipped|skipped=[0-9]" "$RUNNER_TEMP/suite-output.txt"; then
+            echo "::error::main suite reported skips in CI; Node/strace/ptrace coverage was silently lost"
+            exit 1
+          fi
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      # Installed-artifact validation (SPIR A smoke harness): builds wheel +
+      # sdist via the PEP 517 backend, installs them into a clean venv
+      # outside the checkout (--no-index --no-deps; zero runtime deps), and
+      # exercises the INSTALLED artifact, not the source tree. The harness
+      # is capability-gated and skips cleanly on under-provisioned hosts; in
+      # CI a skip means the artifact was NOT validated, so any reported skip
+      # fails the job (fail-loud-on-skip, mechanism (a) from the plan:
+      # grep the verbose unittest output — zero product-code changes).
+      - name: Packaging smoke tests (installed artifact, fail on skip)
+        working-directory: tests
+        run: |
+          set -o pipefail
+          python -m unittest -v test_packaging_smoke 2>&1 | tee "$RUNNER_TEMP/smoke-output.txt"
+          if grep -E "\.\.\. skipped|skipped=[0-9]" "$RUNNER_TEMP/smoke-output.txt"; then
+            echo "::error::packaging smoke tests skipped in CI; the installed artifact was not validated"
+            exit 1
+          fi
