@@ -32,10 +32,12 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-14T23:58:45.191Z'
+updated_at: '2026-07-15T00:00:29.112Z'
 pr_history:
   - phase: review
     pr_number: 23
     branch: builder/spir-21
     created_at: '2026-07-14T05:42:37.738Z'
+    merged: true
+    merged_at: '2026-07-15T00:00:29.111Z'
 pr_ready_for_human: false
