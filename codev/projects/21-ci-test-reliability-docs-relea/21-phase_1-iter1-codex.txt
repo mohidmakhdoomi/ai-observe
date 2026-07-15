@@ -1,0 +1,8 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 1 logic looks aligned, but the shared helper it now depends on is not actually in the tracked PR scope, so the phase is not complete/reviewable as-shipped.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `tests/_util.py` is required by the Phase 1 changes but is currently untracked (`git status` shows `?? tests/_util.py`). The modified tests import it at `tests/test_live_trace.py:15-19`, `tests/test_viewer_tailer.py:12-15`, `tests/test_viewer_server.py:16-21`, and `tests/test_viewer_smoke_e2e.py:11-14`. As a result, the canonical PR file list omits the new shared helper deliverable, and the committed diff would break these tests.
+- Otherwise, the scoped Phase 1 edits look directionally correct: the umask-dependent directory assertion was removed while `0o600` artifact assertions were preserved (`tests/test_codex_observe.py:55-73`), and the remaining fixed sleeps are mostly documented as intentional negative checks / unqueryable waits.

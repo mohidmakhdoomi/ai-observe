@@ -1,0 +1,22 @@
+---
+VERDICT: APPROVE
+SUMMARY: The PR successfully implements CI, improves test reliability with polling, and adds the required documentation and release checklists.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR introduces continuous integration for `ai-observe`, improves the reliability of the test suite by replacing arbitrary sleeps with bounded polling, and adds critical documentation including a new README and release checklist.
+
+  ## Key Changes
+  - Added a GitHub Actions CI workflow to run tests across Python 3.10, 3.12, and 3.13, including a clean-venv installed-artifact smoke test that fails loudly on skips.
+  - Consolidated timing-sensitive test waits into a shared `poll_until` helper in `tests/_util.py`, and made directory mode assertions umask-deterministic.
+  - Added a comprehensive root `README.md` with a prominent sensitive-data warning and a local `RELEASING.md` checklist.
+  - Updated `docs/observe.md` and `docs/viewer.md` to align with the packaged CLI usage.
+
+  ## Test Plan
+  - Verify CI runs successfully on push/PR for all matrix legs and that no tests silently skip.
+  - Run the test suite locally under different umasks (e.g., `umask 022` and `umask 077`) to ensure determinism.
+  - Follow the `RELEASING.md` checklist end-to-end to validate the manual release and smoke test process.

@@ -64,7 +64,11 @@ class CodexObserveTests(unittest.TestCase):
                 logs = codex_observe.prepare_logs(env)
                 self.assertEqual(logs.session_id, "sess-1")
                 self.assertEqual(logs.observe_dir, obs.resolve())
-                self.assertEqual(stat.S_IMODE(obs.stat().st_mode), 0o755)
+                # No assertion on `obs`'s mode: the test created it with
+                # `mkdir()`, so its mode is ambient-umask-dependent, and the
+                # product leaves pre-existing dirs' modes untouched (it only
+                # chmods 0o700 on dirs it creates itself). The 0o600 artifact
+                # modes below are product-set and deterministic.
                 self.assertEqual(stat.S_IMODE(logs.trace_path.stat().st_mode), 0o600)
                 self.assertEqual(stat.S_IMODE(logs.jsonl_path.stat().st_mode), 0o600)
             finally:
@@ -113,6 +117,9 @@ class CodexObserveTests(unittest.TestCase):
                     signal.signal(signal.SIGWINCH, mark)
                 signal.signal(signal.SIGTERM, signal.SIG_IGN)
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
+                # Intentional long sleep: simulates a long-running traced
+                # child for signal-forwarding tests. The test terminates it
+                # via signals; the 30s is never awaited to completion.
                 time.sleep(30)
                 sys.exit(0)
             idx = sys.argv.index('-e')
@@ -331,6 +338,10 @@ class CodexObserveTests(unittest.TestCase):
                 "FAKE_STRACE_SIGNAL_FILE": str(marker),
             })
             proc = subprocess.Popen([sys.executable, str(ROOT / "bin" / "codex")], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Intentional fixed sleep: startup grace so the wrapper has
+            # spawned fake-strace and its signal handlers are installed.
+            # That readiness is not observable from outside the subprocess;
+            # the marker-file wait below is already a bounded poll.
             time.sleep(0.3)
             if hasattr(signal, "SIGWINCH"):
                 os.kill(proc.pid, signal.SIGWINCH)

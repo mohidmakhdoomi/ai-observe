@@ -1,0 +1,55 @@
+I'll read the key implementation files for Phase 1 review. Let me start with the core changes.The first read failed — let me find the correct path for the builder's worktree.I see `tests/_util.py` is not listed in the git status output. Let me check if it's already been staged/tracked.Good — `tests/_util.py` is committed. The Iteration 1 blocking issue is resolved. Now let me examine the actual diffs to verify Phase 1 deliverables.Now let me check the viewer_tailer and viewer_smoke_e2e diffs:Let me verify the `broadcaster_for` and `snapshot_len` methods exist on the server object — the tests depend on them:Good — `broadcaster_for` and `snapshot_len` are real server methods. Now let me verify the tests pass:All 76 tests pass. Let me also verify the umask determinism claim:Let me also check for any remaining `time.sleep` calls in the modified test files that might have been missed:Let me verify no product code (`src/`) was modified:Good — zero product code changes, as the plan requires. Here's my full review:
+
+---
+
+## Phase 1 Review: Test reliability — shared poll helper + umask determinism
+
+### Deliverable-by-Deliverable Verification
+
+**1. `tests/_util.py` with shared poll helper** ✅  
+Clean, well-documented. Uses `time.monotonic()` (correct clock choice). Default `timeout=3.0` is the more generous of the two predecessors. Final `bool(predicate())` call at deadline is correct — a condition that becomes true exactly at the deadline still passes. The module docstring explains the `tests/` non-package import mechanics and references the `_aggregator_oracle` precedent.
+
+**2. `test_live_trace.py` — `_wait_until` removed, `poll_until` imported** ✅  
+Local `_wait_until` (lines 35–41 in old file) deleted. All 5 call sites converted. Import path added via `sys.path.insert(0, str(ROOT / "tests"))`.
+
+**3. `test_viewer_tailer.py` — `_wait_for` removed, `poll_until` imported** ✅  
+Local `_wait_for` (lines 63–69 in old file) deleted. All 9 call sites converted. Bonus: `test_truncation_reopens_from_zero` cleverly replaced a fixed `time.sleep(0.15)` with a poll on the truncation warning — a real improvement over the original. `test_shutdown_warns_once_on_incomplete_trailing_fragment` polls on `self.tailer._buf` instead of sleeping.
+
+**4. `test_viewer_server.py` — fixed-sleep sites converted** ✅  
+Converted 5 `time.sleep(0.2)` waits to `poll_until(lambda: srv.broadcaster_for(...).snapshot_len() >= N)` — verified that `broadcaster_for` and `snapshot_len` are real `ViewerServer` methods in `src/ai_observe/viewer/server.py`. Three remaining fixed sleeps (lines 245, 342, 359) are correctly classified as un-pollable (two-client subscription race, empty-file negative check, shutdown settle) and documented inline.
+
+**5. `test_viewer_smoke_e2e.py` — sleep converted** ✅  
+`setUp` sleep replaced with `poll_until(lambda: self.srv.broadcaster_for(None).snapshot_len() >= 1)`. `import time` dropped since it's no longer needed — clean.
+
+**6. Umask fix in `test_codex_observe.py`** ✅  
+The `self.assertEqual(stat.S_IMODE(obs.stat().st_mode), 0o755)` assertion on the test-created directory is removed. The comment explains why (test-created `mkdir()` → umask-dependent; product doesn't chmod pre-existing dirs). Product-set `0o600` assertions on `.trace`/`.jsonl` are preserved. Verified: passes under both `umask 022` and `umask 077`.
+
+**7. Umask audit across `tests/`** ✅  
+Scanned all `st_mode`/`umask`/`chmod` references in `tests/`. All remaining `st_mode` assertions check `0o600` (product-set). The `path.chmod(0o755)` calls are for making test scripts executable, not mode assertions. No umask-dependent assertions remain.
+
+**8. Intentional sleeps documented** ✅  
+All remaining `time.sleep()` calls in modified files have inline documentation:
+- Fake-strace `time.sleep(30)` — labeled as intentional long-running child simulation  
+- Signal-test `time.sleep(0.3)` — labeled as startup grace (readiness not externally observable)  
+- Negative-check sleeps in `test_live_trace.py` (lines 160, 184, 203) — labeled as intentional  
+- Remaining `test_viewer_server.py` sleeps — all labeled  
+- Remaining `test_viewer_tailer.py` sleeps — all labeled  
+
+### Code Quality
+- No third poll-helper variant left behind — consolidation is complete
+- Import mechanics properly handled (explicit `sys.path.insert` consistent with existing `_aggregator_oracle` pattern)
+- All 76 affected tests pass
+- No product code touched
+- Behavior-preserving: the only semantic change is the removed umask-dependent assertion (correct — it tested the test's own `mkdir`, not the product)
+
+### Previous Iteration Issue
+The `tests/_util.py` untracked-file issue (raised by Gemini and Codex in Iteration 1) is resolved — the file is committed in `857fccb`.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 fully delivers all planned items: shared poll helper consolidates both existing helpers, convertible sleep sites use bounded polling against real server state, remaining fixed sleeps are documented with clear rationale, umask assertion is deterministic, and all 76 tests pass.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

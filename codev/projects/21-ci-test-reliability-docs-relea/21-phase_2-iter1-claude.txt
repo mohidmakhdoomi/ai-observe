@@ -1,0 +1,82 @@
+Now let me read the smoke test module more completely to understand its skip gating, and check the other test files for import patterns:Now let me check a few more things — the `test_viewer_smoke_e2e.py` and `test_codex_observe.py` for completeness, and also verify the test invocation pattern:Let me verify a couple more details about the test import mechanics and the packaging smoke module's capability gate:Now I have a complete picture. Let me write my review.
+
+---
+
+## Phase 2 Review: CI — GitHub Actions Matrix Workflow
+
+### 1. Spec Adherence
+
+The `.github/workflows/ci.yml` covers all spec-required elements:
+
+| Requirement | Status |
+|---|---|
+| Triggers: `push` + `pull_request` | ✅ Lines 14–16 |
+| Matrix: `3.10`, `3.12`, `3.13` on `ubuntu-latest` | ✅ Lines 20–24 |
+| `strace` installed | ✅ Line 40 |
+| Node.js 20 installed | ✅ Lines 35–37 |
+| ptrace relaxed with guard | ✅ Line 46 |
+| Container/SYS_PTRACE caveat documented | ✅ Header comment, lines 1–10 |
+| Build tooling provisioned | ✅ Line 49 |
+| Main suite excluding smoke | ✅ Lines 59–63 |
+| Build wheel + sdist | ✅ Lines 65–66 |
+| Smoke tests separate, fail-on-skip | ✅ Lines 76–84 |
+| Loopback HTTP (ephemeral ports) | ✅ Documented lines 9–10; VM runners allow it |
+| Action versions pinned (major) | ✅ `@v4`/`@v5` |
+
+### 2. Code Quality
+
+**The workflow is well-structured.** The comments are excellent — they explain *why*, not just *what*, and document future containerization caveats. The `fail-fast: false` is a good choice for full matrix visibility.
+
+**The main-suite invocation is pragmatic and correct:**
+```yaml
+mods=$(ls test_*.py | grep -v '^test_packaging_smoke\.py$' | sed 's/\.py$//')
+python -m unittest -v $mods
+```
+Running from `working-directory: tests` ensures `_util.py` is on `sys.path` (unittest discover adds the start dir). Each test file independently inserts `src/` into `sys.path`, so no editable install or `PYTHONPATH` is needed — and critically, no `PYTHONPATH=src` leaks into the smoke step's clean-venv subprocesses (import-shadowing guard).
+
+**The fail-on-skip mechanism is correctly implemented:**
+```bash
+set -o pipefail
+python -m unittest -v test_packaging_smoke 2>&1 | tee "$RUNNER_TEMP/smoke-output.txt"
+if grep -E "skipped" "$RUNNER_TEMP/smoke-output.txt"; then
+  echo "::error::..."
+  exit 1
+fi
+```
+The flow handles all three cases correctly:
+- Tests pass, no skips → grep finds nothing → `if` is false → step succeeds ✅  
+- Tests pass, some skips → grep matches → error + exit 1 ✅  
+- Tests fail → `set -e` (GitHub Actions default) + `pipefail` → immediate exit on test failure ✅  
+
+The `grep` inside `if` is immune to `set -e` (bash exempts `if`-conditions), so a no-match return code doesn't cause a false failure.
+
+### 3. Plan Alignment
+
+The implementation follows the plan accurately:
+- **Run placement**: chose option (ii) — two steps (main suite excluding smoke, then smoke as a distinct step) ✅
+- **Fail-loud-on-skip**: chose mechanism (a) — grep-based, zero product-code changes ✅
+- **Import shadowing guard**: `PYTHONPATH` is never exported; scoped to each test file's own `sys.path.insert` ✅
+- **No `npm install`**: correctly noted as unnecessary (Node stdlib only parity tests) ✅
+
+### 4. Issues & Suggestions
+
+**No blocking issues found.** Two minor suggestions:
+
+**Minor suggestion 1 — Explicit `setuptools` in pip install (LOW risk):**
+The smoke harness gates on `import setuptools` in the running interpreter (line 105 of `test_packaging_smoke.py`). The CI step installs `build` but not `setuptools` explicitly. On current GitHub-hosted runners, `actions/setup-python` includes setuptools, so this works. But `build`'s own runtime deps do NOT include setuptools (it installs it only into isolated build environments). If a future runner image drops setuptools, the smoke tests would skip → the grep catches it → CI fails with "smoke tests skipped" — which is correct but could be confusing. Adding `setuptools` to line 49 (`pip install --upgrade pip build setuptools`) makes the dependency explicit and costs nothing.
+
+**Minor suggestion 2 — Slightly tighter grep pattern (cosmetic):**
+`grep -E "skipped"` would match if the word "skipped" appeared anywhere in test output (e.g., in a test name or log message). For this specific module it's fine, but `grep -E "(skipped=|\.\.\..*skipped)"` would be more precise, matching only unittest's actual skip reporting format. Very minor — current pattern is acceptable.
+
+### 5. Test Coverage
+
+Phase 2's deliverable is the workflow itself — its "test" is the CI run on push/PR. The plan correctly identifies that the workflow is its own integration test. The Phase 1 changes (already reviewed) provide the deterministic test foundation that makes CI trustworthy.
+
+---
+VERDICT: APPROVE
+SUMMARY: CI workflow is complete, correct, well-documented, and aligned with spec/plan; two minor robustness suggestions (explicit setuptools, tighter grep) are non-blocking.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None (blocking). Two minor suggestions noted above — explicit `setuptools` in pip install for robustness, and a tighter grep pattern for the skip check.

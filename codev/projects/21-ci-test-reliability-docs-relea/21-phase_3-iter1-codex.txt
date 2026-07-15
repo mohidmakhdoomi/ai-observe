@@ -1,0 +1,9 @@
+Using direct file reads to review phase_3 docs/release work against the spec and plan.Checking the workflow name/badge target for phase_3 doc accuracy.Verifying a couple of doc claims against the actual viewer/observe implementation.Checking the packaging smoke harness gates to validate the release-checklist sequencing.Checking whether `docs/observe.md` includes the explicit “keep .codev/observe out of commits/uploads/public logs” guidance required by the spec.Getting exact line numbers for the two doc issues I found.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 is close, but `docs/observe.md` is still missing one required security warning and `RELEASING.md` has a prerequisite/order mismatch that makes its “zero skips” instruction unreliable.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `docs/observe.md:16-28` does not include the spec-required recommendation to keep `.codev/observe/` out of commits, uploads, and public logs until reviewed. README has that warning, but this phase also required the security/privacy docs to carry it, and `docs/observe.md` currently stops at “Store `.codev/observe/` carefully. Redaction is not implemented.”
+- `RELEASING.md:3-6` and `RELEASING.md:22-42` conflict on prerequisites/order. Step 2 requires the full suite to pass with “zero skips,” explicitly including `setuptools >= 77`, but the checklist only introduces `setuptools>=77`/`build` in step 4. On a clean machine that matches the stated intro prerequisites, the packaging smoke tests can still skip before step 4 provisions the backend. Either make `setuptools>=77` a prerequisite up front or move/provision that requirement before the step-2 full test run.

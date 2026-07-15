@@ -398,7 +398,7 @@ class ViewerServer:
             stream.start()
 
         self._serve_thread = threading.Thread(
-            target=self._httpd.serve_forever,
+            target=self._serve_forever,
             name="ViewerServer",
             daemon=True,
         )
@@ -415,6 +415,20 @@ class ViewerServer:
         else:
             raise RuntimeError("ViewerServer failed to start accepting connections")
 
+    def _serve_forever(self) -> None:
+        # Thread target wrapping the stdlib accept loop. A stop() that races
+        # ahead of this loop's socket/selector setup can surface from inside
+        # the thread as a ValueError ("Invalid file descriptor: -1") or an
+        # OSError. When we are already stopping that is benign teardown noise,
+        # so swallow it rather than let the thread print an unhandled
+        # traceback. Anything raised while NOT stopping is a genuine serve
+        # error and is re-raised unchanged.
+        try:
+            self._httpd.serve_forever()
+        except (ValueError, OSError):
+            if not self._stopped:
+                raise
+
     def stop(self) -> None:
         if self._stopped:
             return
@@ -425,12 +439,18 @@ class ViewerServer:
             self._httpd.shutdown()
         except Exception:  # noqa: BLE001 - defensive
             pass
+        # Join the serve thread BEFORE closing the listening socket. On an
+        # immediate start->stop the serve loop may not have reached its
+        # selector.register() yet; closing the socket first makes that
+        # register() see a -1 fd and raise inside the thread. Waiting for the
+        # thread to finish guarantees it is done touching the socket, so the
+        # close below cannot race the accept-loop setup.
+        if self._serve_thread is not None:
+            _join_thread_safely(self._serve_thread, timeout=5.0)
         try:
             self._httpd.server_close()
         except OSError:
             pass
-        if self._serve_thread is not None:
-            self._serve_thread.join(timeout=5.0)
         for stream in self._streams.values():
             stream.stop()
 
@@ -440,6 +460,41 @@ class ViewerServer:
 
     def __exit__(self, *exc) -> None:
         self.stop()
+
+
+def _join_thread_safely(thread: threading.Thread, timeout: float) -> None:
+    """Join *thread*, tolerating a benign CPython thread-teardown race.
+
+    ``Thread.join()`` can intermittently raise ``AssertionError`` from
+    ``threading._wait_for_tstate_lock`` (``assert self._is_stopped``) when the
+    joined thread clears its C-level tstate lock concurrently with the join —
+    a known CPython race (see gh-89322 / bpo-45274). When it fires, the joined
+    thread's OS-level lock is already gone, so the thread has in fact finished;
+    only the Python-side ``_is_stopped`` flag has not yet been observed as set.
+
+    We therefore treat the assertion as "thread is terminating": let its state
+    converge with brief bounded retries and return once it is no longer alive
+    (or the deadline passes). The serve thread is a daemon, so returning while
+    it is momentarily still visible as alive never blocks interpreter exit.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        try:
+            thread.join(timeout=remaining if remaining > 0 else 0.0)
+            return
+        except AssertionError:
+            # Benign tstate-lock race; fall through to re-check liveness.
+            pass
+        try:
+            alive = thread.is_alive()
+        except AssertionError:
+            # is_alive() shares the same _wait_for_tstate_lock path; the state
+            # is still converging, so treat as alive and retry.
+            alive = True
+        if not alive or time.monotonic() >= deadline:
+            return
+        time.sleep(0.01)
 
 
 def assert_loopback(host: str) -> None:

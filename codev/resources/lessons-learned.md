@@ -59,6 +59,22 @@ A `src/` layout with on-disk static assets (`Path(__file__).parent/"static"`) ca
 
 Calling `setuptools.build_meta.build_sdist` and `build_meta.build_wheel` in the *same* Python process leaves the second artifact unwritten (in-process setuptools/distutils state carries over). When building artifacts programmatically (e.g. in smoke tests without the `build` frontend), run each kind in its own subprocess. Likewise, modern venvs ship without `setuptools`, so an install-from-sdist must pre-provision the build backend in the clean venv (or skip clearly) rather than assuming `--no-build-isolation` will find one.
 
+## Anchor log-grep gates to tool-emitted markers, not bare words
+
+A CI gate that greps test output for a bare word ("skipped") can false-positive on test
+*names* or docstrings containing that word. Anchor the pattern to the exact markers the
+tool emits (unittest: `... skipped '<reason>'` result lines and the `skipped=N` summary),
+and validate the gate by running it against real captured output — both a clean run and a
+forced-skip fixture — before shipping it.
+
+## Stage new files immediately; know your orchestrator's commit sweep
+
+Orchestrators like porch commit only staged files when they sweep the working tree at
+build-complete/re-iter points. A new deliverable left untracked passes every local run
+while producing a broken canonical diff (reviewers see imports of a file that isn't in the
+commit). `git add` new files the moment they are created, and check `git status` for `??`
+entries before signaling a build complete.
+
 ## Scope import fallbacks to "package absent", not any ImportError
 
 A shim that prefers an installed package but falls back to a checkout path should catch `ModuleNotFoundError` and fall back **only** when the top-level package itself is missing (`exc.name == "<package>"`). Catching broad `ImportError` (or any `ModuleNotFoundError`) makes a broken/incomplete install silently resolve to the checkout copy, masking the real failure. Test all three states — installed, absent→fallback, and present-but-broken→surface — and force the fallback hermetically (a `sys.meta_path` blocker, or `python -S`) so the test holds even where the package is installed.

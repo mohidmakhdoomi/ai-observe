@@ -1,0 +1,121 @@
+I'll start by reading the diff and key project files in parallel to understand the full scope of changes.Let me find the actual file locations and continue reading the diff.Let me continue reading the diff and the actual implementation files.Let me continue reading the diff and the key test/doc files.Let me continue reading the remaining diff sections and verify the actual changed test files.Let me read the remaining diff sections and verify the docs changes.Let me read the remaining diff sections with the actual test file changes.Let me read the last part of the diff.Now let me verify the branch is up to date with main and check for any debug code or TODOs.Let me check what commit main has that the builder branch doesn't.I now have a thorough picture of the full PR. Let me compile my review.
+
+---
+
+## PR #23 Review: [Spec 21] CI + test reliability + docs/release checklist
+
+### 1. Completeness
+
+**Spec requirements — all met.** I cross-referenced the spec's acceptance criteria against the actual files:
+
+| Spec Requirement | Status | Verified In |
+|---|---|---|
+| CI on ubuntu-latest, Py 3.10/3.12/3.13 matrix | ✅ | `ci.yml:20-24` |
+| CI installs strace + Node 20 | ✅ | `ci.yml:35-40` |
+| CI loopback HTTP (ephemeral ports) | ✅ | `ci.yml:9-11` (documented), tests already use `port=0` |
+| CI builds wheel+sdist, runs smoke from installed artifact | ✅ | `ci.yml:85-104` |
+| Fail-loud-on-skip for both suite and smoke | ✅ | `ci.yml:76-83, 96-104` |
+| ptrace handled + container caveat documented | ✅ | `ci.yml:42-46` (sysctl), lines 1-7 (header) |
+| Sleep→poll conversions with shared helper | ✅ | `tests/_util.py`, 4 test files updated |
+| Umask-independent assertions | ✅ | `test_codex_observe.py:67-71` (replaced with comment) |
+| Product-set `0o600` assertions preserved | ✅ | `test_codex_observe.py:72-73` |
+| README with prominent sensitive-data warning | ✅ | `README.md:8-18` |
+| All required README elements | ✅ | Verified 14 elements present |
+| docs/observe.md + docs/viewer.md aligned | ✅ | Both updated, packaged CLI first |
+| RELEASING.md with 8-step checklist | ✅ | All 8 steps present, correct ordering |
+| No change to core observation semantics | ✅ | No product code touched |
+
+**Plan phases — all complete.** status.yaml confirms phase_1, phase_2, phase_3 all "complete".
+
+**Review document — present and comprehensive.** `codev/reviews/21-ci-test-reliability-docs-relea.md` covers summary, spec compliance (all checked), deviations (2, well-justified), lessons learned, technical debt, full consultation feedback across all phases, architecture updates, and follow-up items.
+
+**Commits — properly formatted.** Key implementation commits follow the `[Spec 21][Phase]` pattern (e.g., `[Spec 21][Phase: test-reliability]`, `[Spec 21][Phase: review]`). The porch orchestrator commits follow the `chore(porch):` convention.
+
+### 2. Code Quality and Correctness
+
+**`tests/_util.py`** — Clean, well-documented. `time.monotonic()` is the correct clock. Final `bool(predicate())` re-check at deadline is correct — prevents a race where the condition becomes true right at the deadline. Default timeout=3.0 (the more generous of the two prior helpers). This consolidates, not duplicates — verified both old helpers (`_wait_until`, `_wait_for`) are deleted.
+
+**CI workflow** — The comments are excellent throughout, explaining *why* each step exists. Specific technical highlights:
+- Module exclusion (`grep -v '^test_packaging_smoke\.py$'`) is clean
+- `set -o pipefail` + `2>&1 | tee` correctly captures stderr (unittest writes there)
+- Anchored skip regex (`\.\.\. skipped|skipped=[0-9]`) avoids false positives on test names containing "skipped" — verified against `test_malformed_line_skipped_with_warning` and `test_unsupported_future_schema_version_skipped`
+- `setuptools>=77` provisioned explicitly (PEP 639 SPDX requirement, no-isolation build)
+- Import-shadowing guard: no `PYTHONPATH=src` leaks into smoke's clean-venv subprocesses
+
+**Test changes** — All sleep→poll conversions use semantically meaningful conditions (`broadcaster_for(...).snapshot_len()`, `tailer._buf`, truncation warnings), not arbitrary wait-then-check. The 3 intentional fixed sleeps retained in `test_viewer_server.py` are genuinely un-pollable (two-SSE-client subscription race, empty-file negative checks) and well-documented.
+
+**Umask fix** — Correctly removes the `0o755` assertion on a test-created directory (umask-dependent) while preserving all product-set `0o600` assertions. The comment explains the rationale clearly.
+
+### 3. Test Coverage
+
+No reduction in test coverage. All 234 tests pass. The changes are purely synchronization mechanics + one removed assertion that tested the test's own `mkdir()` (not the product). Product-set permission assertions are preserved. Suite verified under both `umask 022` and `umask 077`.
+
+### 4. Documentation
+
+**README.md** — Security-forward, well-structured. The ⚠️ warning blockquote is visually prominent and immediately follows the one-liner. Lists all 5 artifact types + all sensitive content categories. Links into `docs/` rather than duplicating. Named shims documented as "checkout-only, opt-in" with explicit note they're not installed by default. #18 limitation referenced with issue link.
+
+**RELEASING.md** — Build tooling provisioned up-front (before any step that needs it), fixing the ordering issue caught in iteration 1. All 8 steps are clear and copy-pasteable, mirroring CI's commands. Sensitive-artifact cleanup included.
+
+**docs/observe.md** — Now includes the "keep out of commits/uploads/public logs" warning (important since this is the `pyproject.toml` readme). Quick start leads with installed CLI.
+
+**docs/viewer.md** — Packaged invocation first, checkout path second. Practical workflow updated.
+
+### 5. Edge Cases / Concerns
+
+**Minor (non-blocking):**
+
+1. **Branch is 1 commit behind main** (`b10ec2b latest codev md files`). This appears to be a framework metadata update. GitHub will handle the merge, or a quick rebase/merge before final integration. Not a problem for PR creation.
+
+2. **No branch filter on `push` trigger** (`ci.yml:15`). The workflow fires on every push to every branch. This is a style choice — the spec says "on every push/PR" without branch restrictions, and for a small project, full coverage is arguably better. Non-blocking.
+
+3. **`python -m build` output unused**: The standalone build step (line 85-86) produces `dist/` artifacts that the smoke step doesn't consume (smoke builds its own). This is fine — it validates the `build` frontend independently. Non-blocking.
+
+### 6. Security
+
+- Sensitive-data warnings are prominent and comprehensive in all documentation
+- `sysctl kernel.yama.ptrace_scope=0` is appropriate for ephemeral CI runners, with the container caveat documented
+- No secrets, credentials, or `.env` files in the changeset
+- No product code touched
+
+### 7. Process Quality
+
+The 3-way consultation process (Gemini/Codex/Claude) across spec, plan, and 3 implementation phases with rebuttals is thorough. Issues caught in review were substantive and correctly addressed:
+- Untracked `_util.py` (Phase 1, iteration 1)
+- Missing `setuptools>=77` (Phase 2, iteration 1)
+- Main suite needing fail-loud-on-skip (Phase 2, iteration 1)
+- Grep false positive on test names (builder-found, Phase 2)
+- Missing keep-out-of-commits warning in `docs/observe.md` (Phase 3, iteration 1)
+- RELEASING.md prerequisite ordering (Phase 3, iteration 1)
+
+All were accepted and fixed. The review document records all of this faithfully.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Comprehensive, well-executed PR delivering CI, test reliability, and documentation — all spec requirements met, thorough 3-way review process, no product code touched, no issues found.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Makes ai-observe continuously validated and documented without changing core observation semantics: consolidated test polling helpers, converted timing-sensitive sleeps to bounded polling, removed umask-dependent assertions, added a GitHub Actions CI workflow (Python 3.10/3.12/3.13 matrix with fail-loud-on-skip), and created security-forward user documentation with a local release checklist.
+
+  ## Key Changes
+  - `tests/_util.py` (new): shared `poll_until` helper consolidating two prior ad-hoc helpers
+  - `.github/workflows/ci.yml` (new): push+PR triggers, ubuntu-latest matrix, strace+Node 20, setuptools>=77, two-step suite/smoke with anchored skip detection
+  - `README.md` (new): prominent sensitive-data warning, install/quickstart, checkout-only shim workflow, platform caveats, limitations
+  - `RELEASING.md` (new): 8-step local release checklist mirroring CI
+  - `docs/observe.md`, `docs/viewer.md`: aligned to packaged-first usage
+  - `tests/test_*.py`: sleep→poll conversions in 4 test modules, umask fix in test_codex_observe, intentional sleeps documented
+  - Architecture/lessons governance docs updated per hot/cold model
+
+  ## Test Plan
+  - Full suite (234 tests) passes under both `umask 022` and `umask 077`
+  - CI workflow dry-run verified locally: module-list expansion, skip-grep gates, `python -m build`, packaging smoke (21/21)
+  - First real CI matrix run on this PR — confirm all 3 legs green before merge
+  - Manual README walkthrough: install → observed command → viewer serving
+```

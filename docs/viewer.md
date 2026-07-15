@@ -6,7 +6,15 @@ The viewer is read-only and binds only to `127.0.0.1`.
 
 ## Invocation
 
-Typical usage:
+With the package installed (`pip install .`):
+
+```bash
+ai-observe-viewer .codev/observe/<session>.jsonl
+# equivalently:
+python -m ai_observe.viewer .codev/observe/<session>.jsonl
+```
+
+From a checkout without installing:
 
 ```bash
 PYTHONPATH=src python3 -m ai_observe.viewer .codev/observe/<session>.jsonl
@@ -140,11 +148,11 @@ Filter or source-visibility changes rebuild in-browser from the retained event b
 ## Practical workflow
 
 ```bash
-# Terminal A
+# Terminal A (codex here is the opt-in checkout shim; see docs/observe.md)
 codex "implement feature"
 
 # Terminal B
-PYTHONPATH=src python3 -m ai_observe.viewer .codev/observe/<session>.jsonl
+ai-observe-viewer .codev/observe/<session>.jsonl
 ```
 
 Useful things to check in the UI:

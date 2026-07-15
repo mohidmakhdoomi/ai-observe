@@ -1,0 +1,41 @@
+id: '21'
+title: ci-test-reliability-docs-relea
+protocol: spir
+phase: verify
+plan_phases:
+  - id: phase_1
+    title: 'Test reliability: shared poll helper + umask determinism'
+    status: complete
+  - id: phase_2
+    title: 'CI: GitHub Actions matrix workflow (suite + build + installed-artifact smoke)'
+    status: complete
+  - id: phase_3
+    title: 'Documentation: README + aligned docs + release checklist'
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-06-30T14:45:22.471Z'
+    approved_at: '2026-06-30T14:51:04.503Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-30T15:00:41.077Z'
+    approved_at: '2026-07-14T01:45:45.457Z'
+  pr:
+    status: approved
+    requested_at: '2026-07-14T23:09:46.983Z'
+    approved_at: '2026-07-14T23:58:37.838Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-30T14:38:14.854Z'
+updated_at: '2026-07-14T23:58:45.191Z'
+pr_history:
+  - phase: review
+    pr_number: 23
+    branch: builder/spir-21
+    created_at: '2026-07-14T05:42:37.738Z'
+pr_ready_for_human: false

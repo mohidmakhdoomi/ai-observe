@@ -25,11 +25,38 @@ Treat all of these as sensitive:
 - `.jsonl.rebuilt`
 - `.meta.json`
 
-Store `.codev/observe/` carefully. Redaction is not implemented.
+Store `.codev/observe/` carefully, and keep it **out of commits, uploads, and
+public logs until you have reviewed its contents**. Redaction is not
+implemented.
 
 ## Quick start
 
-### Named shims
+### Install and observe a command
+
+Installing the package (`pip install .` from a checkout) provides two console
+scripts: `ai-observe` and `ai-observe-viewer`.
+
+```bash
+ai-observe --session my-run -- python -c 'from pathlib import Path; Path("x").write_text("y")'
+ai-observe -- bash -lc 'echo hi > generated.txt'
+```
+
+If you need to force the executable while preserving arguments:
+
+```bash
+AI_OBSERVE_REAL_COMMAND=/opt/tools/tool-real ai-observe -- tool arg1 arg2
+```
+
+From a checkout without installing, `bin/ai-observe` behaves the same way.
+
+### Named shims (checkout-only, opt-in)
+
+The named tool shims (`bin/claude`, `bin/codex`, `bin/gemini`,
+`bin/opencode`) observe an AI tool transparently under its own name. They are
+deliberately **not** installed as console scripts — they would shadow the
+real tools — and remain checkout-only. To opt in, symlink or copy the shims
+you want into a directory you control (or use `bin/` directly) and prepend it
+to `PATH`:
 
 ```bash
 export AI_OBSERVE_REAL_CODEX="/absolute/path/to/real/codex"
@@ -43,20 +70,10 @@ Other named shims work the same way:
 - `AI_OBSERVE_REAL_GEMINI` → `bin/gemini`
 - `AI_OBSERVE_REAL_OPENCODE` → `bin/opencode`
 
-For Codex compatibility, `CODEV_OBSERVE_REAL_CODEX` still works during the compatibility window.
-
-### Arbitrary commands
-
-```bash
-bin/ai-observe --session my-run -- python -c 'from pathlib import Path; Path("x").write_text("y")'
-bin/ai-observe -- bash -lc 'echo hi > generated.txt'
-```
-
-If you need to force the executable while preserving arguments:
-
-```bash
-AI_OBSERVE_REAL_COMMAND=/opt/tools/tool-real bin/ai-observe -- tool arg1 arg2
-```
+Always set the real executable to an **absolute** path before prepending the
+shim directory to `PATH`, or the shim can resolve itself. For Codex
+compatibility, `CODEV_OBSERVE_REAL_CODEX` still works during the
+compatibility window.
 
 ## Runtime model
 

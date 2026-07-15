@@ -9,8 +9,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))  # tests/_util.py is here
 
 from ai_observe.viewer.tailer import JsonlTailer, sanitize_event, SCHEMA_VERSION
+from _util import poll_until  # noqa: E402
 
 
 def _event(op="modify", path="/x", result=10, ts="2026-05-13T10:00:00.000Z", **extra):
@@ -60,15 +62,6 @@ class _Collector:
             return list(self.events), list(self.warns)
 
 
-def _wait_for(predicate, timeout=3.0, interval=0.02):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return False
-
-
 class JsonlTailerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -110,12 +103,14 @@ class JsonlTailerTests(unittest.TestCase):
 
     def test_empty_file_then_append(self):
         self._start()
-        # Initially no events.
+        # Intentional fixed sleep (negative check): give the tailer time to
+        # poll the empty file and assert it emitted nothing; "no event" has
+        # no queryable completion condition to poll for.
         time.sleep(0.1)
         self.assertEqual(self.col.snapshot()[0], [])
         _write_line(self.path, _event(path="/x", result=10))
         _write_line(self.path, _event(path="/y", result=20))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 2))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 2))
         evs, _ = self.col.snapshot()
         self.assertEqual(evs[0]["path"], "/x")
         self.assertEqual(evs[1]["result"], 20)
@@ -168,12 +163,13 @@ class JsonlTailerTests(unittest.TestCase):
         self._start()
         with open(self.path, "ab") as fh:
             fh.write(b'{"schema_version":1,"operation":"modify","path":"/p","result":5,"timestamp":"t","old_path":null,"new_path":null')
+        # Intentional fixed sleep (negative check): wait past the poll
+        # interval, then assert no event -- the line is incomplete.
         time.sleep(0.15)
-        # No event yet -- the line is incomplete.
         self.assertEqual(self.col.snapshot()[0], [])
         with open(self.path, "ab") as fh:
             fh.write(b"}\n")
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         evs, _ = self.col.snapshot()
         self.assertEqual(evs[0]["path"], "/p")
 
@@ -182,7 +178,7 @@ class JsonlTailerTests(unittest.TestCase):
         with open(self.path, "ab") as fh:
             fh.write(b"this is not json\n")
         _write_line(self.path, _event(path="/ok"))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         evs, warns = self.col.snapshot()
         self.assertEqual(evs[0]["path"], "/ok")
         self.assertTrue(any("malformed" in w for w in warns), warns)
@@ -200,7 +196,7 @@ class JsonlTailerTests(unittest.TestCase):
         _write_line(self.path, missing)
         _write_line(self.path, v1)
         _write_line(self.path, v2)
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 3))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 3))
         evs, warns = self.col.snapshot()
         self.assertEqual([e["path"] for e in evs], ["/missing", "/v1", "/v2"])
         self.assertEqual([e["schema_version"] for e in evs], [1, 1, 2])
@@ -218,7 +214,7 @@ class JsonlTailerTests(unittest.TestCase):
             raw_new_field={"must": "not be exposed"},
         )
         _write_line(self.path, future)
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         evs, warns = self.col.snapshot()
         self.assertEqual(evs[0]["schema_version"], 3)
         self.assertEqual(evs[0]["path"], "/future")
@@ -234,22 +230,23 @@ class JsonlTailerTests(unittest.TestCase):
         bad.pop("operation")
         _write_line(self.path, bad)
         _write_line(self.path, _event(path="/ok"))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         _, warns = self.col.snapshot()
         self.assertTrue(any("schema_version" in w for w in warns), warns)
 
     def test_truncation_reopens_from_zero(self):
         self._start()
         _write_line(self.path, _event(path="/a"))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         # Truncate and let the tailer observe the truncated state before
         # the next write — otherwise size-shrink-then-grow can mask the
-        # truncation in a single poll cycle.
+        # truncation in a single poll cycle. The truncation warning is the
+        # queryable signal that the tailer saw it.
         with open(self.path, "wb") as fh:
             fh.write(b"")
-        time.sleep(0.15)
+        self.assertTrue(poll_until(lambda: any("truncated" in w for w in self.col.snapshot()[1])))
         _write_line(self.path, _event(path="/b"))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 2))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 2))
         evs, warns = self.col.snapshot()
         self.assertEqual([e["path"] for e in evs], ["/a", "/b"])
         self.assertTrue(any("truncated" in w for w in warns), warns)
@@ -257,12 +254,12 @@ class JsonlTailerTests(unittest.TestCase):
     def test_inode_change_reopens(self):
         self._start()
         _write_line(self.path, _event(path="/a"))
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 1))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 1))
         # Replace the file with a fresh inode.
         new_path = Path(self.tmp.name) / "events.jsonl.new"
         _write_line(new_path, _event(path="/b"))
         os.replace(new_path, self.path)
-        self.assertTrue(_wait_for(lambda: len(self.col.snapshot()[0]) == 2, timeout=5.0))
+        self.assertTrue(poll_until(lambda: len(self.col.snapshot()[0]) == 2, timeout=5.0))
         _, warns = self.col.snapshot()
         self.assertTrue(any("inode" in w for w in warns), warns)
 
@@ -270,7 +267,9 @@ class JsonlTailerTests(unittest.TestCase):
         self._start()
         with open(self.path, "ab") as fh:
             fh.write(b'{"schema_version":1,"operation":"modify","path":"/p"')
-        time.sleep(0.15)
+        # Wait until the tailer has buffered the incomplete fragment (other
+        # tests already inspect `_buf` directly), then stop.
+        self.assertTrue(poll_until(lambda: self.tailer._buf))
         self.tailer.stop()
         _, warns = self.col.snapshot()
         fragment_warns = [w for w in warns if "incomplete trailing" in w]

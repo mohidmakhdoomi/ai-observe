@@ -1,0 +1,19 @@
+I have reviewed the implementation for **plan phase "phase_2"** (`CI: GitHub Actions matrix workflow`). 
+
+The `.github/workflows/ci.yml` accurately matches all deliverables laid out in the spec and plan:
+- **Matrix & Environment**: Configures `ubuntu-latest` against Python `3.10`, `3.12`, `3.13` with `fail-fast: false`.
+- **System Dependencies**: Properly provisions `strace` (via `apt-get`) and Node.js v20 (via `actions/setup-node@v4`), matching the spec's requirements for loopback and parity tests.
+- **Yama/Ptrace Guard**: Safely lowers `kernel.yama.ptrace_scope=0` and handles missing keys gracefully as planned.
+- **Suite Execution & Shadowing**: Bypasses `test_packaging_smoke.py` in the main test run correctly by explicitly filtering out the module. No `PYTHONPATH=src` leakage into the smoke step because `ai_observe` tests bootstrap `sys.path` locally (import-shadowing prevented).
+- **Installed-Artifact Smoke Execution**: Validates the installed artifact in a dedicated, clearly reported step. Uses mechanism (a) as outlined in the plan (`grep -E "skipped"` on verbose `unittest` output) to fail loudly if capability gates are unmet instead of reporting a false-positive pass.
+- **Caveat Docs**: Explicitly documents the container/`SYS_PTRACE` caveat at the top of the workflow file as required.
+
+---
+VERDICT: APPROVE
+SUMMARY: The CI matrix workflow fully implements the phase 2 specification and correctly validates the installed artifact without masking skips.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+The review is complete and the verdict has been provided in the previous message.

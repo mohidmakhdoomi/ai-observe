@@ -13,10 +13,12 @@ import socket as _socket
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))  # tests/_util.py is here
 
 from ai_observe.viewer import server as viewer_server
 from ai_observe.viewer.server import ViewerServer, assert_loopback
 from ai_observe.viewer import __main__ as cli
+from _util import poll_until  # noqa: E402
 
 
 def _make_event(path="/x", op="modify", result=10, idx=0):
@@ -149,8 +151,8 @@ class ViewerServerTests(unittest.TestCase):
         # Pre-write some events; the tailer will pick them up.
         _append_events(self.path, [_make_event(path=f"/r{i}", idx=i) for i in range(3)])
         srv = self._server()
-        # Wait briefly so the tailer has caught up.
-        time.sleep(0.2)
+        # Wait until the tailer has caught up on the pre-written events.
+        self.assertTrue(poll_until(lambda: srv.broadcaster_for(None).snapshot_len() >= 3))
         sock, fh = _open_sse(srv.url + "events", timeout=3.0)
         try:
             backlog = _read_sse_frames(fh, 3, timeout=3.0)
@@ -184,7 +186,7 @@ class ViewerServerTests(unittest.TestCase):
         _append_events(self.path, [_make_event(path=f"/r{i}", idx=i) for i in range(5)])
         with mock.patch.object(viewer_server, "_APPEND_BATCH_SIZE", 2):
             srv = self._server()
-            time.sleep(0.2)
+            self.assertTrue(poll_until(lambda: srv.broadcaster_for(None).snapshot_len() >= 5))
             sock, fh = _open_sse(srv.url + "events", timeout=3.0)
             try:
                 raw_backlog, backlog = _read_sse_event_frames(fh, 5, timeout=3.0)
@@ -218,7 +220,7 @@ class ViewerServerTests(unittest.TestCase):
     def test_two_concurrent_clients_each_get_full_replay(self):
         _append_events(self.path, [_make_event(path=f"/r{i}", idx=i) for i in range(2)])
         srv = self._server()
-        time.sleep(0.2)
+        self.assertTrue(poll_until(lambda: srv.broadcaster_for(None).snapshot_len() >= 2))
 
         results = [[], []]
         errors = []
@@ -236,7 +238,10 @@ class ViewerServerTests(unittest.TestCase):
         t2 = threading.Thread(target=consume, args=(1, 3))
         t1.start()
         t2.start()
-        # Once both are likely subscribed, append a fresh event.
+        # Intentional fixed sleep: wait until both clients are likely
+        # subscribed before appending. "Both SSE clients subscribed" is not
+        # observable from server state, so there is no condition to poll;
+        # replay-vs-live correctness below does not depend on this timing.
         time.sleep(0.3)
         _append_events(self.path, [_make_event(path="/live", idx=9)])
         t1.join(timeout=5.0)
@@ -310,7 +315,9 @@ class ViewerServerTests(unittest.TestCase):
             },
         }), encoding="utf-8")
         srv = self._server()
-        time.sleep(0.2)
+        # Wait until both artifact tailers have caught up on their event.
+        self.assertTrue(poll_until(lambda: srv.broadcaster_for("rebuilt").snapshot_len() >= 1))
+        self.assertTrue(poll_until(lambda: srv.broadcaster_for("partial").snapshot_len() >= 1))
         sock_default, fh_default = _open_sse(srv.url + "events", timeout=3.0)
         sock_partial, fh_partial = _open_sse(srv.url + "events?artifact=partial", timeout=3.0)
         try:
@@ -328,6 +335,10 @@ class ViewerServerTests(unittest.TestCase):
         # the first event we write.
         self.path.write_bytes(b"")
         srv = self._server()
+        # Intentional fixed sleep (negative check): give the tailer time to
+        # complete its initial scan of the empty file before connecting.
+        # "Tailer is idle at EOF" is not observable from public server
+        # state, and the point is to prove no stale frame arrives.
         time.sleep(0.15)
         sock, fh = _open_sse(srv.url + "events", timeout=3.0)
         try:
@@ -341,6 +352,10 @@ class ViewerServerTests(unittest.TestCase):
 
     def test_shutdown_frame_sent_to_connected_client(self):
         srv = self._server()
+        # Intentional fixed sleep: brief settle so the tailer finishes its
+        # initial scan of the empty file before we connect (not observable
+        # from public server state); the SSE handshake below is what the
+        # shutdown assertion actually depends on.
         time.sleep(0.1)
         sock, fh = _open_sse(srv.url + "events", timeout=3.0)
         try:
@@ -547,6 +562,40 @@ class CLITests(unittest.TestCase):
         t.start()
         t.join(timeout=10.0)
         self.assertEqual(opened_with, [])
+
+    def test_join_thread_safely_tolerates_tstate_lock_race(self):
+        # Regression for a CPython thread-teardown race (gh-89322 / bpo-45274):
+        # Thread.join() can raise AssertionError from _wait_for_tstate_lock
+        # ("assert self._is_stopped") while the joined thread clears its
+        # C-level tstate lock. It surfaced in CI (run 29309258243, py3.12 leg)
+        # as ViewerServer.stop() -> _serve_thread.join() aborting the one-shot
+        # viewer shutdown. _join_thread_safely must swallow that assertion and
+        # return once the thread is no longer alive, not propagate it.
+        class RacingThread:
+            def __init__(self):
+                self.join_calls = 0
+
+            def join(self, timeout=None):
+                self.join_calls += 1
+                raise AssertionError("simulated _wait_for_tstate_lock race")
+
+            def is_alive(self):
+                return False
+
+        rt = RacingThread()
+        # Must not raise even though join() always asserts.
+        viewer_server._join_thread_safely(rt, timeout=1.0)
+        self.assertGreaterEqual(rt.join_calls, 1)
+
+    def test_join_thread_safely_joins_live_thread_cleanly(self):
+        # Normal path: a real, briefly-running thread joins without error and
+        # is observed stopped afterward.
+        started = threading.Event()
+        th = threading.Thread(target=started.set)
+        th.start()
+        self.assertTrue(started.wait(timeout=2.0))
+        viewer_server._join_thread_safely(th, timeout=2.0)
+        self.assertFalse(th.is_alive())
 
 
 if __name__ == "__main__":
