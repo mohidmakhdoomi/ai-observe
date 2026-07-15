@@ -1,0 +1,55 @@
+Let me check the diffs against the base to see exactly what changed in the two hot-tier files.Now let me verify the map topics against the cold doc sections:Now let me verify the `.gitignore` diff specifically:Good. I now have full context on all changes. Let me verify the map coverage — 15 cold sections mapped to 11 map topics in lessons-critical.md:
+
+The 15 cold sections are:
+1. Preserve compatibility facades during generic refactors
+2. Make recursion-avoidance tests cross-installation
+3. Turn broad compatibility promises into explicit matrix tests
+4. Keep replay state outside aggregators
+5. Centralize UI mutations through pure helpers
+6. Specify synthesized tree-node semantics explicitly
+7. Ship protocol changes with both producer and consumer support
+8. Prefer structural performance tests over timing thresholds
+9. Pin legacy tests when a new default backend changes observation scope
+10. Make artifact authority explicit when recovery can yield multiple valid outputs
+11. Prove src-layout package data from an installed wheel
+12. Build each distribution kind in its own interpreter
+13. Anchor log-grep gates to tool-emitted markers
+14. Stage new files immediately; know your orchestrator's commit sweep
+15. Scope import fallbacks to "package absent", not any ImportError
+
+The 11 map topics cover:
+1. "Compatibility facades & alias matrices" → sections 1, 3 ✓
+2. "Shim resolution & recursion" → section 2 ✓
+3. "Import fallback scoping" → section 15 ✓
+4. "Browser viewer / UI internals" → sections 4, 5, 6 ✓
+5. "Streaming protocol evolution" → section 7 ✓
+6. "Backend-scope test pinning" → section 9 ✓
+7. "Artifact authority & recovery" → section 10 ✓
+8. "Packaging & wheel proof" → sections 11, 12 ✓
+9. "Performance testing" → section 8 ✓
+10. "CI output-grep gates" → section 13 ✓
+11. "Orchestrator commit sweep" → section 14 ✓
+
+All 15 sections covered by the 11 thematic topics. Clean mapping.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean first MAINTAIN run — hot-tier placeholder cleanup is well-scoped, accurate, and within caps; .gitignore additions are correct; no over-reach.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES: None
+
+**Details:**
+
+1. **Spec Adherence**: The MAINTAIN protocol asks for dead-code audit, doc-sync (hot/cold governance tiers), and CLAUDE/AGENTS parity. All three are addressed. The builder correctly chose not to manufacture dead-code removals without tooling — a sound judgment documented in the run file.
+
+2. **arch-critical.md**: Only change was trimming a stale `STARTER:` comment sentence. Map (9 topics) matches arch.md's 9 `##` sections exactly. 1 fact, 20 lines — well within the ≤10 facts / ≤12 map topics / ≤35 lines cap.
+
+3. **lessons-critical.md**: The substantive change. The 11-topic map accurately covers all 15 cold sections with sensible thematic grouping (e.g., sections 1+3 → "Compatibility facades & alias matrices"; sections 4+5+6 → "Browser viewer / UI internals"). The promoted lesson (porch commit-sweep staging rule) is genuinely cross-cutting and behavior-changing — good promotion choice. 4 lessons + 11 map topics, 25 lines — within cap.
+
+4. **.gitignore**: Builder session scaffolding files (`.builder-prompt.txt`, `.builder-role.md`, `.builder-start.sh`, `.claude/hooks/worktree-write-guard.cjs`) are injected by `afx spawn` and should not be committed. This mirrors the existing `.architect-role.md` ignore. Correct.
+
+5. **Run file (0001.md)**: Well-structured, documents what was audited, what was changed, what was deferred, and why. The documentation changes log table is a nice touch for auditability.
+
+6. **Test coverage**: N/A — no functional code changed, only governance docs and gitignore. The builder confirmed 236 tests green with 0 skips.
