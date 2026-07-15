@@ -29,3 +29,9 @@ dist/
 
 # Codev (added by codev update 2026-05-31)
 .architect-role.md
+
+# Codev builder session scaffolding (injected per-session by `afx spawn`)
+.builder-prompt.txt
+.builder-role.md
+.builder-start.sh
+.claude/hooks/worktree-write-guard.cjs

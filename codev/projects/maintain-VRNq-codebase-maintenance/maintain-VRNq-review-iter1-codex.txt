@@ -1,0 +1,21 @@
+---
+VERDICT: APPROVE
+SUMMARY: PR #24 is a clean, well-scoped MAINTAIN pass that fixes hot-tier governance docs, adds appropriate session-file ignores, and keeps the maintenance records consistent.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR completes the first MAINTAIN run for `ai-observe` by fixing unfinished hot-tier governance content rather than changing runtime code. It removes stale starter/template text, fills the hot lessons map so it now reflects the cold lessons doc, and records the maintenance run and consultation artifacts.
+
+  ## Key Changes
+  - Completed `codev/resources/lessons-critical.md` with an 11-topic map that covers all current `lessons-learned.md` sections and promoted the porch commit-sweep staging rule into the hot lessons.
+  - Removed obsolete `STARTER:` guidance from both `arch-critical.md` and `lessons-critical.md`.
+  - Ignored builder session scaffolding in `.gitignore` and added the maintenance run/thread/status records plus 3-way consultation outputs.
+
+  ## Test Plan
+  - Review the hot-tier docs and confirm the maps align with the current top-level sections in `arch.md` and `lessons-learned.md`.
+  - Confirm `.gitignore` now excludes builder session scaffolding files created by `afx spawn`.
+  - Optionally rerun `python3 -m unittest discover -s tests` to reproduce the documented 236 passing tests / 0 skips.
