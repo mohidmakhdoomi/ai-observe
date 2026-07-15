@@ -3,8 +3,7 @@
 <!-- HOT tier: capped facts + a bounded map of arch.md. Always injected into every porch
 phase prompt and into CLAUDE.md/AGENTS.md. CAP: <=10 facts, <=12 map topics, <=35 lines.
 To add a fact, DEMOTE a weaker one into arch.md (displacement). MAINTAIN polices the cap
-and keeps the map in sync with arch.md's top-level sections.
-STARTER: replace the examples below with YOUR project's facts and arch.md sections. -->
+and keeps the map in sync with arch.md's top-level sections. -->
 
 ## Critical facts (consult before deciding)
 - CI fails loud on ANY unittest skip (main suite and packaging smoke): capability-gated skips are a local-dev affordance only — a test gated on a capability CI doesn't provision turns the matrix red, not silently green.
