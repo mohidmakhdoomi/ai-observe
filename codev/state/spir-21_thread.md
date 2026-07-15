@@ -217,3 +217,16 @@ No change to core observation semantics.
   re-raises otherwise. No observation-semantics change.
 - Verified: 360/360 in-process across the 3 shutdown-path CLI tests; full suite green.
   Documented both races in review doc. Committing, pushing, re-checking full matrix.
+
+### Verify — PR #23 merged, integrated codebase verified
+- pr gate approved (human) + 3-way CMAP PR review unanimous APPROVE (Gemini HIGH,
+  Codex MEDIUM, Claude HIGH, zero key issues).
+- CI green on gate-approved/verify commits (18/18 total green legs on the fix across
+  sweeps+reruns, 0 failures).
+- PR #23 merged to main via regular merge commit abfd6e7 (NOT squashed — dev history
+  preserved). porch: marked merged.
+- Merged origin/main into worktree; verified integrated state:
+  - full unit suite (excl smoke): 215 OK
+  - packaging smoke (clean-venv wheel install outside checkout, installed-artifact
+    viewer serving): 21 OK  → real user path works end-to-end.
+- Both shutdown-path races fixed and landed on main. Signalling verify ready.
