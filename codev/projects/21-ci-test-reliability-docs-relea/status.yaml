@@ -30,10 +30,10 @@ gates:
     status: pending
     requested_at: '2026-07-15T00:01:58.062Z'
 iteration: 1
-build_complete: false
+build_complete: true
 history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-15T00:01:58.062Z'
+updated_at: '2026-07-15T00:08:16.924Z'
 pr_history:
   - phase: review
     pr_number: 23
