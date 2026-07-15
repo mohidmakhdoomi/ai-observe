@@ -1,7 +1,7 @@
 id: '21'
 title: ci-test-reliability-docs-relea
 protocol: spir
-phase: verify
+phase: verified
 plan_phases:
   - id: phase_1
     title: 'Test reliability: shared poll helper + umask determinism'
@@ -34,7 +34,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-06-30T14:38:14.854Z'
-updated_at: '2026-07-15T00:11:36.279Z'
+updated_at: '2026-07-15T00:11:37.336Z'
 pr_history:
   - phase: review
     pr_number: 23
