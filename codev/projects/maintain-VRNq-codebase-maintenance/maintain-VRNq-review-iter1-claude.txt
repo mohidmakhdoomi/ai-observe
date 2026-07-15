@@ -1,0 +1,29 @@
+Now let me verify the actual hot-tier files on disk and cross-check against the cold docs.I've read the diff and all the actual files on disk. Let me verify the caps and coverage:
+
+**lessons-critical.md caps**: 4 lessons (≤10 ✓), 11 map topics (≤12 ✓), 25 content lines (≤35 ✓)
+
+**arch-critical.md caps**: 1 fact (≤10 ✓), 9 map topics (≤12 ✓), 20 lines (≤35 ✓)
+
+**Map coverage** — all 15 cold `lessons-learned.md` sections are covered by the 11 thematic map topics (verified the groupings: sections 1+3 → facades, 4+5+6 → viewer/UI, 11+12 → packaging). No cold section is orphaned.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean first MAINTAIN run — hot-tier placeholder cleanup is well-scoped, map coverage is complete and accurate, caps are respected, .gitignore additions are correct.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES: None
+
+**Details:**
+
+1. **arch-critical.md**: Minimal change — only trimmed a stale `STARTER:` comment sentence. The map and facts were already real content. Correct.
+
+2. **lessons-critical.md**: The substantive change. The 11-topic map accurately covers all 15 cold sections with sensible thematic grouping. The promoted lesson (porch commit-sweep staging rule) is genuinely cross-cutting and behavior-changing — good promotion choice. The removed placeholder line (`<Add your project's hard-won…>`) was clearly template debris.
+
+3. **.gitignore**: Adding `.builder-prompt.txt`, `.builder-role.md`, `.builder-start.sh`, `.claude/hooks/worktree-write-guard.cjs` mirrors the existing `.architect-role.md` entry. These are session-injected scaffolding files that shouldn't be committed. Correct.
+
+4. **Run file (codev/maintain/0001.md)**: Well-structured audit record. Documents what was checked, what changed, what was deferred (vulture/pyflakes for future dead-code auditing), and why. The documentation changes log table adds good auditability.
+
+5. **No functional code changes**: All changes are governance docs, .gitignore, and process artifacts. The 236-test / 0-skip claim is appropriate context but doesn't need re-verification for a docs-only PR.
+
+6. **3-way consultation**: All three external models (Gemini, Codex, Claude) approved at HIGH confidence with zero issues. Consultation artifacts are included in the PR.

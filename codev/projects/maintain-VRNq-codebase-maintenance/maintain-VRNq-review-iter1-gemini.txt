@@ -1,0 +1,22 @@
+---
+VERDICT: APPROVE
+SUMMARY: The maintenance changes are accurate, well-scoped, and properly replace placeholder content while respecting hot-tier document constraints.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR completes the first codebase maintenance run for the project. It focuses on cleaning up the "hot tier" governance documents by removing stale `STARTER` placeholders and filling them with project-specific content based on the project's history.
+
+  ## Key Changes
+  - Updated `lessons-critical.md` to replace placeholder text with a real cross-cutting lesson (porch commit-sweep staging rule) and an 11-topic thematic map derived from the cold doc.
+  - Trimmed obsolete `STARTER` instructional comments from both `arch-critical.md` and `lessons-critical.md`.
+  - Added `afx` builder session scaffolding files (e.g., `.builder-prompt.txt`, `.builder-role.md`) to `.gitignore`.
+  - Added the maintenance run log (`codev/maintain/0001.md`) and status tracking.
+
+  ## Test Plan
+  - Build passes (skipped for Python project per config).
+  - All tests pass (`python3 -m unittest discover -s tests`).
+  - Documentation links resolve correctly.
