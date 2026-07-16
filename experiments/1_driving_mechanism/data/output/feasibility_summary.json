@@ -1,0 +1,74 @@
+{
+  "claude": {
+    "ok": true,
+    "returncode": 0,
+    "duration_s": 17.3,
+    "disk_event_total": 4,
+    "disk_by_source": {
+      "strace": 3,
+      "snapshot": 1
+    },
+    "disk_by_operation": {
+      "create": 2,
+      "modify": 1,
+      "rename": 1
+    },
+    "viewer_events_count": 4,
+    "workdir_files": [
+      "claude.txt"
+    ],
+    "distinct_paths": [
+      "claude.txt",
+      "claude.txt.tmp.116527.228c8e70bd74"
+    ],
+    "notes": []
+  },
+  "agy": {
+    "ok": true,
+    "returncode": 0,
+    "duration_s": 16.4,
+    "disk_event_total": 4,
+    "disk_by_source": {
+      "strace": 3,
+      "snapshot": 1
+    },
+    "disk_by_operation": {
+      "modify": 3,
+      "create": 1
+    },
+    "viewer_events_count": 4,
+    "workdir_files": [
+      "agy.txt"
+    ],
+    "distinct_paths": [
+      "agy.txt"
+    ],
+    "notes": []
+  },
+  "codex": {
+    "ok": true,
+    "returncode": 0,
+    "duration_s": 24.0,
+    "disk_event_total": 59,
+    "disk_by_source": {
+      "strace": 58,
+      "snapshot": 1
+    },
+    "disk_by_operation": {
+      "delete": 54,
+      "modify": 4,
+      "create": 1
+    },
+    "viewer_events_count": 59,
+    "workdir_files": [
+      "codex.txt"
+    ],
+    "distinct_paths": [
+      ".agents",
+      ".codex",
+      ".git",
+      "codex.txt"
+    ],
+    "notes": []
+  }
+}

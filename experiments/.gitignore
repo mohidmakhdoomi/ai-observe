@@ -1,0 +1,13 @@
+# Raw ai-observe artifacts are large and SENSITIVE (contain absolute paths,
+# wrapped-command argv/prompts, and raw syscall text -- see repo README's
+# sensitive-data warning). Never commit them. Curated *_report.json /
+# *_summary.json derivations (relative paths, no raw_syscall) are committed.
+**/data/output/*.trace
+**/data/output/*.jsonl
+**/data/output/*.jsonl.partial
+**/data/output/*.jsonl.rebuilt
+**/data/output/*.meta.json
+
+# Scratch working dirs the driven agents write into.
+**/work/
+**/_smoke_work/
