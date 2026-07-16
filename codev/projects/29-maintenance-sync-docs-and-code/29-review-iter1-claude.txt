@@ -1,0 +1,24 @@
+Let me verify the key claims against the codebase.Both claims verified: `bin/agy` exists, `agy` is in `OBSERVER_SHIM_NAMES`, and 236 tests pass with 0 skips. Let me check the review file exists and do a quick scan for any issues.Everything checks out. This is a clean, minimal maintenance PR.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean maintenance run — arch.md correctly synced with spec-27 `agy` shim addition, all claims verified against live code, 236 tests pass.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Maintenance run 0002: synced `arch.md`'s two named-shim enumerations to include the spec-27 `agy` (Antigravity CLI) observer. Full verification audit of all four governance docs (arch.md, arch-critical.md, lessons-learned.md, lessons-critical.md) confirmed every code-referencing claim maps to live code — no stale entries, no cuts needed.
+
+  ## Key Changes
+  - Added `agy` to arch.md's "Generic command observer core" shim list and "Packaging and distribution" not-an-entry-point list
+  - Created maintenance run file `codev/maintain/0002.md` documenting the audit findings
+  - Recorded consultation reviews from Claude, Codex, and Gemini (all APPROVE)
+
+  ## Test Plan
+  - [x] All 236 tests pass with 0 skips
+  - [x] `bin/agy` exists and `agy` is in `OBSERVER_SHIM_NAMES` in `observe.py`
+  - [x] arch.md shim enumerations now match the actual `bin/` directory contents

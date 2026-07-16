@@ -1,0 +1,21 @@
+id: '29'
+title: maintenance-sync-docs-and-code
+protocol: maintain
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  maintain-complete:
+    status: approved
+    requested_at: '2026-07-16T20:45:46.461Z'
+    approved_at: '2026-07-16T22:58:42.784Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-07-16T20:27:55.398Z'
+updated_at: '2026-07-16T22:58:54.456Z'
+pr_history:
+  - phase: review
+    pr_number: 30
+    branch: builder/maintain-29
+    created_at: '2026-07-16T20:36:30.270Z'

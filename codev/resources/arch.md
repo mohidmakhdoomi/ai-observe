@@ -82,7 +82,7 @@ The abstraction is intentionally small: it is concrete enough to support future 
 
 Important invariants:
 
-- named shims in `bin/codex`, `bin/claude`, `bin/gemini`, and `bin/opencode` are thin launchers over the same generic core
+- named shims in `bin/codex`, `bin/claude`, `bin/gemini`, `bin/opencode`, and `bin/agy` are thin launchers over the same generic core
 - `src/ai_observe/codex_observe.py` remains a compatibility alias to the generic module so existing imports and monkeypatch-heavy tests still hit the real implementation
 - public configuration prefers `AI_OBSERVE_*`, with `CODEV_OBSERVE_*` aliases preserved where documented
 - resolver logic must avoid recursive execution of observer shims
@@ -151,7 +151,7 @@ The browser aggregation model keeps filtering client-side:
   so the SPDX expression resolves. No legacy `License ::` classifier.
 - Default console scripts are **only** `ai-observe` (`ai_observe.observe:main_generic`)
   and `ai-observe-viewer` (`ai_observe.viewer.__main__:main`). The named tool shims
-  (`claude`/`codex`/`gemini`/`opencode`) are deliberately **not** entry points — they would
+  (`claude`/`codex`/`gemini`/`opencode`/`agy`) are deliberately **not** entry points — they would
   shadow real tools — and remain checkout-only `bin/*` scripts.
 - The checkout `bin/*` shims prefer the installed package and fall back to splicing the
   checkout `src/` onto `sys.path` only when the top-level package is absent

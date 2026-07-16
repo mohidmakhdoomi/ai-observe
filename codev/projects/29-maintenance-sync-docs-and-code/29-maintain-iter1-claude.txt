@@ -1,0 +1,31 @@
+Now let me verify the arch.md changes specifically:Now let me verify the claims — does `bin/agy` actually exist and is `agy` in `OBSERVER_SHIM_NAMES`?Both verified. The implementation is straightforward and correct. Let me do a final check on the run file structure.
+
+---
+
+## Review
+
+### Spec Adherence
+The MAINTAIN protocol run 0002 follows the expected structure: audit governance docs, sync stale-by-omission entries, check for dead code, verify CLAUDE.md/AGENTS.md parity, and document findings in a numbered run file. All steps are accounted for.
+
+### Code Quality
+- **arch.md changes**: Minimal, surgical — two lines updated to add `agy` to existing shim enumerations. The additions are syntactically consistent with the surrounding list style (backtick-quoted, comma-separated in one spot, slash-separated in the other). Verified that `bin/agy` exists and `agy` is in `OBSERVER_SHIM_NAMES` in `observe.py`.
+- **Run file (0002.md)**: Well-structured, thorough verification narrative. The explicit claim-by-claim code verification is a good practice — it makes the "no cuts" outcome read as deliberate rather than lazy.
+- **Thread file**: Concise summary of the run, consistent with the run file.
+
+### Test Coverage
+N/A for this maintenance run — no functional code was changed, only documentation. The builder confirms 236 tests green with 0 skips.
+
+### Plan Alignment
+This is a MAINTAIN protocol run. The work matches: audit → sync docs → document findings → no dead code removal (justified by tooling gap, consistent with run 0001's posture).
+
+### Minor Observations
+- The `status.yaml` shows `build_complete: true` with `maintain-complete` gate pending — correct state for a post-build review.
+- The deferred items (vulture/pyflakes for dead-code tooling) are carried forward from run 0001, which is appropriate — MAINTAIN shouldn't add dev dependencies.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean maintenance run — arch.md shim enumerations correctly synced for spec-27 `agy`, all claims verified against live code, no issues found.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
