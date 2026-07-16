@@ -1,0 +1,222 @@
+{
+  "early_interrupt": {
+    "session": "early",
+    "interrupted": true,
+    "kill_after": 3.5,
+    "returncode": 130,
+    "duration_s": 3.7,
+    "artifacts": {
+      "jsonl": {
+        "exists": true,
+        "size": 0
+      },
+      "partial": {
+        "exists": false,
+        "size": 0
+      },
+      "rebuilt": {
+        "exists": false,
+        "size": 0
+      },
+      "meta": {
+        "exists": true,
+        "size": 811
+      }
+    },
+    "meta_authoritative_role": {
+      "authoritative_event_path": "early.jsonl",
+      "jsonl": {
+        "exists": true,
+        "path": "early.jsonl",
+        "role": "authoritative_complete"
+      },
+      "meta": {
+        "exists": true,
+        "path": "early.meta.json",
+        "role": "metadata"
+      },
+      "partial": {
+        "exists": false,
+        "path": "early.jsonl.partial",
+        "role": "absent_or_parser_failure_partial"
+      },
+      "rebuilt": {
+        "exists": false,
+        "path": "early.jsonl.rebuilt",
+        "role": "absent"
+      },
+      "trace": {
+        "exists": true,
+        "path": "early.trace",
+        "role": "trace"
+      }
+    },
+    "meta_warnings": [],
+    "disk_event_total": 0,
+    "disk_by_source": null,
+    "disk_by_operation": null,
+    "captured_txt_files": [],
+    "actual_txt_files_on_disk": [],
+    "viewer": {}
+  },
+  "mid_interrupt": {
+    "session": "mid",
+    "interrupted": true,
+    "kill_after": 13.0,
+    "returncode": 1,
+    "duration_s": 13.4,
+    "artifacts": {
+      "jsonl": {
+        "exists": true,
+        "size": 4850
+      },
+      "partial": {
+        "exists": false,
+        "size": 0
+      },
+      "rebuilt": {
+        "exists": false,
+        "size": 0
+      },
+      "meta": {
+        "exists": true,
+        "size": 795
+      }
+    },
+    "meta_authoritative_role": {
+      "authoritative_event_path": "mid.jsonl",
+      "jsonl": {
+        "exists": true,
+        "path": "mid.jsonl",
+        "role": "authoritative_complete"
+      },
+      "meta": {
+        "exists": true,
+        "path": "mid.meta.json",
+        "role": "metadata"
+      },
+      "partial": {
+        "exists": false,
+        "path": "mid.jsonl.partial",
+        "role": "absent_or_parser_failure_partial"
+      },
+      "rebuilt": {
+        "exists": false,
+        "path": "mid.jsonl.rebuilt",
+        "role": "absent"
+      },
+      "trace": {
+        "exists": true,
+        "path": "mid.trace",
+        "role": "trace"
+      }
+    },
+    "meta_warnings": [],
+    "disk_event_total": 6,
+    "disk_by_source": {
+      "strace": 4,
+      "snapshot": 2
+    },
+    "disk_by_operation": {
+      "modify": 4,
+      "create": 2
+    },
+    "captured_txt_files": [
+      "f1.txt",
+      "f2.txt"
+    ],
+    "actual_txt_files_on_disk": [
+      "f1.txt",
+      "f2.txt"
+    ],
+    "viewer": {
+      "parser_status": "ok",
+      "authoritative_artifact": "jsonl",
+      "warnings_count": 0
+    }
+  },
+  "clean": {
+    "session": "clean",
+    "interrupted": false,
+    "kill_after": null,
+    "returncode": 0,
+    "duration_s": 18.4,
+    "artifacts": {
+      "jsonl": {
+        "exists": true,
+        "size": 14706
+      },
+      "partial": {
+        "exists": false,
+        "size": 0
+      },
+      "rebuilt": {
+        "exists": false,
+        "size": 0
+      },
+      "meta": {
+        "exists": true,
+        "size": 811
+      }
+    },
+    "meta_authoritative_role": {
+      "authoritative_event_path": "clean.jsonl",
+      "jsonl": {
+        "exists": true,
+        "path": "clean.jsonl",
+        "role": "authoritative_complete"
+      },
+      "meta": {
+        "exists": true,
+        "path": "clean.meta.json",
+        "role": "metadata"
+      },
+      "partial": {
+        "exists": false,
+        "path": "clean.jsonl.partial",
+        "role": "absent_or_parser_failure_partial"
+      },
+      "rebuilt": {
+        "exists": false,
+        "path": "clean.jsonl.rebuilt",
+        "role": "absent"
+      },
+      "trace": {
+        "exists": true,
+        "path": "clean.trace",
+        "role": "trace"
+      }
+    },
+    "meta_warnings": [],
+    "disk_event_total": 18,
+    "disk_by_source": {
+      "strace": 12,
+      "snapshot": 6
+    },
+    "disk_by_operation": {
+      "modify": 12,
+      "create": 6
+    },
+    "captured_txt_files": [
+      "f1.txt",
+      "f2.txt",
+      "f3.txt",
+      "f4.txt",
+      "f5.txt",
+      "f6.txt"
+    ],
+    "actual_txt_files_on_disk": [
+      "f1.txt",
+      "f2.txt",
+      "f3.txt",
+      "f4.txt",
+      "f5.txt",
+      "f6.txt"
+    ],
+    "viewer": {
+      "parser_status": "ok",
+      "authoritative_artifact": "jsonl",
+      "warnings_count": 0
+    }
+  }
+}
