@@ -1,14 +1,14 @@
 id: '29'
 title: maintenance-sync-docs-and-code
 protocol: maintain
-phase: maintain
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
   maintain-complete:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-16T20:27:55.398Z'
-updated_at: '2026-07-16T20:33:57.686Z'
+updated_at: '2026-07-16T20:35:10.395Z'
