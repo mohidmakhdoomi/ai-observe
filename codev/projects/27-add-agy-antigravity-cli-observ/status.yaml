@@ -1,0 +1,14 @@
+id: '27'
+title: add-agy-antigravity-cli-observ
+protocol: air
+phase: implement
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-16T19:55:08.369Z'
+updated_at: '2026-07-16T19:55:08.369Z'
