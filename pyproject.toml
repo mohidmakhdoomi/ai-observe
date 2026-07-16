@@ -36,7 +36,7 @@ Homepage = "https://github.com/mohidmakhdoomi/ai-observe"
 Repository = "https://github.com/mohidmakhdoomi/ai-observe"
 
 # Only non-conflicting console scripts are installed by default. The named
-# shims (claude/codex/gemini/opencode) are intentionally NOT entry points —
+# shims (claude/codex/gemini/opencode/agy) are intentionally NOT entry points —
 # they would shadow real tools; they remain checkout-only bin/* shims.
 [project.scripts]
 ai-observe = "ai_observe.observe:main_generic"

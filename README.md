@@ -53,7 +53,7 @@ pip install .
 
 This installs the `ai_observe` package plus exactly two console scripts:
 `ai-observe` and `ai-observe-viewer`. The named tool shims
-(`claude`/`codex`/`gemini`/`opencode`) are deliberately **not** installed —
+(`claude`/`codex`/`gemini`/`opencode`/`agy`) are deliberately **not** installed —
 see [Named shims](#named-shims-checkout-only-opt-in).
 
 ## Quick start
@@ -95,7 +95,7 @@ PIDs, session ids) before anything reaches the page. See
 ## Named shims (checkout-only, opt-in)
 
 The repo ships PATH-interposition shims — `bin/claude`, `bin/codex`,
-`bin/gemini`, `bin/opencode` — that observe an AI tool transparently under
+`bin/gemini`, `bin/opencode`, `bin/agy` — that observe an AI tool transparently under
 its own name. They are **not installed by `pip install`** and never will be
 by default: as console scripts they would shadow the real tools.
 

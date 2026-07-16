@@ -23,3 +23,19 @@ CI assertions) maps to live code. Zero stale entries → zero cuts. Recorded the
 explicitly in run file 0002 so the no-cut result reads as verified, not cautious.
 
 Tests green (236, 0 skips). Proceeding to porch check/done → review phase.
+
+## Review phase (2026-07-16)
+
+Maintain-impl 3-way: all APPROVE. PR #30 created (Closes #29). PR-type 3-way review:
+gemini APPROVE, claude APPROVE, **codex REQUEST_CHANGES** — correctly caught that my first
+pass scoped "documentation" too narrowly (governance docs only). The spec-27 `agy` shim was
+also missing from current-state enumerations in `pyproject.toml`, `README.md`, and
+`docs/observe.md`. Fixed all three additively.
+
+Verified two flagged files are NOT stale and left them: `CHANGELOG.md [0.1.0]` and
+`codev/plans/11,20` — `agy` shipped in spec 27 *after* the `v0.1.0` tag (`git cat-file -e
+v0.1.0:bin/agy` fails), so those are accurate release/historical records, not staleness.
+Editing them would falsify history. Codex was right on scope, wrong to lump the CHANGELOG in.
+
+Run file 0002 updated to reflect the broader sync + the deliberate non-changes with evidence.
+Tests still green (236/0). Re-running PR consultation for iter2.

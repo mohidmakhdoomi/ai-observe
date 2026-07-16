@@ -52,7 +52,7 @@ From a checkout without installing, `bin/ai-observe` behaves the same way.
 ### Named shims (checkout-only, opt-in)
 
 The named tool shims (`bin/claude`, `bin/codex`, `bin/gemini`,
-`bin/opencode`) observe an AI tool transparently under its own name. They are
+`bin/opencode`, `bin/agy`) observe an AI tool transparently under its own name. They are
 deliberately **not** installed as console scripts — they would shadow the
 real tools — and remain checkout-only. To opt in, symlink or copy the shims
 you want into a directory you control (or use `bin/` directly) and prepend it
@@ -69,6 +69,7 @@ Other named shims work the same way:
 - `AI_OBSERVE_REAL_CLAUDE` → `bin/claude`
 - `AI_OBSERVE_REAL_GEMINI` → `bin/gemini`
 - `AI_OBSERVE_REAL_OPENCODE` → `bin/opencode`
+- `AI_OBSERVE_REAL_AGY` → `bin/agy`
 
 Always set the real executable to an **absolute** path before prepending the
 shim directory to `PATH`, or the shim can resolve itself. For Codex
@@ -278,6 +279,7 @@ Preferred names are `AI_OBSERVE_*`. Where legacy aliases still exist, `AI_OBSERV
 | `AI_OBSERVE_REAL_CLAUDE` | none | Real Claude executable for `bin/claude`. |
 | `AI_OBSERVE_REAL_GEMINI` | none | Real Gemini executable for `bin/gemini`. |
 | `AI_OBSERVE_REAL_OPENCODE` | none | Real OpenCode executable for `bin/opencode`. |
+| `AI_OBSERVE_REAL_AGY` | none | Real Antigravity executable for `bin/agy`. |
 | `AI_OBSERVE_REAL_COMMAND` | none | Forced executable for generic mode; replaces only `argv[0]`. |
 | `AI_OBSERVE_DIR` | `CODEV_OBSERVE_DIR` | Observe directory. Relative paths resolve from launch cwd. |
 | `AI_OBSERVE_DISABLE=1` | `CODEV_OBSERVE_DISABLE=1` | Bypass observation and exec the resolved real command. |
