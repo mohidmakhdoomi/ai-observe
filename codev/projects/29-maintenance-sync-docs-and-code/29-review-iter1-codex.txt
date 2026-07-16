@@ -1,0 +1,23 @@
+I’m reviewing the actual files on disk and the diff, then I’ll assess PR readiness against the maintenance scope.I’ve read the PR artifacts; now I’m spot-checking the underlying code/docs the run claims to have verified.I found one thing worth checking more broadly: whether `agy` was added everywhere comments/docs enumerate named shims, not just in `arch.md`.There’s a real documentation gap: `agy` was added to runtime code, but some user-facing/in-source docs still enumerate only the older four shims. I’m checking the exact files now.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The arch.md sync is correct, but this maintenance pass missed other stale `agy` shim documentation/comments, so the “only doc staleness this run” claim is not yet true.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `pyproject.toml:39` is stale: the comment still says named shims are `(claude/codex/gemini/opencode)` and omits `agy`, even though `bin/agy` exists and tests enforce the same non-entry-point invariant for it.
+- User-facing docs are still incomplete for the new shim: `README.md:98`, `docs/observe.md:55`/`:71`, and `CHANGELOG.md:19` still enumerate only the older four shims. That conflicts with the run file’s claim that `arch.md` was the only documentation staleness found.
+- Because of the above, `codev/maintain/0002.md` overstates the audit result (“no stale entries found” apart from `arch.md`). The run log should be updated after fixing the remaining stale references.
+
+PR_SUMMARY: |
+  ## Summary
+  This maintenance PR audits the governance docs and updates `arch.md` to include the newer `agy` named shim in two enumerations. It also records the maintenance run, consultation artifacts, and porch status for run 0002.
+
+  ## Key Changes
+  - Added `agy` to the named-shim and packaging enumerations in `codev/resources/arch.md`
+  - Added maintenance run documentation in `codev/maintain/0002.md` and thread/status artifacts
+  - Recorded review-phase consultation outputs for the maintenance run
+
+  ## Test Plan
+  - Re-run the maintenance audit after updating all remaining stale `agy` references
+  - Spot-check `pyproject.toml`, `README.md`, `docs/observe.md`, and `CHANGELOG.md` for complete shim lists
+  - Optionally re-run `python3 -m unittest discover -s tests` to confirm no behavior regressed from the doc cleanup
