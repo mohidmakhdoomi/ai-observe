@@ -38,4 +38,13 @@ v0.1.0:bin/agy` fails), so those are accurate release/historical records, not st
 Editing them would falsify history. Codex was right on scope, wrong to lump the CHANGELOG in.
 
 Run file 0002 updated to reflect the broader sync + the deliberate non-changes with evidence.
-Tests still green (236/0). Re-running PR consultation for iter2.
+Tests still green (236/0).
+
+**PR review iter2**: gemini APPROVE, claude APPROVE, codex REQUEST_CHANGES — but codex now
+confirms "the agy doc sync itself looks correct." Its 3 residual points are review-record
+meta-consistency, not deliverable defects: (1) it misread claude's "all APPROVE" (that refers
+to the maintain-impl set, which *was* all APPROVE, not the PR reviews); (2) a self-resolving
+timing artifact (iter2 files now committed); (3) its own sandbox has no `/tmp` so it couldn't
+run the suite (runs clean here + via porch). Immutable consult artifacts not edited. Full
+reconciliation recorded in run file 0002 "Consultation Record". Deliverable is unanimously
+confirmed correct; notifying architect for the gate.

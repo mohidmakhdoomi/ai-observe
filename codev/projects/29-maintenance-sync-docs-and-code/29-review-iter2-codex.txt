@@ -1,0 +1,23 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The `agy` doc sync itself looks correct, but the PR’s recorded review/tracking artifacts contain factual inconsistencies that should be fixed before hand-off.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `codev/projects/29-maintenance-sync-docs-and-code/29-review-iter1-claude.txt` is inaccurate: it says the recorded consultation reviews were “all APPROVE,” but `29-review-iter1-codex.txt` in the same PR is `REQUEST_CHANGES`.
+- `codev/state/maintain-29_thread.md` ends with “Re-running PR consultation for iter2,” but this PR only includes iter1 review artifacts and `status.yaml` still shows `iteration: 1`. Either add the iter2 artifacts/state updates or revise the thread so the project record matches reality.
+- Test execution was not independently reproducible in this sandbox: discovery finds 236 tests, but execution here fails immediately because the environment has no usable temp directory (`/tmp`, `/var/tmp`, etc.). That is likely environment-specific, but it means the PR’s “236 tests, 0 skips” claim is not verified by this review.
+
+PR_SUMMARY: |
+  ## Summary
+  This maintenance PR syncs current-state documentation for the spec-27 `agy` shim and records maintenance run 0002. The actual doc updates look correct: `arch.md`, `pyproject.toml`, `README.md`, and `docs/observe.md` now consistently include `agy`, while historical artifacts like `CHANGELOG.md` were intentionally left unchanged.
+
+  ## Key Changes
+  - Added `agy` to current-state named-shim enumerations in `codev/resources/arch.md`
+  - Synced supporting current-state docs/comments in `pyproject.toml`, `README.md`, and `docs/observe.md`
+  - Added maintenance-run and consultation/tracking artifacts under `codev/maintain/`, `codev/projects/29-*`, and `codev/state/`
+
+  ## Test Plan
+  - Reconcile the inconsistent review/tracking artifacts (`29-review-iter1-claude.txt`, `maintain-29_thread.md`, and any missing iter2 files/state)
+  - Re-run `python3 -m unittest discover -s tests` in a normal environment with a usable temp directory and confirm the reported 236-test / 0-skip result
+  - Spot-check that no remaining current-state docs/comments still omit `agy` from named-shim lists

@@ -1,0 +1,20 @@
+---
+VERDICT: APPROVE
+SUMMARY: The maintenance run successfully updated all current-state shim enumerations for `agy` across docs and config, correctly preserving historical files.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Maintenance run 0002 syncs the `agy` (Antigravity CLI) observer into all current-state shim enumerations across the project's documentation and configuration files.
+
+  ## Key Changes
+  - Updated `README.md`, `docs/observe.md`, `pyproject.toml`, and `codev/resources/arch.md` to include `agy` in their shim enumerations, addressing staleness by omission.
+  - Recorded the findings of the governance doc audit in `codev/maintain/0002.md` and `codev/state/maintain-29_thread.md`.
+  - Properly preserved historical accuracy by intentionally skipping updates to `CHANGELOG.md`'s `[0.1.0]` release notes and older `codev/plans/` artifacts, as `agy` was introduced after they were cut.
+
+  ## Test Plan
+  - Spot-check the updated files (`README.md`, `docs/observe.md`, `pyproject.toml`, and `arch.md`) for consistency.
+  - Verify tests still pass as recorded (236 tests, 0 skips).

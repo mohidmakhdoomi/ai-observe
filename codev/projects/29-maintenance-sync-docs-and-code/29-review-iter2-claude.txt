@@ -1,0 +1,56 @@
+Let me verify a few key claims against the codebase.Good — `agy` is correctly absent from CHANGELOG.md (it postdates the v0.1.0 tag). The diff is clean and well-scoped. Let me do one final check on the files that were changed.Everything checks out. Here's my review:
+
+---
+
+## Review
+
+### Completeness
+The PR does exactly what a MAINTAIN run should: audits governance docs, syncs stale-by-omission entries, documents findings, and verifies CLAUDE.md/AGENTS.md parity. The scope expansion from iter1 (codex correctly flagging that `pyproject.toml`, `README.md`, and `docs/observe.md` also needed `agy`) was handled well — all current-state shim enumerations are now consistent.
+
+### Code Quality
+All changes are documentation-only and surgical:
+- **arch.md**: Two lines updated, consistent with surrounding style.
+- **README.md**: Two lines updated, same pattern.
+- **docs/observe.md**: Three additions — shim list, env→shim mapping, env-var table row. All follow existing formatting exactly.
+- **pyproject.toml**: One comment line updated.
+
+### Verification
+- `bin/agy` exists ✓
+- `agy` is in `OBSERVER_SHIM_NAMES` in `observe.py` ✓
+- `CHANGELOG.md` correctly does NOT include `agy` (it postdates v0.1.0) ✓
+- No debug code, no TODOs, no stale markers in new files ✓
+
+### Run File (0002.md)
+Thorough and well-structured. The explicit claim-by-claim verification narrative is excellent — the "Deliberate non-changes" section with git evidence (`git cat-file -e v0.1.0:bin/agy` fails) is exactly the kind of rigor that makes maintenance audits trustworthy.
+
+### Process
+The iter1 → iter2 feedback loop worked as intended: codex's REQUEST_CHANGES caught the narrow scope, the builder addressed it (while correctly pushing back on the CHANGELOG suggestion), and the run file was updated to document the broader sync. Good example of multi-agent consultation adding value.
+
+### Minor Notes
+- The consultation artifact files (`.txt`) lack trailing newlines. Non-blocking, cosmetic.
+- Commit messages follow the `[Maintain]` convention. The `chore(porch):` commits are porch state management — expected.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, well-scoped maintenance run — all `agy` shim enumerations correctly synced across docs, every claim verified against live code, thorough run documentation.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Maintenance run 0002 syncing the spec-27 Antigravity CLI observer (`agy`) into every current-state shim enumeration across the project's documentation. Full verification audit of all four governance docs confirmed no stale entries — the only staleness was `agy` being omitted from shim lists.
+
+  ## Key Changes
+  - Added `agy` to named-shim enumerations in `arch.md`, `pyproject.toml`, `README.md`, and `docs/observe.md`
+  - Added `AI_OBSERVE_REAL_AGY` env-var documentation in `docs/observe.md`
+  - Created maintenance run file `codev/maintain/0002.md` with full audit findings and verification evidence
+  - Recorded 3-way consultation artifacts (maintain-phase and review-phase)
+
+  ## Test Plan
+  - [x] All 236 tests pass with 0 skips
+  - [x] `bin/agy` exists and `agy` is in `OBSERVER_SHIM_NAMES`
+  - [x] All current-state shim enumerations now consistently include `agy`
+  - [x] CHANGELOG.md correctly left unchanged (`agy` postdates v0.1.0 tag)
