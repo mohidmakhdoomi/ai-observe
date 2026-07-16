@@ -1,7 +1,7 @@
 id: '25'
 title: initial-release-v0-1-0-local-n
 protocol: air
-phase: pr
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -13,5 +13,5 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-16T18:28:37.608Z'
-updated_at: '2026-07-16T18:36:20.253Z'
+updated_at: '2026-07-16T18:38:02.508Z'
 pr_ready_for_human: false
