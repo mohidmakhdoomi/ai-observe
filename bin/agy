@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Drop-in Antigravity CLI observer shim.
+
+Prefers the installed `ai_observe` package; falls back to the checkout `src/`
+directory only when the package is not importable, so the same shim works in
+both installed and source-checkout workflows.
+"""
+try:
+    from ai_observe.observe import main_shim
+except ModuleNotFoundError as exc:
+    # Fall back to the checkout src/ ONLY when the package itself is absent.
+    # A deeper import error (a broken/incomplete install) must surface rather
+    # than be masked by silently importing the checkout copy.
+    if exc.name != "ai_observe":
+        raise
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from ai_observe.observe import main_shim
+
+if __name__ == "__main__":
+    raise SystemExit(main_shim("agy"))

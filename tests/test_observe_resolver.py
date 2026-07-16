@@ -30,7 +30,7 @@ class NamedResolverTests(unittest.TestCase):
     def test_named_programs_use_ai_observe_real_env(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            for program in ("codex", "claude", "gemini", "opencode"):
+            for program in ("codex", "claude", "gemini", "opencode", "agy"):
                 with self.subTest(program=program):
                     shim = root / "bin" / program
                     real = root / "real" / program
@@ -65,7 +65,7 @@ class NamedResolverTests(unittest.TestCase):
     def test_path_lookup_skips_current_shim_for_all_named_programs(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            for program in ("codex", "claude", "gemini", "opencode"):
+            for program in ("codex", "claude", "gemini", "opencode", "agy"):
                 with self.subTest(program=program):
                     shim = root / "shim" / program
                     real = root / "real" / program

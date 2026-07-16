@@ -240,7 +240,7 @@ class ArtifactContentTests(unittest.TestCase):
             text = z.read(entry).decode()
         self.assertIn("ai-observe = ai_observe.observe:main_generic", text)
         self.assertIn("ai-observe-viewer = ai_observe.viewer.__main__:main", text)
-        for shadow in ("claude", "codex", "gemini", "opencode"):
+        for shadow in ("claude", "codex", "gemini", "opencode", "agy"):
             self.assertNotRegex(text, rf"(?m)^{shadow} =")
 
     def test_wheel_includes_license_and_notice(self):
@@ -391,6 +391,7 @@ class InstalledShimMatrixTests(unittest.TestCase):
         "codex": "AI_OBSERVE_REAL_CODEX",
         "gemini": "AI_OBSERVE_REAL_GEMINI",
         "opencode": "AI_OBSERVE_REAL_OPENCODE",
+        "agy": "AI_OBSERVE_REAL_AGY",
     }
 
     def _marker_tool(self, root: Path) -> Path:
