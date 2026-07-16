@@ -1,0 +1,248 @@
+{
+  "subprocess": {
+    "claude": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 15.5,
+      "disk_event_total": 9,
+      "disk_by_source": {
+        "strace": 6,
+        "snapshot": 3
+      },
+      "disk_by_operation": {
+        "modify": 6,
+        "create": 3
+      },
+      "viewer_events_count": 9,
+      "workdir_files": [
+        "sub_1.txt",
+        "sub_2.txt",
+        "sub_3.txt"
+      ],
+      "check": {
+        "expected_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "actual_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "all_present": true
+      },
+      "notes": []
+    },
+    "agy": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 15.8,
+      "disk_event_total": 9,
+      "disk_by_source": {
+        "strace": 6,
+        "snapshot": 3
+      },
+      "disk_by_operation": {
+        "modify": 6,
+        "create": 3
+      },
+      "viewer_events_count": 9,
+      "workdir_files": [
+        "sub_1.txt",
+        "sub_2.txt",
+        "sub_3.txt"
+      ],
+      "check": {
+        "expected_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "actual_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "all_present": true
+      },
+      "notes": []
+    },
+    "codex": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 11.8,
+      "disk_event_total": 15,
+      "disk_by_source": {
+        "strace": 12,
+        "snapshot": 3
+      },
+      "disk_by_operation": {
+        "delete": 6,
+        "modify": 6,
+        "create": 3
+      },
+      "viewer_events_count": 15,
+      "workdir_files": [
+        "sub_1.txt",
+        "sub_2.txt",
+        "sub_3.txt"
+      ],
+      "check": {
+        "expected_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "actual_files": [
+          "sub_1.txt",
+          "sub_2.txt",
+          "sub_3.txt"
+        ],
+        "all_present": true
+      },
+      "notes": []
+    }
+  },
+  "ephemeral": {
+    "claude": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 15.9,
+      "disk_event_total": 2,
+      "disk_by_source": {
+        "strace": 2
+      },
+      "disk_by_operation": {
+        "modify": 2
+      },
+      "viewer_events_count": 2,
+      "workdir_files": [],
+      "check": {
+        "file_remains": false,
+        "direct_strace_saw_ephemeral": true,
+        "snapshot_saw_ephemeral": false,
+        "note": "net effect is nothing; direct should see it, snapshot should not"
+      },
+      "notes": []
+    },
+    "agy": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 21.9,
+      "disk_event_total": 3,
+      "disk_by_source": {
+        "strace": 3
+      },
+      "disk_by_operation": {
+        "modify": 3
+      },
+      "viewer_events_count": 3,
+      "workdir_files": [],
+      "check": {
+        "file_remains": false,
+        "direct_strace_saw_ephemeral": true,
+        "snapshot_saw_ephemeral": false,
+        "note": "net effect is nothing; direct should see it, snapshot should not"
+      },
+      "notes": []
+    },
+    "codex": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 15.9,
+      "disk_event_total": 57,
+      "disk_by_source": {
+        "strace": 57
+      },
+      "disk_by_operation": {
+        "delete": 55,
+        "modify": 2
+      },
+      "viewer_events_count": 57,
+      "workdir_files": [],
+      "check": {
+        "file_remains": false,
+        "direct_strace_saw_ephemeral": true,
+        "snapshot_saw_ephemeral": false,
+        "note": "net effect is nothing; direct should see it, snapshot should not"
+      },
+      "notes": []
+    }
+  },
+  "modify": {
+    "claude": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 17.6,
+      "disk_event_total": 1,
+      "disk_by_source": {
+        "strace": 1
+      },
+      "disk_by_operation": {
+        "modify": 1
+      },
+      "viewer_events_count": 1,
+      "workdir_files": [
+        "existing.txt"
+      ],
+      "check": {
+        "content_has_appended": true,
+        "original_preserved": true,
+        "operations_reported_on_file": [
+          "modify"
+        ]
+      },
+      "notes": []
+    },
+    "agy": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 24.6,
+      "disk_event_total": 2,
+      "disk_by_source": {
+        "strace": 2
+      },
+      "disk_by_operation": {
+        "modify": 2
+      },
+      "viewer_events_count": 2,
+      "workdir_files": [
+        "existing.txt"
+      ],
+      "check": {
+        "content_has_appended": true,
+        "original_preserved": true,
+        "operations_reported_on_file": [
+          "modify"
+        ]
+      },
+      "notes": []
+    },
+    "codex": {
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 18.1,
+      "disk_event_total": 38,
+      "disk_by_source": {
+        "strace": 38
+      },
+      "disk_by_operation": {
+        "delete": 36,
+        "modify": 2
+      },
+      "viewer_events_count": 38,
+      "workdir_files": [
+        "existing.txt"
+      ],
+      "check": {
+        "content_has_appended": true,
+        "original_preserved": true,
+        "operations_reported_on_file": [
+          "modify"
+        ]
+      },
+      "notes": []
+    }
+  }
+}
