@@ -2,7 +2,9 @@
   "porch": {
     "checks": {
       "build": { "skip": true },
-      "tests": { "command": "python3 -m unittest discover -s tests" }
+      "tests": { "command": "python3 -m unittest discover -s tests" },
+      "build_succeeds": { "skip": true },
+      "tests_pass": { "command": "python3 -m unittest discover -s tests" }
     }
   }
 }
