@@ -45,6 +45,7 @@ SHIMS = {
     "codex": "main_shim",
     "gemini": "main_shim",
     "opencode": "main_shim",
+    "agy": "main_shim",
 }
 
 

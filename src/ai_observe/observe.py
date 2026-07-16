@@ -32,7 +32,7 @@ from .snapshot import (
 from .trace_parser import ParserFailure, TraceParser, dump_event, parse_trace_file
 
 SESSION_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
-OBSERVER_SHIM_NAMES = frozenset({"ai-observe", "codex", "claude", "gemini", "opencode"})
+OBSERVER_SHIM_NAMES = frozenset({"ai-observe", "codex", "claude", "gemini", "opencode", "agy"})
 
 
 @dataclass
