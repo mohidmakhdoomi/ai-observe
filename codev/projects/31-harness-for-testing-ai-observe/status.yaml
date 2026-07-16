@@ -1,7 +1,7 @@
 id: '31'
 title: harness-for-testing-ai-observe
 protocol: experiment
-phase: analyze
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -12,4 +12,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-16T23:19:35.316Z'
-updated_at: '2026-07-16T23:58:23.079Z'
+updated_at: '2026-07-16T23:58:27.647Z'
