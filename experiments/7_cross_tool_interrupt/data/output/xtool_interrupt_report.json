@@ -1,0 +1,150 @@
+{
+  "task_files": 6,
+  "results": {
+    "agy": {
+      "tool": "agy",
+      "session": "xint_agy",
+      "first_file_at_s": 13.0,
+      "interrupted_mid_session": true,
+      "returncode": 1,
+      "duration_s": 14.8,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 5298
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 832
+        }
+      },
+      "meta_parser_status": "ok",
+      "meta_authoritative": "xint_agy.jsonl",
+      "degraded_artifact_produced": false,
+      "auth_event_total": 6,
+      "auth_by_operation": {
+        "modify": 4,
+        "create": 2
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      }
+    },
+    "codex": {
+      "tool": "codex",
+      "session": "xint_codex",
+      "first_file_at_s": 10.8,
+      "interrupted_mid_session": true,
+      "returncode": 1,
+      "duration_s": 12.8,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 8917
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 848
+        }
+      },
+      "meta_parser_status": "ok",
+      "meta_authoritative": "xint_codex.jsonl",
+      "degraded_artifact_produced": false,
+      "auth_event_total": 11,
+      "auth_by_operation": {
+        "delete": 3,
+        "modify": 4,
+        "create": 4
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      }
+    },
+    "claude": {
+      "tool": "claude",
+      "session": "xint_claude",
+      "first_file_at_s": 12.4,
+      "interrupted_mid_session": true,
+      "returncode": 1,
+      "duration_s": 14.2,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 5016
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 856
+        }
+      },
+      "meta_parser_status": "ok",
+      "meta_authoritative": "xint_claude.jsonl",
+      "degraded_artifact_produced": false,
+      "auth_event_total": 6,
+      "auth_by_operation": {
+        "modify": 4,
+        "create": 2
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      }
+    }
+  }
+}

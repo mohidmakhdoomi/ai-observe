@@ -1,0 +1,133 @@
+{
+  "turns": [
+    "Create a file named turn1.txt containing exactly the word one. Then stop.",
+    "Create a file named turn2.txt containing exactly the word two. Then stop.",
+    "Append a line containing exactly the word three to the existing file turn1.txt. Do not create other files. Then stop."
+  ],
+  "results": {
+    "claude": {
+      "tool": "claude",
+      "session": "mt_claude",
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 28.4,
+      "timed_out": false,
+      "disk_event_total": 8,
+      "disk_by_source": {
+        "strace": 6,
+        "snapshot": 2
+      },
+      "disk_by_operation": {
+        "create": 5,
+        "rename": 3
+      },
+      "viewer_events_count": 8,
+      "check": {
+        "actual_files": [
+          "turn1.txt",
+          "turn2.txt"
+        ],
+        "turn1_present": true,
+        "turn2_present": true,
+        "turn1_has_one": true,
+        "turn1_has_three_appended": true,
+        "ops_on_turn1": [
+          "create",
+          "rename"
+        ],
+        "ops_on_turn2": [
+          "create",
+          "rename"
+        ],
+        "writes_onto_turn1": 2,
+        "writes_onto_turn2": 1,
+        "turn2_create_captured": true,
+        "turn3_op_on_turn1_captured": true
+      },
+      "had_stderr": true
+    },
+    "agy": {
+      "tool": "agy",
+      "session": "mt_agy",
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 47.7,
+      "timed_out": false,
+      "disk_event_total": 10,
+      "disk_by_source": {
+        "strace": 8,
+        "snapshot": 2
+      },
+      "disk_by_operation": {
+        "modify": 8,
+        "create": 2
+      },
+      "viewer_events_count": 10,
+      "check": {
+        "actual_files": [
+          "turn1.txt",
+          "turn2.txt"
+        ],
+        "turn1_present": true,
+        "turn2_present": true,
+        "turn1_has_one": true,
+        "turn1_has_three_appended": true,
+        "ops_on_turn1": [
+          "create",
+          "modify"
+        ],
+        "ops_on_turn2": [
+          "create",
+          "modify"
+        ],
+        "writes_onto_turn1": 5,
+        "writes_onto_turn2": 3,
+        "turn2_create_captured": true,
+        "turn3_op_on_turn1_captured": true
+      },
+      "had_stderr": true
+    },
+    "codex": {
+      "tool": "codex",
+      "session": "mt_codex",
+      "ok": true,
+      "returncode": 0,
+      "duration_s": 54.9,
+      "timed_out": false,
+      "disk_event_total": 94,
+      "disk_by_source": {
+        "strace": 92,
+        "snapshot": 2
+      },
+      "disk_by_operation": {
+        "delete": 84,
+        "modify": 8,
+        "create": 2
+      },
+      "viewer_events_count": 94,
+      "check": {
+        "actual_files": [
+          "turn1.txt",
+          "turn2.txt"
+        ],
+        "turn1_present": true,
+        "turn2_present": true,
+        "turn1_has_one": true,
+        "turn1_has_three_appended": true,
+        "ops_on_turn1": [
+          "create",
+          "modify"
+        ],
+        "ops_on_turn2": [
+          "create",
+          "modify"
+        ],
+        "writes_onto_turn1": 5,
+        "writes_onto_turn2": 3,
+        "turn2_create_captured": true,
+        "turn3_op_on_turn1_captured": true
+      },
+      "had_stderr": true
+    }
+  }
+}

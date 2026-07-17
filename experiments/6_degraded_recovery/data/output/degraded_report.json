@@ -1,0 +1,261 @@
+{
+  "task": "Run exactly this shell command in the current directory and nothing else: for i in $(seq 1 5); do echo file$i > d$i.txt; sleep 0.6; done",
+  "cases": {
+    "control_clean": {
+      "case": "control_clean",
+      "session": "deg_clean",
+      "extra_env": {},
+      "agent_returncode": 0,
+      "duration_s": 20.9,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 12500
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 842
+        }
+      },
+      "meta_parser_status": "ok",
+      "meta_authoritative_role_key": "jsonl",
+      "meta_artifact_roles": {
+        "authoritative_event_path": "deg_clean.jsonl",
+        "jsonl": "authoritative_complete",
+        "meta": "metadata",
+        "partial": "absent_or_parser_failure_partial",
+        "rebuilt": "absent",
+        "trace": "trace"
+      },
+      "meta_warnings": [],
+      "authoritative_event_file": "deg_clean.jsonl",
+      "auth_event_total": 15,
+      "auth_by_operation": {
+        "modify": 10,
+        "create": 5
+      },
+      "captured_txt": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "actual_txt_on_disk": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      }
+    },
+    "live_timeout_rebuilt": {
+      "case": "live_timeout_rebuilt",
+      "session": "deg_timeout",
+      "extra_env": {
+        "AI_OBSERVE_LIVE_JOIN_TIMEOUT": "0.1",
+        "AI_OBSERVE_LIVE_POLL_MS": "2000"
+      },
+      "agent_returncode": 0,
+      "duration_s": 19.8,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 9200
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": true,
+          "size": 12630
+        },
+        "meta": {
+          "exists": true,
+          "size": 969
+        }
+      },
+      "meta_parser_status": "live_timeout_rebuilt",
+      "meta_authoritative_role_key": "rebuilt",
+      "meta_artifact_roles": {
+        "authoritative_event_path": "deg_timeout.jsonl.rebuilt",
+        "jsonl": "partial_live",
+        "meta": "metadata",
+        "partial": "absent_or_parser_failure_partial",
+        "rebuilt": "authoritative_complete",
+        "trace": "trace"
+      },
+      "meta_warnings": [
+        "live parser did not exit before timeout; rebuilt artifact may be authoritative"
+      ],
+      "authoritative_event_file": "deg_timeout.jsonl.rebuilt",
+      "auth_event_total": 15,
+      "auth_by_operation": {
+        "modify": 10,
+        "create": 5
+      },
+      "captured_txt": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "actual_txt_on_disk": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "viewer": {
+        "parser_status": "live_timeout_rebuilt",
+        "authoritative_artifact": "rebuilt",
+        "warnings_count": 1
+      }
+    },
+    "parse_failure_partial": {
+      "case": "parse_failure_partial",
+      "session": "deg_partial",
+      "extra_env": {
+        "AI_OBSERVE_TEST_FAIL_AFTER": "2"
+      },
+      "agent_returncode": 0,
+      "duration_s": 21.2,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 3430
+        },
+        "partial": {
+          "exists": true,
+          "size": 1840
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 942
+        }
+      },
+      "meta_parser_status": "parser_failure_partial",
+      "meta_authoritative_role_key": "jsonl",
+      "meta_artifact_roles": {
+        "authoritative_event_path": "deg_partial.jsonl",
+        "jsonl": "authoritative_complete",
+        "meta": "metadata",
+        "partial": "absent_or_parser_failure_partial",
+        "rebuilt": "absent",
+        "trace": "trace"
+      },
+      "meta_warnings": [
+        "live parser failed; partial direct events are in .jsonl.partial"
+      ],
+      "authoritative_event_file": "deg_partial.jsonl",
+      "auth_event_total": 5,
+      "auth_by_operation": {
+        "create": 5
+      },
+      "captured_txt": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "actual_txt_on_disk": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "viewer": {
+        "parser_status": "parser_failure_partial",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 1
+      }
+    },
+    "parse_failure_strict": {
+      "case": "parse_failure_strict",
+      "session": "deg_strict",
+      "extra_env": {
+        "AI_OBSERVE_TEST_FAIL_AFTER": "2",
+        "AI_OBSERVE_STRICT_PARSE": "1"
+      },
+      "agent_returncode": 1,
+      "duration_s": 20.6,
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 3410
+        },
+        "partial": {
+          "exists": true,
+          "size": 1831
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 934
+        }
+      },
+      "meta_parser_status": "parser_failure_partial",
+      "meta_authoritative_role_key": "jsonl",
+      "meta_artifact_roles": {
+        "authoritative_event_path": "deg_strict.jsonl",
+        "jsonl": "authoritative_complete",
+        "meta": "metadata",
+        "partial": "absent_or_parser_failure_partial",
+        "rebuilt": "absent",
+        "trace": "trace"
+      },
+      "meta_warnings": [
+        "live parser failed; partial direct events are in .jsonl.partial"
+      ],
+      "authoritative_event_file": "deg_strict.jsonl",
+      "auth_event_total": 5,
+      "auth_by_operation": {
+        "create": 5
+      },
+      "captured_txt": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "actual_txt_on_disk": [
+        "d1.txt",
+        "d2.txt",
+        "d3.txt",
+        "d4.txt",
+        "d5.txt"
+      ],
+      "viewer": {
+        "parser_status": "parser_failure_partial",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 1
+      }
+    }
+  }
+}

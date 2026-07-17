@@ -1,0 +1,111 @@
+{
+  "task": "Run exactly this shell command in the current directory and nothing else: for i in $(seq 1 12); do echo file$i > w$i.txt; sleep 1.6; done",
+  "run_duration_s": 40.0,
+  "viewer_started": true,
+  "n_samples": 13,
+  "timeline": [
+    {
+      "t": 14.0,
+      "viewer_visible": 2,
+      "disk_lines": 2,
+      "files_written": 1
+    },
+    {
+      "t": 16.0,
+      "viewer_visible": 4,
+      "disk_lines": 4,
+      "files_written": 2
+    },
+    {
+      "t": 18.0,
+      "viewer_visible": 6,
+      "disk_lines": 8,
+      "files_written": 4
+    },
+    {
+      "t": 20.0,
+      "viewer_visible": 10,
+      "disk_lines": 10,
+      "files_written": 5
+    },
+    {
+      "t": 22.0,
+      "viewer_visible": 12,
+      "disk_lines": 12,
+      "files_written": 6
+    },
+    {
+      "t": 24.0,
+      "viewer_visible": 14,
+      "disk_lines": 14,
+      "files_written": 7
+    },
+    {
+      "t": 26.0,
+      "viewer_visible": 16,
+      "disk_lines": 16,
+      "files_written": 9
+    },
+    {
+      "t": 28.0,
+      "viewer_visible": 20,
+      "disk_lines": 20,
+      "files_written": 10
+    },
+    {
+      "t": 30.0,
+      "viewer_visible": 22,
+      "disk_lines": 22,
+      "files_written": 11
+    },
+    {
+      "t": 32.0,
+      "viewer_visible": 24,
+      "disk_lines": 24,
+      "files_written": 12
+    },
+    {
+      "t": 34.0,
+      "viewer_visible": 24,
+      "disk_lines": 24,
+      "files_written": 12
+    },
+    {
+      "t": 36.0,
+      "viewer_visible": 24,
+      "disk_lines": 24,
+      "files_written": 12
+    },
+    {
+      "t": 38.0,
+      "viewer_visible": 24,
+      "disk_lines": 24,
+      "files_written": 12
+    }
+  ],
+  "distinct_increasing_ticks_during_run": 10,
+  "max_visible_during_run": 24,
+  "midpoint_visible": 16,
+  "final_visible": 36,
+  "canonical_total": 36,
+  "canonical_by_operation": {
+    "modify": 24,
+    "create": 12
+  },
+  "incremental_confirmed": true,
+  "final_complete": true,
+  "actual_files": [
+    "w1.txt",
+    "w10.txt",
+    "w11.txt",
+    "w12.txt",
+    "w2.txt",
+    "w3.txt",
+    "w4.txt",
+    "w5.txt",
+    "w6.txt",
+    "w7.txt",
+    "w8.txt",
+    "w9.txt"
+  ]
+}

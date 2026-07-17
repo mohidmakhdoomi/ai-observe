@@ -1,0 +1,163 @@
+{
+  "cases": {
+    "agent_sigkill": {
+      "session": "crash_agent",
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 4960
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 852
+        },
+        "trace": {
+          "exists": true,
+          "size": 5530749
+        }
+      },
+      "meta_present": true,
+      "meta_parser_status": "ok",
+      "meta_authoritative": "crash_agent.jsonl",
+      "auth_event_file": "crash_agent.jsonl",
+      "auth_event_total": 6,
+      "auth_by_operation": {
+        "modify": 4,
+        "create": 2
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      },
+      "case": "agent_sigkill",
+      "first_file_at_s": 11.4,
+      "killed_pids": [
+        328824,
+        328786,
+        328659
+      ],
+      "coordinator_returncode": 137,
+      "coordinator_survived_to_finalize": true
+    },
+    "observer_sigkill": {
+      "session": "crash_observer",
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 3666
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": false,
+          "size": 0
+        },
+        "trace": {
+          "exists": true,
+          "size": 5616234
+        }
+      },
+      "meta_present": false,
+      "meta_parser_status": null,
+      "meta_authoritative": null,
+      "auth_event_file": "crash_observer.jsonl",
+      "auth_event_total": 4,
+      "auth_by_operation": {
+        "modify": 4
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": null,
+        "authoritative_artifact": null,
+        "warnings_count": 0
+      },
+      "case": "observer_sigkill",
+      "first_file_at_s": 11.2,
+      "coordinator_returncode": -9,
+      "coordinator_survived_to_finalize": false
+    },
+    "nonzero_midwrite": {
+      "session": "crash_nonzero",
+      "artifacts": {
+        "jsonl": {
+          "exists": true,
+          "size": 5036
+        },
+        "partial": {
+          "exists": false,
+          "size": 0
+        },
+        "rebuilt": {
+          "exists": false,
+          "size": 0
+        },
+        "meta": {
+          "exists": true,
+          "size": 868
+        },
+        "trace": {
+          "exists": true,
+          "size": 5850806
+        }
+      },
+      "meta_present": true,
+      "meta_parser_status": "ok",
+      "meta_authoritative": "crash_nonzero.jsonl",
+      "auth_event_file": "crash_nonzero.jsonl",
+      "auth_event_total": 6,
+      "auth_by_operation": {
+        "modify": 4,
+        "create": 2
+      },
+      "captured_txt": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "actual_txt_on_disk": [
+        "f1.txt",
+        "f2.txt"
+      ],
+      "phantom_captures": [],
+      "viewer": {
+        "parser_status": "ok",
+        "authoritative_artifact": "jsonl",
+        "warnings_count": 0
+      },
+      "case": "nonzero_midwrite",
+      "coordinator_returncode": 0,
+      "coordinator_survived_to_finalize": true
+    }
+  }
+}
