@@ -30,4 +30,11 @@
 - Verified in this worktree: claude/agy/codex/strace ALL present; PEP 420 `python -m tests.agent_sessions` works from repo root (empirically). ptrace_scope=1.
 - Key plan refinement locking M2 literally: ALL new test code (incl. tool-free plumbing/oracle checks) lives under `tests/agent_sessions/` as `selftest_*.py`/`check_*.py` — nothing matches CI's `ls test_*.py` glob → CI-collected set byte-identical. Tool-free tier runs via `--selftest`; live tier is opt-in.
 - 6 phases: (1) harness+ephemeral-port ViewerMonitor, (2) oracle+registry+runner/gating, (3) S1–S4 + #32, (4) fold Exp4 multi-turn + Exp9 timeline + #33, (5) Exp6 degraded + #36, (6) docs/gitignore/README/sweep.
-- Plan committed; running 3-way plan review.
+- Plan committed; 3-way review: Claude APPROVE, Gemini COMMENT, Codex REQUEST_CHANGES → all fixed (M4 fake-tool seam, explicit named `excluded` for non-applicable pairs, sealed keep-artifacts `.`-from-root, Phase-1 selftest self-contained).
+- Plan APPROVED by architect. Non-blocking note for REVIEW doc: wiring `--selftest` into CI could be a small FUTURE follow-up project (deliberately NOT this one — keep CI surface untouched). Reminder: porch staging lesson — `git add` each phase's new files immediately.
+
+## Implement phase
+- Phase 1 DONE: package skeleton (`__init__.py` puts ROOT/src on path, no experiments hack) + graduated `harness.py` (checkout-first `resolve_ai_observe`, in-process `ViewerServer(port=0)` ViewerMonitor, no port constants) + `selftest/selftest_harness.py`.
+- Self-test green (4/4): viewer serves fixture 17/17, ephemeral ports distinct+nonzero, checkout-first entrypoint, N1 (no experiments/ on sys.path — behavioral check).
+- M2 verified at checkpoint: `ls tests/test_*.py` unchanged vs main; `discover -s tests -p test_*.py` finds 236 tests, 0 from agent_sessions.
+- Gotcha logged: N1 source-grep false-positived on docstrings mentioning `sys.path.insert`/`experiments`; switched to behavioral sys.path check.
