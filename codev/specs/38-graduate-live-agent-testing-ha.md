@@ -191,9 +191,12 @@ into a report + a process exit code (nonzero on any `fail`).
 - **Authentication:** presence ≠ auth. The first scenario per tool acts as the auth
   probe — an agent invocation that returns nonzero **or** produces zero
   watched-root events is raised by the oracle as
-  `tool 'agy' produced no events — not authenticated? (see docs)`, a **hard
-  failure naming the tool**, not a skip. (Deliberately narrowing `--tools` to omit
-  a tool you can't auth is the explicit, recorded escape hatch.)
+  `tool 'agy' produced no events — not authenticated or agent error; rerun with
+  --keep-artifacts to inspect the raw agent stderr (see docs)`, a **hard failure
+  naming the tool**, not a skip. The `--keep-artifacts` hint is deliberate: it lets
+  the developer distinguish a genuine auth failure from an unexpected agent/observer
+  crash by reading the persisted stderr, rather than the runner guessing. (Narrowing
+  `--tools` to omit a tool you can't auth is the explicit, recorded escape hatch.)
 
 ### Decision 5 — Known-bug annotations that can't rot and flip in one line
 
@@ -230,9 +233,11 @@ Semantics of `expect_…(…, bug=N)`:
 This is an assertion path end to end — never a `@skip` — so it does not, and cannot,
 interact with the no-silent-skip rule.
 
-Bug homes: **#32** → `check_ephemeral.py`; **#33** → `check_multi_turn.py` /
-any codex run in `check_single_write.py`; **#36** → `check_degraded.py`
-(forced parse-failure via `AI_OBSERVE_TEST_FAIL_AFTER`, claude-only).
+Bug homes (**all three are in v1 scope** — see Decision 9): **#32** →
+`check_ephemeral.py`; **#33** → `check_multi_turn.py` / any codex run in
+`check_single_write.py`; **#36** → `check_degraded.py` (forced parse-failure via
+`AI_OBSERVE_TEST_FAIL_AFTER`, claude-only). Each bug therefore has exactly one
+one-line flip-home, so none can be documented-but-uncovered.
 
 ### Decision 6 — Viewer port allocation: in-process server on an OS-assigned port
 
@@ -247,20 +252,66 @@ logic is otherwise unchanged.
 ### Decision 7 — Artifacts out of git by construction + belt-and-suspenders ignore
 
 - Raw `.trace`/`.jsonl`/`.jsonl.partial`/`.jsonl.rebuilt`/`.meta.json` and agent
-  `workdir`s are written to an **OS temp dir** (`tempfile.mkdtemp`) by default, so
-  nothing lands in the worktree at all. `--keep-artifacts <dir>` (opt-in, for
-  debugging) is the only way to persist them.
+  `workdir`s are written to an **auto-cleaning OS temp dir** by default —
+  `tempfile.TemporaryDirectory` (or an explicit `shutil.rmtree` in a `finally`), so
+  the tree is removed on exit and repeated developer runs do **not** silently leak
+  garbage dirs. (Plain `mkdtemp` is rejected precisely because it does not auto-clean.)
+- `--keep-artifacts <dir>` (opt-in, for debugging) is the only way to persist them,
+  and it is **bounded**: the runner refuses any destination that resolves **inside
+  the repo working tree unless it is under a known git-ignored location** (the
+  suite's own ignored artifact dir). A path outside the repo, or under the ignored
+  subtree, is accepted; a tracked in-repo path is rejected with a clear error. This
+  keeps raw artifacts out of git *by construction*, not merely by a `.gitignore` a
+  developer could sidestep by pointing elsewhere.
 - As belt-and-suspenders, add a `tests/agent_sessions/.gitignore` mirroring
-  `experiments/.gitignore`'s patterns for any in-tree artifact/work dir a developer
-  points `--keep-artifacts` at.
+  `experiments/.gitignore`'s patterns covering the suite's ignored artifact/work dir.
 
-### Decision 8 — Resolving the `ai-observe` wrapper entrypoint
+### Decision 8 — Resolving the `ai-observe` wrapper entrypoint (test the working tree)
 
-The graduated harness resolves the wrapper CLI as: prefer an **installed
-`ai-observe` console script** on PATH, fall back to the checkout **`bin/ai-observe`**
-(consistent with the packaging philosophy in `arch.md` §Packaging — the shim
-prefers the installed package, falls back to the checkout). This removes the
-experiment's hard dependency on running from a checkout, without a `sys.path` hack.
+The graduated harness resolves the wrapper CLI as: **prefer the checkout
+`bin/ai-observe`**, fall back to an installed `ai-observe` console script on PATH
+only when the checkout shim is absent. This is deliberately the *opposite* of the
+runtime shim's install-first preference (`arch.md` §Packaging): a **test** suite
+must exercise the **current working tree**, and the runner already imports
+`ai_observe` from the checkout `src/`. Preferring an installed script would let a
+stale global `ai-observe` observe while the assertions target the local code — a
+version mismatch that would produce confusing, wrong results. Checkout-first keeps
+the observed binary and the code-under-test in lockstep. (The checkout `bin/ai-observe`
+itself already prefers the installed package for its *own* import fallback, so this
+choice only pins which *wrapper entrypoint script* is invoked, not the deeper
+package resolution.)
+
+### Decision 9 — Bug #36 degraded scenario is in v1 scope (resolving the open question)
+
+The forced-degraded parse-failure scenario (`check_degraded.py`, S7) is
+**unconditionally included in v1**. Rationale: requirement 3 names #36 alongside
+#32/#33 as a signature the oracle must cover; the whole value proposition is that
+each open bug gets a one-line flip-home. Deferring #36 would leave it the sole open
+bug that is *documented but not oracle-covered*, so its annotation could rot
+undetected — exactly the failure mode Decision 5 exists to prevent. The cost is low:
+the scenario is **claude-only** and uses the in-tree `AI_OBSERVE_TEST_FAIL_AFTER`
+hook (no extra tools, one claude run). This closes the former Open Question 1.
+
+### Decision 10 — Runner output format & `--scenarios` selection
+
+- **Output:** the runner prints a **human-readable summary** (per scenario/tool:
+  `pass` / `fail` / `known-bug:#N` with a one-line detail) to stderr, and supports
+  `--json` for a structured report (the same records the oracle produces) to stdout.
+  The process exit code is nonzero if any check is `fail` (a `known-bug:#N` is not a
+  fail while the bug is active).
+- **`--scenarios`:** selects by **short name** (the module basename minus the
+  `check_` prefix), e.g. `--scenarios single_write,ephemeral`. `--tools` and
+  `--scenarios` compose (cartesian, minus tool/scenario applicability).
+
+### Decision 11 — Driver sequencing is explicit: start session, then attach viewer
+
+The harness contract encodes finding **F5** directly: `run_observed_session` (and
+the multi-turn / timeline drivers) **start the observed `ai-observe` session
+first**, wait until the target `.jsonl` exists and is non-empty, and **only then**
+attach the in-process `ViewerServer`. The viewer is an attach-to-existing-artifact
+tool, never a pre-launched waiter. The timeline probe (Exp 9) already depends on
+this ordering; making it part of the documented harness contract prevents a future
+driver from attaching a viewer before the artifact exists.
 
 ### Docs (requirement 7)
 
@@ -285,19 +336,15 @@ from `README.md`, covering:
   design. (If the architect disagrees with any Decision above, flag at the
   spec-approval gate.)
 
-**Important (affects design):**
-1. **Is the #36 degraded scenario in v1 scope?** Requirement 3 names #36, and the
-   only way to give it a real flip-home is to fold in Exp 6's forced-degraded driver
-   (claude-only, uses the in-tree `AI_OBSERVE_TEST_FAIL_AFTER` hook — no extra
-   tools, no network beyond the one claude run). **Recommendation: yes, include it**,
-   so all three bugs have a flip-home. Deferring it means #36 is documented but not
-   oracle-covered. *(Decision deferred to the architect at the gate.)*
-2. **Auth-probe cost.** Using the first real scenario as the auth probe adds no
-   extra runs but means a mis-auth surfaces a few seconds in rather than instantly.
-   A dedicated ultra-cheap warmup prompt per tool is the alternative. *(Recommend:
-   reuse the first scenario; no separate warmup.)*
+**Resolved during specify (3-way review, iter 1):**
+1. ~~Is the #36 degraded scenario in v1 scope?~~ **Resolved: yes, included** —
+   see Decision 9. All three reviewers flagged the earlier conditional as an
+   in-scope contradiction; the scenario is now unconditional.
+2. ~~Auth-probe cost.~~ **Resolved: reuse the first scenario as the auth probe**
+   (no separate warmup), with a `--keep-artifacts` hint in the failure message so a
+   real auth failure is distinguishable from an agent/observer crash (Decision 4).
 
-**Nice-to-know (optimization):**
+**Nice-to-know (optimization, non-blocking):**
 3. Whether to add a `pytest`-style entry in addition to `python -m tests.agent_sessions`
    (the repo is unittest-based today; recommend staying unittest/stdlib to honor
    the stdlib-only constraint).
@@ -312,9 +359,10 @@ Functional (MUST):
   same skip count (still zero-tolerance), no new job, no new matrix leg. Demonstrated
   by showing `ls tests/test_*.py` (the CI glob input) is unchanged and the live
   suite lives under `tests/agent_sessions/` with non-`test_*.py` scenario files.
-- **M3** — Each open-bug signature is recorded as `known-bug:#N` in results, and
-  **flipping one to a hard assertion is a one-line change** (`OPEN_BUGS[N].active =
-  False`). Demonstrated for at least #32 (and #33; #36 if Decision-Q1 = include).
+- **M3** — Each of the three open-bug signatures (#32, #33, #36) is recorded as
+  `known-bug:#N` in results, and **flipping one to a hard assertion is a one-line
+  change** (`OPEN_BUGS[N].active = False`). Demonstrated for all three (each has a
+  dedicated flip-home scenario per Decision 9).
 - **M4** — A missing **or unauthenticated** requested tool causes a **loud, named**
   failure (nonzero exit, message naming the tool) — never a silent skip / green.
 - **M5** — The multi-turn chained driver (Exp 4) and the timeline-sampling probe
@@ -353,9 +401,9 @@ Immutability:
 - **S6 long-running timeline** (Exp 9, claude): ≥3 distinct increasing
   viewer-visible counts *during* the run (HARD timeliness); final viewer ==
   canonical (HARD completeness).
-- **S7 degraded parse-failure** (Exp 6, claude, forced): sidecar authority label
-  checked via `expect_authority_not_overstated(bug=36)` (annotated today, flips on
-  #36 fix). *(Included iff Decision-Q1 = include.)*
+- **S7 degraded parse-failure** (Exp 6, claude, forced via `AI_OBSERVE_TEST_FAIL_AFTER`):
+  sidecar authority label checked via `expect_authority_not_overstated(bug=36)`
+  (annotated today, flips on #36 fix). **In v1 scope (Decision 9).**
 - **S8 tool-absence**: invoking with a requested-but-missing tool exits nonzero and
   names it (exercises M4 without needing the tool present — inject a bogus
   `--tools nope` and assert the loud failure).
@@ -373,4 +421,30 @@ Immutability:
 
 ## Consultation Log
 
-*(Populated by porch's 3-way review at the spec checkpoint.)*
+### Specify iter 1 — 3-way (Gemini / Codex / Claude)
+
+Verdicts: Gemini **REQUEST_CHANGES**, Codex **REQUEST_CHANGES**, Claude
+**APPROVE** — all HIGH confidence. Reviewers verified the load-bearing claims
+against the codebase (CI glob `ls test_*.py`, `ViewerServer(port=0)`/`.url`,
+`AI_OBSERVE_TEST_FAIL_AFTER` present in `src/observe.py`, harness stdlib-only,
+`tests/` has no `__init__.py`). Changes applied:
+
+- **#36 scope contradiction (all three reviewers, blocking):** the spec framed
+  #32/#33/#36 as in-scope yet deferred the #36 scenario to an open question.
+  Resolved by making S7/`check_degraded.py` **unconditionally in v1** (new
+  **Decision 9**); updated M3, S7, and the Open Questions accordingly.
+- **CLI resolution mismatch (Gemini, blocking):** flipped **Decision 8** to prefer
+  the **checkout `bin/ai-observe`** over an installed script, so the suite always
+  exercises the working tree it imports from (no stale-global-install mismatch).
+- **Temp-dir leakage (Gemini, blocking):** **Decision 7** now mandates an
+  **auto-cleaning** temp dir (`TemporaryDirectory`/`rmtree`), not `mkdtemp`.
+- **`--keep-artifacts` boundary (Codex, blocking):** **Decision 7** now **refuses
+  tracked in-repo destinations**, accepting only paths outside the repo or under the
+  suite's known git-ignored subtree.
+- **Auth-probe hint (Gemini, minor):** **Decision 4**'s failure message now points
+  the developer to `--keep-artifacts` to inspect raw agent stderr and tell a real
+  auth failure apart from a crash.
+- **Runner output format & `--scenarios` naming (Claude, minor):** added
+  **Decision 10** (human summary + `--json`; scenario short-names).
+- **Driver sequencing (Claude, minor):** added **Decision 11** making F5's
+  start-session-then-attach-viewer ordering part of the harness contract.

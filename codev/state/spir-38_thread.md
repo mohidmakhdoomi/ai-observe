@@ -16,4 +16,11 @@
 - Raw artifacts → temp dir by default (out of git by construction) + gitignore belt-and-suspenders.
 
 ## Status
-- Writing initial spec draft.
+- Initial spec committed. 3-way review iter 1: Gemini/Codex REQUEST_CHANGES, Claude APPROVE.
+- Applied all feedback (Decisions 9/10/11 added; 4/7/8 revised):
+  - #36 degraded scenario now unconditional v1 scope (was contradictory open question).
+  - Decision 8 flipped to checkout-first `bin/ai-observe` (test the working tree).
+  - Temp dir must auto-clean; `--keep-artifacts` refuses tracked in-repo paths.
+  - Auth-probe failure hints at `--keep-artifacts` to inspect stderr.
+  - Runner output = human summary + `--json`; `--scenarios` short-names; driver sequencing (F5) in contract.
+- Committing "spec with multi-agent review", then porch next (likely spec-approval gate → STOP for human).
