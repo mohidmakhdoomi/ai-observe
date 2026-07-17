@@ -24,3 +24,10 @@
   - Auth-probe failure hints at `--keep-artifacts` to inspect stderr.
   - Runner output = human summary + `--json`; `--scenarios` short-names; driver sequencing (F5) in contract.
 - Committing "spec with multi-agent review", then porch next (likely spec-approval gate → STOP for human).
+
+## Plan phase (iter 1)
+- Spec APPROVED by architect (verified the 3 load-bearing claims independently). Plan-phase note: `tests/` has no `__init__.py` → `python -m tests.agent_sessions` relies on PEP 420 namespace resolution from repo root — verify early + document run-from-root.
+- Verified in this worktree: claude/agy/codex/strace ALL present; PEP 420 `python -m tests.agent_sessions` works from repo root (empirically). ptrace_scope=1.
+- Key plan refinement locking M2 literally: ALL new test code (incl. tool-free plumbing/oracle checks) lives under `tests/agent_sessions/` as `selftest_*.py`/`check_*.py` — nothing matches CI's `ls test_*.py` glob → CI-collected set byte-identical. Tool-free tier runs via `--selftest`; live tier is opt-in.
+- 6 phases: (1) harness+ephemeral-port ViewerMonitor, (2) oracle+registry+runner/gating, (3) S1–S4 + #32, (4) fold Exp4 multi-turn + Exp9 timeline + #33, (5) Exp6 degraded + #36, (6) docs/gitignore/README/sweep.
+- Plan committed; running 3-way plan review.
