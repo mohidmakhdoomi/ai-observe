@@ -103,3 +103,14 @@ claude 2.1.204, agy 1.1.3, codex-cli 0.144.5. Matches round 1.
   land at finalization (24→36 = canonical). INCREMENTAL_CONFIRMED + FINAL_COMPLETE. POSITIVE. Confirms the
   two-layer model: direct/strace streams live, snapshot/inferred appears at finalize.
 - ALL 6 GAPS COVERED. Writing per-experiment notes.md + cross-experiment FINDINGS-round2.md, then commit + gate.
+- EXPERIMENT COMPLETE. Committed c439bd1 — 6 runners + 6 notes.md + 6 curated *_report.json +
+  FINDINGS-round2.md + this thread (20 files). No ai-observe source/pyproject/CI changes. Raw
+  artifacts gitignored; sanitized a stderr_tail absolute-path leak in the multiturn report
+  (now had_stderr bool). Working tree clean. Commit body uses `Refs #35` (experiment validates,
+  doesn't close the enhancement).
+  Findings summary: gaps 1/2/4/5/6 are POSITIVE (accurate capture / robust recovery / incremental
+  streaming). Gap 3 surfaced **F6** — the one correctness-flavored finding: under
+  parser_failure_partial the sidecar labels a SNAPSHOT-ONLY .jsonl `authoritative_complete`,
+  overstating fidelity. F5 (viewer pre-existence) + F7 (observer-SIGKILL orphan) are informational.
+  F6 is HELD for architect go-ahead before filing (per #35 constraint; #32/#33 precedent).
+- Reaching `experiment-complete` gate → notifying architect. F6 needs a file/no-file decision.
