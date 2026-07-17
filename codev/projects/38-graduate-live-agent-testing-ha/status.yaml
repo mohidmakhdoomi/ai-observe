@@ -1,0 +1,20 @@
+id: '38'
+title: graduate-live-agent-testing-ha
+protocol: spir
+phase: specify
+plan_phases: []
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: pending
+  plan-approval:
+    status: pending
+  pr:
+    status: pending
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-17T16:49:04.061Z'
+updated_at: '2026-07-17T16:49:04.061Z'
