@@ -1,0 +1,8 @@
+---
+VERDICT: COMMENT
+SUMMARY: Excellent alignment with the spec, but Phase 1's Acceptance Criteria cannot be run without Phase 2's __main__.py.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- **Phase 1 Acceptance Criteria requires a Phase 2 Deliverable**: Phase 1's AC expects `python -m tests.agent_sessions --selftest` to pass, but `tests/agent_sessions/__main__.py` (which makes the package executable) isn't created until Phase 2. To ensure Phase 1 can be independently verified and committed, either introduce a minimal `__main__.py` in Phase 1 (just to parse the `--selftest` flag), or change Phase 1's AC to run the self-test directly via `python -m unittest tests.agent_sessions.selftest.selftest_harness`.
+- **Keep-artifacts boundary bypass**: Phase 2 specifies `if ROOT in path.parents` to reject in-repo artifact directories. This check has a subtle Python `pathlib` bug: if the user runs `--keep-artifacts .` from the repo root, `path` resolves to `ROOT`. Because `ROOT` is not in its own `.parents` sequence, the check evaluates to `False`, bypassing the boundary and dumping artifacts directly into the repository root. Use `path.is_relative_to(ROOT)` (if Python 3.9+) or `path == ROOT or ROOT in path.parents` to properly seal this boundary.

@@ -84,6 +84,8 @@ Copied from the spec (M1–M6, N1–N3, I1), plus implementation-specific gates:
       first, `shutil.which("ai-observe")` fallback), and `ViewerMonitor` rewritten to
       run `ai_observe.viewer.server.ViewerServer(jsonl, port=0)` in-process and read
       `.url` (raw-socket SSE `collect_events` retargeted to `server.url`'s host:port).
+- [ ] `tests/agent_sessions/selftest/__init__.py` (makes the self-test tier an
+      importable subpackage for explicit `unittest`/`loadTestsFromModule` loading).
 - [ ] `tests/agent_sessions/selftest/selftest_harness.py` — tool-free `unittest`
       checks (see Test Plan).
 
@@ -99,8 +101,10 @@ Copied from the spec (M1–M6, N1–N3, I1), plus implementation-specific gates:
   run the observed session to a finalized `.jsonl` **first**, then attach the viewer.
 
 #### Acceptance Criteria
-- [ ] `python -m tests.agent_sessions --selftest` (harness subset) passes with **no
-      agent tools involved**.
+- [ ] `python -m unittest tests.agent_sessions.selftest.selftest_harness` (run from the
+      repo root) passes with **no agent tools involved**. *(Runnable independently of
+      Phase 2's `__main__.py` — the `--selftest` flag is Phase 2's convenience wrapper
+      over this same module; Phase 1 does not depend on it.)*
 - [ ] Two `ViewerMonitor`s constructed back-to-back bind **distinct nonzero ports**
       and both serve `/session` (no collision).
 - [ ] `resolve_ai_observe()` returns the checkout `bin/ai-observe` when it exists.
@@ -143,40 +147,72 @@ Copied from the spec (M1–M6, N1–N3, I1), plus implementation-specific gates:
       `expect_authority_not_overstated(…, bug=36)`) built on one primitive
       `known_bug_gate(bug, buggy_present, correct_present)`.
 - [ ] `tests/agent_sessions/__main__.py` — arg parsing; `shutil.which` preflight
-      (loud, names the tool); scenario registry keyed by short-name; artifact dir
-      manager (`TemporaryDirectory` unless `--keep-artifacts`; reject a `--keep-artifacts`
-      path that resolves inside the repo working tree unless under the suite's ignored
-      subtree); result aggregation → human summary (stderr) + `--json` (stdout);
-      nonzero exit on any `fail`; `--selftest` loads `selftest/selftest_*.py` explicitly
-      via `unittest.TestLoader().loadTestsFromModule`.
+      (loud, names the tool); scenario registry keyed by short-name; **applicability
+      resolution** (see below); artifact dir manager (`TemporaryDirectory` unless
+      `--keep-artifacts`; reject a `--keep-artifacts` path that resolves inside the repo
+      working tree unless under the suite's ignored subtree); result aggregation →
+      human summary (stderr) + `--json` (stdout); nonzero exit on any `fail`;
+      `--selftest` loads `selftest/selftest_*.py` explicitly via
+      `unittest.TestLoader().loadTestsFromModule`.
 - [ ] `tests/agent_sessions/selftest/selftest_oracle.py`,
-      `selftest/selftest_runner.py` — tool-free checks (see Test Plan).
+      `selftest/selftest_runner.py` — tool-free checks (see Test Plan), including a
+      **fake-tool seam** for the unauthenticated branch (M4).
 
 #### Implementation Details
 - `known_bug_gate` semantics: **active** → `known-bug:#N` if `buggy_present` else
   `fail` ("#N no longer reproduces — flip OPEN_BUGS[#N].active=False"); **inactive** →
   `pass` if `correct_present` else `fail` ("#N regressed"). The flip is the single
   edit `active=False`.
-- Preflight: for each requested tool absent from PATH → print
+- **Preflight — presence:** for each requested tool absent from PATH → print
   `tool '<t>' not found on PATH; install it or narrow --tools` to stderr, exit 2.
-- `--keep-artifacts` boundary: resolve the path; if `ROOT in path.parents` and the path
-  is not under `tests/agent_sessions/<ignored-artifacts-dir>/` → exit 2 with a clear
-  message; else accept.
+- **M4 — unauthenticated / unusable tool (installed but no auth / no events / immediate
+  failure):** the oracle raises `ToolUnusable('<t>')` when a scenario's first agent
+  invocation returns nonzero **or** yields zero watched-root events; the runner renders
+  it as a **loud, named `fail`** (`tool '<t>' produced no events — not authenticated or
+  agent error; rerun with --keep-artifacts to inspect stderr`) and exits nonzero. This
+  branch is made **deterministically testable** via a **fake-tool seam**: the runner
+  resolves each tool's command through `TOOLS`/`resolve_ai_observe`, and the self-test
+  injects a stub "tool" (a tiny script on a temp `PATH` that exits nonzero or writes
+  nothing) so `selftest_runner` exercises the unauth branch **without touching real
+  agents** — closing Codex's gap that this path was otherwise only manually reachable.
+- **Requested-but-non-applicable pairs (explicit exclusion, never silent):** each
+  scenario declares `applies_to` (its tool set; e.g. `timeline`/`degraded` are
+  claude-only). When a tool is **explicitly named in `--tools`** but a selected scenario
+  excludes it, the runner emits an explicit `CheckResult(status="excluded", detail="scenario
+  '<s>' does not apply to tool '<t>' (claude-only)")` that is **surfaced in the summary
+  and `--json`** — an explicit, reasoned exclusion naming the tool, honoring the spec's
+  "fail or exclude with an explicit reason." (On a default all-tools run, non-applicable
+  pairs are informational, not requested; only `--tools`-named pairs produce the explicit
+  `excluded` record. `excluded` is not a `fail` and does not by itself set nonzero exit.)
+- **`--keep-artifacts` boundary (sealed):** resolve the path; **reject** when
+  `path == ROOT or ROOT in path.parents` **unless** the path is under
+  `tests/agent_sessions/<ignored-artifacts-dir>/` → exit 2 with a clear message; else
+  accept. (The `path == ROOT` clause seals the `--keep-artifacts .`-from-root bypass
+  Gemini flagged — `ROOT` is not in its own `.parents`.) Prefer `path.is_relative_to(ROOT)`
+  where available (≥3.9) as the equivalent one-call form.
 
 #### Acceptance Criteria
 - [ ] `python -m tests.agent_sessions --tools nope --scenarios single_write` (from repo
       root) exits nonzero and names `nope` (S8, no tools needed).
+- [ ] **M4 unauth branch:** a fake tool that is present-but-unusable (exits nonzero /
+      emits no events) produces a **loud, named `fail`** and nonzero exit — verified
+      deterministically in `selftest_runner` via the fake-tool seam (no real agent).
+- [ ] **Non-applicable pair:** `--tools claude,codex --scenarios timeline` yields an
+      explicit `excluded` record naming `codex` (claude-only) in both summary and
+      `--json`; it is not silently dropped and is not a `fail`.
 - [ ] `--selftest` passes tool-free; covers all four known-bug-gate branches and the
       stale-annotation failure path.
-- [ ] `--keep-artifacts <tracked-in-repo-path>` is rejected; an outside-repo path is
-      accepted.
+- [ ] `--keep-artifacts <tracked-in-repo-path>` is rejected — **including
+      `--keep-artifacts .` run from the repo root**; an outside-repo path is accepted.
 - [ ] Running with no `--keep-artifacts` leaves **no** residual artifact dir after exit.
 
 #### Test Plan
 - **Self-test (tool-free)**: `selftest_oracle` drives `known_bug_gate`/`expect_*` across
   active-buggy, active-fixed(→fail), inactive-correct, inactive-buggy(→fail).
-  `selftest_runner` shells `python -m tests.agent_sessions --tools nope …` and asserts
-  the loud named exit; asserts the keep-artifacts boundary; asserts temp-dir cleanup.
+  `selftest_runner` shells `python -m tests.agent_sessions …` **from the repo root**
+  (inheriting `cwd`/`sys.path`) to assert: the missing-tool loud exit; the **fake-tool
+  unauth loud fail**; the **explicit non-applicable `excluded` record**; the
+  keep-artifacts boundary (incl. `.`-from-root and a symlink case); and temp-dir cleanup.
 - **Manual/live**: none (this phase is fully tool-free).
 
 #### Rollback Strategy
@@ -411,7 +447,32 @@ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 
 - [ ] Review doc records the live-run evidence and the CI-set diff
 
 ## Expert Review
-*(Populated by porch's 3-way plan review.)*
+
+### Plan iter 1 — 3-way (Gemini COMMENT / Codex REQUEST_CHANGES / Claude APPROVE)
+
+Reviewers verified the load-bearing claims against the codebase (`ViewerServer(port=0)`
++ `.url` at `server.py:376`, `.stop()` at 432; `env_value("TEST_FAIL_AFTER")` at
+`observe.py:246`; `tests/__init__.py` absent → PEP 420; `basic.jsonl` fixture present;
+`test_viewer_smoke_e2e.py` uses in-process `ViewerServer(port=0)`). Adjustments applied:
+
+- **Phase 1 AC self-containment (Gemini):** Phase 1's self-test now runs via
+  `python -m unittest tests.agent_sessions.selftest.selftest_harness`, independent of
+  Phase 2's `__main__.py`. Added `selftest/__init__.py`.
+- **keep-artifacts boundary bypass (Gemini):** sealed the `--keep-artifacts .`-from-root
+  hole — condition is now `path == ROOT or ROOT in path.parents` (or `is_relative_to`);
+  added the `.`-from-root and symlink cases to `selftest_runner`.
+- **M4 unauthenticated branch (Codex, blocking):** added a deterministic **fake-tool
+  seam** so the present-but-unusable (nonzero / no-events) path is implemented and
+  self-tested without real agents, not left to manual runs.
+- **Requested-but-non-applicable pairs (Codex, blocking):** the runner now emits an
+  explicit, named `excluded` `CheckResult` (surfaced in summary + `--json`) for a
+  `--tools`-named tool a selected scenario excludes (e.g. `codex`+`timeline`), instead
+  of silently dropping it; self-tested.
+- **Minor (Claude):** `selftest/` is a subpackage (`__init__.py`); `selftest_runner`
+  subprocess runs from the repo root inheriting `cwd`/`sys.path`.
+
+**Plan Adjustments**: Phases 1–2 deliverables/ACs/Test Plans updated as above; no phase
+added or removed; no scope change.
 
 ## Approval
 - [ ] Expert AI Consultation Complete
@@ -421,6 +482,7 @@ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 
 | Date | Change | Reason | Author |
 |------|--------|--------|--------|
 | 2026-07-17 | Initial plan | Spec 38 approved | builder spir-38 |
+| 2026-07-17 | Plan iter-1 review fixes (Phase 1 AC, keep-artifacts seal, M4 fake-tool seam, non-applicable exclusion) | 3-way plan review | builder spir-38 |
 
 ## Notes
 - **CI-unchanged strategy (M2, load-bearing):** *all* new test code — including the

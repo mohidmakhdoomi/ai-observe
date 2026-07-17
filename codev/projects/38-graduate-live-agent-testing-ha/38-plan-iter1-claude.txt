@@ -1,0 +1,61 @@
+Let me verify the key claims in this plan against the actual codebase before giving my verdict.Good — the fixture `tests/fixtures/viewer/basic.jsonl` exists as the plan assumes. Let me check the key source files.The `AI_OBSERVE_TEST_FAIL_AFTER` claim needs checking — the plan says it's at `src/ai_observe/observe.py:246` but the grep found nothing in `src/`.Two findings: (1) `AI_OBSERVE_TEST_FAIL_AFTER` exists in tests but I need to check where it's consumed in the source, and (2) `.url` wasn't found on `ViewerServer` — let me check the actual attribute name.All claims verified. Let me check one more thing — the `env_value` function to confirm the env facade naming:All key claims verified. Let me now check the `ViewerServer.stop()` method and the existing `__init__.py` situation:Good — `tests/__init__.py` does not exist (confirms PEP 420 namespace package claim), and `ViewerServer` has both `.url` property and `.stop()` method, exactly as the plan assumes.
+
+Now I have enough to give my verdict. Here's my review:
+
+---
+
+## Plan Review: 38-graduate-live-agent-testing-ha
+
+### 1. Spec Coverage ✅
+
+Every spec requirement (M1–M6, N1–N3, I1, S1–S8) maps to a specific phase deliverable. The plan explicitly tracks each metric as a checkbox. Decision 9 (degraded scenario in v1) is honored — Phase 5 covers S7/#36. No scope creep beyond the spec.
+
+### 2. Phase Breakdown ✅
+
+Six phases in strict dependency order, each independently committable:
+- **Phase 1** (harness) → **Phase 2** (oracle/runner) → **Phase 3–5** (scenarios, one per bug-tier) → **Phase 6** (docs/sweep)
+- Sizes are reasonable — Phase 1 and 2 are the load-bearing infrastructure; Phases 3–5 are scenario-per-commit; Phase 6 is docs + acceptance.
+- The split of harness (1) from oracle/runner (2) is a good call — it lets Phase 1 be tested via the self-test fixture before any oracle logic exists.
+
+### 3. Technical Approach — Verified Against Codebase ✅
+
+I verified the critical claims:
+
+| Claim | Status |
+|-------|--------|
+| `ViewerServer(path, port=0)` binds ephemeral port | ✅ Confirmed: constructor takes `port: int = 0`, `.url` property at line 376 |
+| `ViewerServer.stop()` exists | ✅ Line 432 |
+| `AI_OBSERVE_TEST_FAIL_AFTER` at `observe.py:246` | ✅ `env_value(env, "TEST_FAIL_AFTER")` at line 246, uses `AI_OBSERVE_` prefix |
+| `tests/__init__.py` absent (PEP 420 namespace) | ✅ Confirmed absent |
+| CI uses `ls test_*.py` glob | Consistent with existing `tests/test_*.py` files (18 found) |
+| Existing `test_viewer_smoke_e2e.py` uses in-process `ViewerServer(port=0)` | ✅ Confirmed at line 57 |
+| `tests/fixtures/viewer/basic.jsonl` exists for self-test fixture | ✅ Confirmed |
+| Experiment harness is stdlib-only, 438-line | ✅ Confirmed structure |
+
+### 4. Testability ✅
+
+The two-tier strategy is well-designed:
+- **Self-test tier** (`selftest_*.py`): tool-free, exercises harness plumbing, oracle logic, and driver argv construction. Runnable anywhere including CI-like environments. Each phase adds its own self-tests.
+- **Live tier** (`check_*.py`): requires authenticated agents. Excluded from CI by construction (both file naming and directory location).
+
+The known-bug-gate testing is particularly thoughtful — `selftest_oracle` covers all four branches (active-buggy, active-fixed→fail, inactive-correct, inactive-buggy→fail), which locks the rot-proof semantics without needing agents.
+
+### 5. Risk Assessment ✅
+
+Risks are identified and mitigated. The biggest real risk — accidentally adding a `test_*.py` that enters CI — is mitigated by naming convention (`check_*.py`, `selftest_*.py`) and a Phase 6 acceptance diff. The `ViewerServer` lifecycle risk is well-mitigated by pointing to the existing `test_viewer_smoke_e2e.py` as a known-working pattern.
+
+### 6. Minor Observations (non-blocking)
+
+- **`selftest_runner.py` shells out to `python -m tests.agent_sessions --tools nope`** — this is a subprocess call from within a test, which is fine for an integration-level self-test but worth noting: the builder should ensure the subprocess inherits the correct `sys.path` / working directory (repo root).
+- **Phase 4's codex `--sandbox` ordering pin** (tool-free argv assertion) is a good defensive choice given the Exp 4 notes about this being a documented footgun.
+- The plan mentions `selftest/selftest_*.py` paths but the deliverable list in Phase 1 shows `tests/agent_sessions/selftest/selftest_harness.py` — this implies a `selftest/` subdirectory under `agent_sessions/`. The `__main__.py` loads these via `unittest.TestLoader().loadTestsFromModule`, which should work but the builder should ensure the `selftest/` dir has an `__init__.py` or uses explicit module loading.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Thorough, well-verified plan with sound two-tier test strategy; all critical codebase claims confirmed; phases are dependency-ordered and independently committable.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
