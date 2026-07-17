@@ -29,6 +29,7 @@ import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 from pathlib import Path
 from shutil import which
 from typing import Callable, Optional
@@ -128,8 +129,12 @@ class ViewerMonitor:
         # requires ai_observe to be importable until a viewer is actually used.
         from ai_observe.viewer.server import ViewerServer
 
-        self._server = ViewerServer(self.jsonl_path, port=0)
+        # Construction binds the listening socket, so it can raise (e.g.
+        # PermissionError/OSError on a restricted host); normalize any startup
+        # failure — construction OR serve — into the boolean API the callers and
+        # self-tests expect, rather than letting it propagate.
         try:
+            self._server = ViewerServer(self.jsonl_path, port=0)
             self._server.start()
         except Exception:
             self._server = None
@@ -156,7 +161,10 @@ class ViewerMonitor:
         `max_wait` seconds total. Refreshes /session afterwards.
         """
         self._events = []
-        host, port = "127.0.0.1", self.port
+        # Parse the host/port from the server's own url rather than assuming a
+        # host (the port is OS-assigned; the host is whatever ViewerServer bound).
+        parts = urlsplit(self.url)
+        host, port = (parts.hostname or "127.0.0.1"), (parts.port or self.port)
         if not port:
             return []
         try:

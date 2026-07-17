@@ -1,0 +1,9 @@
+Using the codebase files directly to review Phase 1 implementation.Running the Phase 1 self-tests and a couple of targeted checks.The repo doesn't have `python` on PATH here, so I'm rerunning the Phase 1 checks with `python3`.I found a real Phase 1 robustness issue in the actual implementation and am pulling line numbers before finalizing the review.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 1 is close, but ViewerMonitor startup error handling is incomplete and one viewer-host detail does not fully match the plan.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/harness.py:131-136` — `ViewerMonitor.start()` only catches failures from `self._server.start()`, not from `ViewerServer(...)` construction itself. In this environment the Phase 1 self-test fails with `PermissionError` before the `try`, so `python3 -m unittest tests.agent_sessions.selftest.selftest_harness` errors instead of `start()` failing cleanly. This should be wrapped so startup failures are normalized into the boolean API the tests expect.
+- `tests/agent_sessions/harness.py:159-169` — `collect_events()` hardcodes `127.0.0.1` instead of parsing the host from `server.url` as promised in the Phase 1 plan/deliverable. It works with the current server implementation, but it is not fully aligned with the approved design.
