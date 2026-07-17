@@ -1,0 +1,15 @@
+id: '31'
+title: harness-for-testing-ai-observe
+protocol: experiment
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  experiment-complete:
+    status: approved
+    approved_at: '2026-07-16T23:57:06.634Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-16T23:19:35.316Z'
+updated_at: '2026-07-16T23:58:27.647Z'
