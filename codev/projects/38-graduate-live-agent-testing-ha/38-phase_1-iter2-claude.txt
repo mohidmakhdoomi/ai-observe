@@ -1,0 +1,61 @@
+Let me verify a few key claims against the actual codebase.Good. The `ViewerServer` API matches: `.url` (property, returns `http://host:port/`), `.port` (property), `.start()`, `.stop()`. The harness uses these correctly.
+
+Let me check one more thing — the `_fetch_session` URL construction, since `.url` returns a trailing-slash URL:I've reviewed all four Phase 1 deliverables against the spec, plan, and actual codebase APIs. Here's my assessment:
+
+## Review: Phase 1 — Core harness + in-process ephemeral-port ViewerMonitor
+
+### Spec Adherence ✅
+
+All Phase 1 deliverables are present and match the plan:
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| `tests/agent_sessions/__init__.py` | ✅ | Correct `parents[2]` ROOT, puts `src/` on `sys.path` once, no live work at import |
+| `tests/agent_sessions/harness.py` | ✅ | All required exports: `run_observed_session`, `SessionResult`, `ViewerMonitor`, `load_events`, `summarize_events`, `list_workdir`, `TOOLS`, `tool_available`, `resolve_ai_observe` |
+| `tests/agent_sessions/selftest/__init__.py` | ✅ | Importable subpackage with clear docstring |
+| `tests/agent_sessions/selftest/selftest_harness.py` | ✅ | Three tool-free test classes covering the acceptance criteria |
+
+### Code Quality ✅
+
+**Verified against the actual `ViewerServer` API** (`server.py:349–462`):
+- Constructor: `ViewerServer(jsonl_path, port=0)` — ✅ matches harness line 137
+- `.url` property returns `http://host:port/` (trailing slash) — ✅ `_fetch_session` concatenates `"session"` → `http://host:port/session`, correct
+- `.port` property — ✅ used correctly
+- `.start()` / `.stop()` — ✅ lifecycle matches existing `test_viewer_server.py` usage (line 136–138)
+
+**Decision 8 (checkout-first resolution):** `resolve_ai_observe()` correctly prefers `ROOT / "bin" / "ai-observe"`, falls back to `shutil.which`, raises on neither. ✅
+
+**Decision 6 (ephemeral ports):** No hardcoded port constants found (confirmed via grep for `78xx`/`79xx` patterns). ✅
+
+**Decision 11 (sequencing):** In `run_observed_session`, the viewer is attached only *after* the subprocess completes and `jsonl_path.exists() and jsonl_path.stat().st_size > 0` (line 412). Documented in the docstring. ✅
+
+**N1 (no experiments/ path hack):** No `sys.path.insert` into `experiments/` anywhere. The self-test even verifies this behaviorally (line 77). ✅
+
+### Test Coverage ✅
+
+The self-tests cover all Phase 1 acceptance criteria:
+- `test_monitor_serves_session_and_events` — viewer against static fixture, event count match ✅
+- `test_ephemeral_ports_are_distinct_and_nonzero` — two concurrent monitors, distinct ports, both serve `/session` ✅
+- `test_prefers_checkout_bin_ai_observe` — entrypoint resolution ✅
+- `test_no_experiments_dir_on_syspath` — N1 behavioral check ✅
+
+Fixture `tests/fixtures/viewer/basic.jsonl` exists on disk. ✅
+
+### Minor Observations (non-blocking)
+
+1. **Host header in raw socket request** (harness.py:177): hardcoded to `127.0.0.1` rather than the actual bound host. This is fine since `ViewerServer` always binds loopback, but if you ever wanted to be precise, it could use `host` from the parsed URL. Cosmetic only.
+
+2. **`collect_events` error swallowing** (harness.py:232): `_handle_frame` silently drops malformed JSON. This is inherited from the experiment and is correct for the settle-loop context (partial frames can arrive mid-read), but worth noting it means a corrupt frame won't surface.
+
+3. **`summarize_events` path relativization** (harness.py:284): uses string `in` / `split` rather than `Path` operations. Could theoretically false-match on a path that contains the workdir string as a substring (e.g. `/tmp/workdir-copy` matching `/tmp/workdir`). Very unlikely in practice; the experiment did it this way too.
+
+None of these are blocking — they're inherited patterns from the proven experiment harness and match the "port almost verbatim" plan guidance.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers all four planned files with correct ViewerServer API usage, ephemeral-port allocation, checkout-first resolution, and adequate tool-free self-tests — all verified against the actual codebase.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
