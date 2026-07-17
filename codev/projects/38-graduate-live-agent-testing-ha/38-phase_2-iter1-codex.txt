@@ -1,0 +1,10 @@
+Using direct file reads to review the phase-2 implementation against the spec/plan.I’m running the phase-2 self-tests and checking for implementation issues in the actual files.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 2’s oracle is solid, but the runner/gating work is not complete: missing-tool preflight is blocked by temp-dir allocation, and the planned fake-tool unauth seam was not actually implemented.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/__main__.py:211-231` allocates the default artifact temp dir before tool preflight. That violates Phase 2 acceptance intent for S8/M4: `python -m tests.agent_sessions --tools nope ...` should fail loudly naming the tool without depending on tempdir creation. In practice, this currently crashes earlier when tempdir creation fails, so the missing-tool path is not robustly implemented.
+- `tests/agent_sessions/selftest/selftest_runner.py:69-77` does not implement the plan’s “fake-tool seam”; it only unit-tests `run_suite()` with a fake scenario that raises `ToolUnusable`. That does not verify the runner’s present-but-unusable tool path through actual CLI/tool resolution as required by the phase plan and acceptance criteria.
+- Phase 2 self-tests are not passing as implemented: `tests/agent_sessions/selftest/selftest_runner.py:42, 91-115, 121-143` depends on writable system temp / in-repo artifact creation, and the CLI missing-tool test currently fails for the wrong reason. Since `--selftest` is a Phase 2 deliverable, this leaves the phase incomplete.

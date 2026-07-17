@@ -120,17 +120,16 @@ def run_suite(tools: Sequence[str], scenarios: Iterable, ctx: RunContext,
 # Artifact directory management (Decision 7)
 # ---------------------------------------------------------------------------
 
-def resolve_artifact_dir(keep_artifacts: Optional[str]) -> tuple[Path, Callable[[], None]]:
-    """Return (artifact_dir, cleanup). Default is an auto-cleaning temp dir.
+def validate_keep_artifacts(keep_artifacts: Optional[str]) -> Optional[Path]:
+    """Boundary-check a `--keep-artifacts` path WITHOUT allocating anything.
 
-    `--keep-artifacts DIR` persists artifacts but refuses a destination inside the
-    repo working tree (unless under the suite's ignored `.artifacts/` subtree),
-    keeping raw artifacts out of git by construction.
+    Pure validation (no mkdir, no temp dir) so it can run before the tool
+    preflight — a bad in-repo destination is then rejected independent of tool
+    availability or a writable temp dir. Returns the resolved path (or None for
+    the default temp-dir case); raises `ArgError` on a tracked in-repo destination.
     """
     if keep_artifacts is None:
-        td = tempfile.TemporaryDirectory(prefix="ai-observe-agent-sessions-")
-        return Path(td.name), td.cleanup
-
+        return None
     p = Path(keep_artifacts).resolve()
     ignored = (ROOT / "tests" / "agent_sessions" / ARTIFACTS_DIRNAME).resolve()
     # `is_relative_to` returns True for equal paths too, so this also rejects
@@ -140,8 +139,26 @@ def resolve_artifact_dir(keep_artifacts: Optional[str]) -> tuple[Path, Callable[
             f"--keep-artifacts {keep_artifacts!r} resolves inside the repo working tree "
             f"({p}); choose a path OUTSIDE the repo or under {ignored} so raw artifacts "
             f"never enter git")
-    p.mkdir(parents=True, exist_ok=True)
-    return p, lambda: None
+    return p
+
+
+def allocate_artifact_dir(validated: Optional[Path]) -> tuple[Path, Callable[[], None]]:
+    """Allocate the artifact dir from a pre-validated path.
+
+    `None` → an auto-cleaning temp dir (Decision 7); otherwise create the
+    validated persistent dir. Allocation happens only after preflight, so a
+    missing-tool failure never depends on a writable temp dir.
+    """
+    if validated is None:
+        td = tempfile.TemporaryDirectory(prefix="ai-observe-agent-sessions-")
+        return Path(td.name), td.cleanup
+    validated.mkdir(parents=True, exist_ok=True)
+    return validated, lambda: None
+
+
+def resolve_artifact_dir(keep_artifacts: Optional[str]) -> tuple[Path, Callable[[], None]]:
+    """Validate then allocate (convenience for callers/tests)."""
+    return allocate_artifact_dir(validate_keep_artifacts(keep_artifacts))
 
 
 # ---------------------------------------------------------------------------
@@ -208,42 +225,45 @@ def main(argv: Optional[list] = None) -> int:
     if args.selftest:
         return _run_selftest()
 
-    # Validate the --keep-artifacts boundary first, before probing PATH, so a bad
-    # in-repo destination is rejected independent of which tools are installed.
+    # 1. Validate the --keep-artifacts boundary (pure, no allocation) first, so a
+    #    bad in-repo destination is rejected independent of tools or temp-dir writability.
     try:
-        artifact_dir, cleanup = resolve_artifact_dir(args.keep_artifacts)
+        validated = validate_keep_artifacts(args.keep_artifacts)
     except ArgError as e:
         print(str(e), file=sys.stderr)
         return 2
 
+    # 2. Tool selection + presence preflight (loud, named) — no temp dir needed, so a
+    #    missing tool fails robustly even where temp-dir creation would fail.
+    if args.tools:
+        tools = [t.strip() for t in args.tools.split(",") if t.strip()]
+        explicit = set(tools)
+    else:
+        tools = list(TOOLS)
+        explicit = set()
+    for t in tools:
+        if not tool_available(t):
+            print(f"tool {t!r} not found on PATH; install it or narrow --tools",
+                  file=sys.stderr)
+            return 2
+
+    # 3. Scenario selection.
+    registry = discover_scenarios()
+    if args.scenarios:
+        wanted = [s.strip() for s in args.scenarios.split(",") if s.strip()]
+        unknown = [s for s in wanted if s not in registry]
+        if unknown:
+            print(f"unknown scenario(s): {', '.join(unknown)}; "
+                  f"available: {', '.join(sorted(registry)) or '(none yet)'}",
+                  file=sys.stderr)
+            return 2
+        scenarios = [registry[s] for s in wanted]
+    else:
+        scenarios = [registry[s] for s in sorted(registry)]
+
+    # 4. Allocate the artifact dir only now (after preflight) and run.
+    artifact_dir, cleanup = allocate_artifact_dir(validated)
     try:
-        # Tool selection + presence preflight (loud, named).
-        if args.tools:
-            tools = [t.strip() for t in args.tools.split(",") if t.strip()]
-            explicit = set(tools)
-        else:
-            tools = list(TOOLS)
-            explicit = set()
-        for t in tools:
-            if not tool_available(t):
-                print(f"tool {t!r} not found on PATH; install it or narrow --tools",
-                      file=sys.stderr)
-                return 2
-
-        # Scenario selection.
-        registry = discover_scenarios()
-        if args.scenarios:
-            wanted = [s.strip() for s in args.scenarios.split(",") if s.strip()]
-            unknown = [s for s in wanted if s not in registry]
-            if unknown:
-                print(f"unknown scenario(s): {', '.join(unknown)}; "
-                      f"available: {', '.join(sorted(registry)) or '(none yet)'}",
-                      file=sys.stderr)
-                return 2
-            scenarios = [registry[s] for s in wanted]
-        else:
-            scenarios = [registry[s] for s in sorted(registry)]
-
         ctx = RunContext(artifact_dir=artifact_dir, timeout=args.timeout)
         results = run_suite(tools, scenarios, ctx, explicit_tools=explicit)
     finally:

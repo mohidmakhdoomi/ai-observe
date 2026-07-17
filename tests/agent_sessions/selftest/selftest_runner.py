@@ -77,6 +77,54 @@ class RunSuiteTests(unittest.TestCase):
         self.assertIn("not authenticated", results[0].detail)
 
 
+class StubToolSeamTests(unittest.TestCase):
+    """The M4 present-but-unusable path through *real* PATH tool resolution.
+
+    Puts a stub agent on a temp PATH (installed, but produces nothing), so
+    `tool_available` resolves it via PATH exactly like a real tool, then drives
+    the actual detection rule (`ensure_tool_usable`) and the runner's loud-fail
+    rendering — all without a real agent, ai-observe, or strace.
+    """
+
+    def setUp(self):
+        self.ctx = RunContext(artifact_dir=Path(tempfile.gettempdir()))
+
+    def test_present_but_unusable_stub_tool_is_loud_named_fail(self):
+        import types
+
+        from ..harness import tool_available
+        from ..oracle import ensure_tool_usable
+
+        with tempfile.TemporaryDirectory() as td:
+            stub = Path(td) / "stubagent"
+            stub.write_text("#!/bin/sh\nexit 0\n")  # present, writes nothing
+            stub.chmod(0o755)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = str(td) + os.pathsep + old_path
+            try:
+                # Real PATH resolution finds the stub (installed).
+                self.assertTrue(tool_available("stubagent"))
+
+                def run(tool, ctx):
+                    cp = subprocess.run([tool], capture_output=True, text=True)
+                    # No events produced (nothing was written / observed).
+                    result = types.SimpleNamespace(
+                        returncode=cp.returncode, disk_events={"total": 0})
+                    ensure_tool_usable(tool, result)  # raises ToolUnusable
+                    return []
+
+                scen = _FakeScenario("single_write", {"stubagent"}, run)
+                results = run_suite(["stubagent"], [scen], self.ctx,
+                                    explicit_tools={"stubagent"})
+            finally:
+                os.environ["PATH"] = old_path
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, FAIL)
+        self.assertIn("stubagent", results[0].detail)
+        self.assertIn("not authenticated", results[0].detail)
+
+
 class KeepArtifactsBoundaryTests(unittest.TestCase):
     def test_repo_root_rejected(self):
         with self.assertRaises(ArgError):

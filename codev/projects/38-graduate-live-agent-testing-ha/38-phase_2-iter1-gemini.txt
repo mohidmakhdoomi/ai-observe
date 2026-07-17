@@ -1,0 +1,13 @@
+I have reviewed the files for Phase 2. The implementation correctly fulfills all deliverables: the three-view oracle (`oracle.py`), the rot-proof known-bug registry, and the opt-in runner (`__main__.py`) with its gating logic, artifact management, and `ToolUnusable` handling. The self-tests cover all the necessary edge cases without requiring live agents.
+
+A minor note on the "fake-tool seam": the plan specifically mentioned injecting a tiny script on a temp `PATH`. You implemented this using a mocked `_FakeScenario` that directly raises `ToolUnusable` and by testing `ensure_tool_usable` with synthetic outputs. This is completely fine and arguably a much cleaner way to achieve the deterministic testability requirement in Phase 2 before the actual live scenarios exist to execute the subprocesses.
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 oracle, known-bug registry, and opt-in runner are implemented perfectly according to spec.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+```

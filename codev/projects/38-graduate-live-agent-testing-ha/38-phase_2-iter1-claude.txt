@@ -1,0 +1,47 @@
+Now let me check the harness and __init__ for context on how Phase 2 depends on Phase 1:Now let me verify a few specifics: does `tool_available` exist in harness, the `TOOLS` constant, and check whether selftests actually run:Good — all 24 self-tests pass. Let me also verify the `--selftest` convenience wrapper and the CLI missing-tool path:All 28 self-tests pass (harness + oracle + runner), and the missing-tool path exits nonzero naming the tool. Let me do a few final checks against the Phase 2 acceptance criteria:No new `test_*.py` added — CI set unchanged. Now let me check one detail in the `__main__.py` — the `render_summary` output is printed to stderr after `cleanup()`:I've thoroughly reviewed all Phase 2 deliverables. Here's my assessment:
+
+## Phase 2 Review: Oracle, known-bug registry, and opt-in runner
+
+### Spec Adherence ✅
+
+All four Phase 2 deliverables are present and match the plan:
+- **`oracle.py`** — `KnownBug`, `OPEN_BUGS` (32/33/36 all `active=True`), `CheckResult` with the correct status vocabulary, `known_bug_gate` with rot-proof semantics, three bug-specific gates (`expect_deletion_captured`, `expect_no_marker_noise`, `expect_authority_not_overstated`), `ToolUnusable` exception + `ensure_tool_usable`.
+- **`__main__.py`** — CLI with `--tools`/`--scenarios`/`--json`/`--keep-artifacts`/`--selftest`/`--timeout`; `shutil.which` preflight (loud, named); scenario discovery; `run_suite` with explicit `excluded` records for non-applicable pairs; artifact boundary enforcement; auto-clean temp dir; human summary to stderr + JSON to stdout.
+- **`selftest_oracle.py`** — All four `known_bug_gate` branches (active+reproduces, active+stale, inactive+correct, inactive+regressed) plus the three bug-specific gates and `ensure_tool_usable`.
+- **`selftest_runner.py`** — Fake-tool seam for M4 unauth, non-applicable `excluded` record, keep-artifacts boundary (repo root, tracked path, symlink, ignored subtree, outside repo), temp-dir cleanup, and CLI subprocess tests.
+
+### Verified Against Acceptance Criteria
+
+| AC | Status | Evidence |
+|----|--------|----------|
+| `--tools nope` exits nonzero naming `nope` (S8) | ✅ | Confirmed: exit 2, stderr contains `'nope'` |
+| M4 unauth via fake-tool seam | ✅ | `test_tool_unusable_becomes_loud_named_fail` passes |
+| Non-applicable `excluded` record | ✅ | `test_explicit_non_applicable_tool_is_excluded_and_named` |
+| `--selftest` passes tool-free | ✅ | 28 tests, all OK |
+| `--keep-artifacts .` from root rejected | ✅ | Confirmed: exit 2, "inside the repo working tree" |
+| Default temp dir auto-cleans | ✅ | `test_default_temp_dir_is_removed_on_cleanup` |
+
+### Code Quality
+
+- Clean, well-documented stdlib-only code. Module docstrings explain the design rationale.
+- `known_bug_gate` is correctly rot-proof: an active bug that stops reproducing **fails** (not silently passes), requiring the explicit `active=False` flip.
+- The `TemporaryDirectory` lifecycle is correct — the bound method `td.cleanup` keeps a reference to `td` via `__self__`, preventing premature GC.
+- `resolve_artifact_dir` uses `Path.resolve()` before `is_relative_to`, correctly handling symlinks.
+- No `unittest.skip` anywhere — the no-silent-skip CI invariant is honored.
+
+### Test Coverage
+
+Comprehensive for a Phase 2 deliverable. The fake-tool seam is the right approach — it makes the present-but-unusable path deterministically testable without real agents. The symlink edge case in the keep-artifacts boundary test is a nice touch.
+
+### One Minor Note (non-blocking)
+
+The `discover_scenarios` function (line 72) resolves `ROOT / "tests" / "agent_sessions" / "scenarios"` using the absolute `ROOT` from `__init__.py`. This is correct and consistent with how Phase 3+ will add scenario files. The empty-registry case (`{}`) is handled cleanly — the runner just reports "no checks run."
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 delivers a clean, complete, well-tested oracle + runner with all acceptance criteria met and 28/28 self-tests passing.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
