@@ -1,0 +1,60 @@
+{
+  "task": "Run exactly this shell command in the current directory and nothing else: for i in $(seq 1 8); do echo file$i > v$i.txt; sleep 1; done",
+  "run_duration_s": 25.7,
+  "canonical_total": 24,
+  "canonical_by_operation": {
+    "modify": 16,
+    "create": 8
+  },
+  "canonical_by_source": {
+    "strace": 16,
+    "snapshot": 8
+  },
+  "q_a_pre_existence": {
+    "target_existed_at_launch": false,
+    "viewer_started": false,
+    "conclusion": "viewer refuses to start on a non-existent artifact and exits; pre-attaching before the session creates its .jsonl is unsupported"
+  },
+  "q_b_attach_timings": {
+    "early": {
+      "attach_wall_offset_s": 13.2,
+      "events_on_disk_at_attach": 2,
+      "viewer_event_count": 24,
+      "canonical_event_count": 24,
+      "distinct_canonical_keys": 16,
+      "missing_from_viewer": [],
+      "extra_in_viewer": [],
+      "complete_backlog": true
+    },
+    "mid": {
+      "attach_wall_offset_s": 19.2,
+      "events_on_disk_at_attach": 12,
+      "viewer_event_count": 24,
+      "canonical_event_count": 24,
+      "distinct_canonical_keys": 16,
+      "missing_from_viewer": [],
+      "extra_in_viewer": [],
+      "complete_backlog": true
+    },
+    "after_replay": {
+      "attach_wall_offset_s": 38.1,
+      "events_on_disk_at_attach": null,
+      "viewer_event_count": 24,
+      "canonical_event_count": 24,
+      "distinct_canonical_keys": 16,
+      "missing_from_viewer": [],
+      "extra_in_viewer": [],
+      "complete_backlog": true
+    }
+  },
+  "actual_files": [
+    "v1.txt",
+    "v2.txt",
+    "v3.txt",
+    "v4.txt",
+    "v5.txt",
+    "v6.txt",
+    "v7.txt",
+    "v8.txt"
+  ]
+}
