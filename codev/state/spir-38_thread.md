@@ -38,3 +38,8 @@
 - Self-test green (4/4): viewer serves fixture 17/17, ephemeral ports distinct+nonzero, checkout-first entrypoint, N1 (no experiments/ on sys.path — behavioral check).
 - M2 verified at checkpoint: `ls tests/test_*.py` unchanged vs main; `discover -s tests -p test_*.py` finds 236 tests, 0 from agent_sessions.
 - Gotcha logged: N1 source-grep false-positived on docstrings mentioning `sys.path.insert`/`experiments`; switched to behavioral sys.path check.
+- Phase 1 iter-1 review: Gemini/Claude APPROVE, Codex REQUEST_CHANGES (start() didn't catch ViewerServer construction failure; collect_events hardcoded host). Both fixed. Iter-2: unanimous APPROVE. Porch swept + advanced to phase_2.
+
+- Phase 2 DONE: `oracle.py` (KnownBug/OPEN_BUGS 32/33/36, CheckResult, known_bug_gate rot-proof, expect_deletion_captured/#32, expect_no_marker_noise/#33, expect_authority_not_overstated/#36, ensure_tool_usable/ToolUnusable) + `__main__.py` (run_suite applicability→explicit named `excluded`, ToolUnusable→loud named fail, resolve_artifact_dir sealed boundary via is_relative_to, --selftest/--json/--keep-artifacts/--tools/--scenarios, keep-artifacts validated BEFORE tool preflight so boundary is tool-independent) + selftest_oracle + selftest_runner.
+- `--selftest` green: 28/28. ACs verified: `--tools nope`→exit2 names nope; `--keep-artifacts .`→rejected; default→exit0 "no checks run"; `--json`→[].
+- Deviation from plan wording (documented for review): the M4 "stub tool on temp PATH" seam realized as `ensure_tool_usable(SessionResult)` + fake-scenario raising ToolUnusable — keeps --selftest strace/agent-free (universally green) while still exercising the real detection rule + runner rendering.
