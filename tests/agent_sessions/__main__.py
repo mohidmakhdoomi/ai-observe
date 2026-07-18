@@ -233,21 +233,21 @@ def main(argv: Optional[list] = None) -> int:
         print(str(e), file=sys.stderr)
         return 2
 
-    # 2. Tool selection + presence preflight (loud, named) — no temp dir needed, so a
-    #    missing tool fails robustly even where temp-dir creation would fail.
+    # 2. Tool selection. An *unknown* tool (not a known agent) is always an error,
+    #    independent of scenarios — this is a typo/mistake, not an install issue.
     if args.tools:
         tools = [t.strip() for t in args.tools.split(",") if t.strip()]
         explicit = set(tools)
     else:
         tools = list(TOOLS)
         explicit = set()
-    for t in tools:
-        if not tool_available(t):
-            print(f"tool {t!r} not found on PATH; install it or narrow --tools",
-                  file=sys.stderr)
-            return 2
+    unknown_tools = [t for t in tools if t not in TOOLS]
+    if unknown_tools:
+        print(f"unknown tool(s): {', '.join(unknown_tools)}; known: {', '.join(TOOLS)}",
+              file=sys.stderr)
+        return 2
 
-    # 3. Scenario selection.
+    # 3. Scenario selection (must precede presence preflight so applicability is known).
     registry = discover_scenarios()
     if args.scenarios:
         wanted = [s.strip() for s in args.scenarios.split(",") if s.strip()]
@@ -261,7 +261,19 @@ def main(argv: Optional[list] = None) -> int:
     else:
         scenarios = [registry[s] for s in sorted(registry)]
 
-    # 4. Allocate the artifact dir only now (after preflight) and run.
+    # 4. Presence preflight — only for tools a selected scenario will actually USE.
+    #    A requested tool that no selected scenario applies to is NOT preflit for
+    #    presence: its absence is irrelevant and run_suite reports it as `excluded`
+    #    (Codex iter-2: a requested-but-non-applicable pair must not hard-fail on
+    #    the tool's absence). A known tool that IS applicable but missing → loud fail.
+    used = {t for t in tools if any(t in s.applies_to for s in scenarios)}
+    missing = [t for t in tools if t in used and not tool_available(t)]
+    if missing:
+        print(f"tool(s) not found on PATH: {', '.join(missing)}; install them or "
+              f"narrow --tools", file=sys.stderr)
+        return 2
+
+    # 5. Allocate the artifact dir only now (after preflight) and run.
     artifact_dir, cleanup = allocate_artifact_dir(validated)
     try:
         ctx = RunContext(artifact_dir=artifact_dir, timeout=args.timeout)

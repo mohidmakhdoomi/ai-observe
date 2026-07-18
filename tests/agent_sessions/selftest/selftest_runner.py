@@ -9,14 +9,19 @@ auto-cleanup — all without any real agent tool.
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from .. import ROOT
+from .. import __main__ as runner_main
 from ..__main__ import (
     ARTIFACTS_DIRNAME,
     ArgError,
@@ -170,6 +175,52 @@ class TempDirCleanupTests(unittest.TestCase):
         self.assertTrue(path.is_dir())
         cleanup()
         self.assertFalse(path.exists(), "default temp artifact dir must auto-clean")
+
+
+class CliMainApplicabilityTests(unittest.TestCase):
+    """End-to-end through `main()` (not just `run_suite`): a requested-but-non-
+    applicable tool is `excluded` even when absent from PATH, while a known,
+    applicable, absent tool hard-fails. Uses a monkeypatched registry + a
+    simulated-absent tool so it is deterministic and tool-free."""
+
+    def _main(self, argv, registry, avail):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(runner_main, "discover_scenarios", lambda: registry), \
+             mock.patch.object(runner_main, "tool_available", avail):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = runner_main.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_non_applicable_absent_tool_is_excluded_not_hardfail(self):
+        scen = _FakeScenario("timeline", {"claude"},
+                             lambda tool, ctx: [CheckResult("timeline", tool, "viewer", PASS)])
+        # codex is absent from PATH, but timeline is claude-only, so codex must be
+        # reported excluded (named) rather than hard-failing the run.
+        rc, out, err = self._main(
+            ["--tools", "claude,codex", "--scenarios", "timeline", "--json"],
+            {"timeline": scen}, lambda t: t != "codex")
+        self.assertEqual(rc, 0, err)
+        data = json.loads(out)
+        excluded = [r for r in data if r["status"] == EXCLUDED]
+        self.assertTrue(any(r["tool"] == "codex" for r in excluded),
+                        f"expected codex excluded; got {data}")
+        self.assertIn("codex", err)  # surfaced in the human summary too
+        self.assertTrue(any(r["tool"] == "claude" and r["status"] == PASS for r in data))
+
+    def test_applicable_absent_tool_hard_fails(self):
+        scen = _FakeScenario("single_write", {"codex"},
+                             lambda tool, ctx: [CheckResult("single_write", tool, "agent-actual", PASS)])
+        # codex IS used by the selected scenario but absent → loud, named fail.
+        rc, out, err = self._main(
+            ["--tools", "codex", "--scenarios", "single_write"],
+            {"single_write": scen}, lambda t: t != "codex")
+        self.assertEqual(rc, 2)
+        self.assertIn("codex", err)
+
+    def test_unknown_tool_always_errors(self):
+        rc, out, err = self._main(["--tools", "nope"], {}, lambda t: True)
+        self.assertEqual(rc, 2)
+        self.assertIn("nope", err)
 
 
 class CliSubprocessTests(unittest.TestCase):

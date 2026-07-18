@@ -1,0 +1,35 @@
+I'll read the Phase 2 deliverables — the oracle, runner, and their self-tests.Now let me check the Phase 1 files that Phase 2 depends on, and verify the self-tests pass:All 25 tests pass. Let me verify a few more things against the plan's acceptance criteria:All acceptance criteria checks pass. Let me now verify the Phase 2 deliverables against the plan checklist:The non-applicable pair AC can't be tested end-to-end yet (no real scenarios exist until Phase 3), but it's properly covered by the unit-level fake-scenario test in `selftest_runner.py`. That's the correct approach for Phase 2.
+
+Let me do a quick code quality review of a few details:Good — `is_relative_to` is available (≥3.9, we're on 3.14). The plan noted preferring this over the manual `path == ROOT or ROOT in path.parents` check, and the implementation correctly uses it.
+
+---
+
+**Review Summary**
+
+Phase 2 delivers exactly what the plan specifies:
+
+**oracle.py** — Clean, well-structured. The `known_bug_gate` primitive correctly implements all four branches (active+reproduces → annotated, active+gone → fail-loud, inactive+correct → pass, inactive+regressed → fail). The three bug-specific gates (`expect_deletion_captured`, `expect_no_marker_noise`, `expect_authority_not_overstated`) build on this primitive with the right buggy/correct signal logic. `ToolUnusable` + `ensure_tool_usable` provide the M4 loud-failure seam. The `registry` parameter on all gate functions enables testing with isolated registries — good design.
+
+**__main__.py** — The runner implements: preflight (loud, named tool absence), scenario discovery (auto-discovers `check_*.py` by short-name), `--keep-artifacts` boundary validation (rejects in-repo paths via `is_relative_to`, accepts the ignored subtree), auto-cleaning temp dir default, `--selftest`, `--json`, `--scenarios`/`--tools` composition, explicit `excluded` records for non-applicable pairs, and proper `ToolUnusable` → loud fail rendering. Validation is correctly ordered: boundary check → tool preflight → scenario selection → artifact allocation. The separation of `validate_keep_artifacts` (pure) from `allocate_artifact_dir` (effectful) is a nice touch.
+
+**selftest_oracle.py** — Covers all four gate branches, all three bug-specific gates, and `ensure_tool_usable` (raise/no-raise). 12 tests, comprehensive.
+
+**selftest_runner.py** — Covers `run_suite` (applicable, non-applicable explicit/implicit, `ToolUnusable` handling), the fake-tool seam (stub on temp PATH), keep-artifacts boundary (root, tracked, symlink, ignored subtree, outside repo), temp-dir cleanup, and two end-to-end CLI subprocess tests (missing tool, `--keep-artifacts .`). 13 tests, thorough.
+
+**All 29 self-tests pass** (including Phase 1's 4 harness tests). All plan ACs verified:
+- S8 (missing tool loud fail) ✅
+- M4 (fake-tool unauth branch) ✅
+- Non-applicable pair exclusion ✅ (unit-level; real scenario wiring is Phase 3+)
+- `--selftest` green ✅
+- `--keep-artifacts .` rejected ✅
+- Auto-clean temp dir ✅
+
+No issues found.
+
+---
+VERDICT: APPROVE
+SUMMARY: Oracle, runner, and self-tests are well-implemented, all 29 tests pass, and every Phase 2 acceptance criterion is met.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
