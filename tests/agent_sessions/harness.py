@@ -351,29 +351,26 @@ class SessionResult:
         return dict(self.__dict__)
 
 
-def run_observed_session(
+def run_observed_command(
+    command: list[str],
+    *,
     tool: str,
-    prompt: str,
     session: str,
     workdir: Path,
     outdir: Path,
-    *,
+    prompt: str = "",
     roots: Optional[Path] = None,
     backends: Optional[str] = None,
     timeout: float = 240.0,
     monitor: bool = True,
     disable_observe: bool = False,
 ) -> SessionResult:
-    """Drive `tool` with `prompt` under ai-observe; optionally watch the viewer.
+    """Run an arbitrary `command` (argv after the `--`) under ai-observe.
 
-    Returns a SessionResult combining: agent output, on-disk canonical events,
-    what the viewer served, and the actual files left in workdir -- so callers
-    can compare "what the agent did" vs "what ai-observe reported" vs "what the
-    viewer showed".
-
-    Sequencing (Decision 11 / finding F5): the observed ai-observe session runs to
-    a finalized `.jsonl` **first**; only then is the in-process viewer attached.
-    The viewer is an attach-to-existing-artifact tool, never a pre-launched waiter.
+    The lower-level core shared by `run_observed_session` (single prompt) and the
+    round-2 chained multi-turn driver (`bash -lc "<t1> && <t2> && …"`). Sequencing
+    (Decision 11 / F5): the session runs to a finalized `.jsonl` first, then the
+    in-process viewer attaches.
     """
     workdir = Path(workdir).resolve()
     outdir = Path(outdir).resolve()
@@ -381,18 +378,8 @@ def run_observed_session(
     outdir.mkdir(parents=True, exist_ok=True)
     roots = Path(roots).resolve() if roots else workdir
 
-    if tool not in TOOLS:
-        raise ValueError(f"unknown tool {tool!r}; known: {list(TOOLS)}")
-    if not tool_available(tool):
-        return SessionResult(
-            tool=tool, session=session, prompt=prompt, ok=False, returncode=-1,
-            duration_s=0.0, agent_stdout_tail="", disk_events={}, viewer_events_count=0,
-            viewer_session_info=None, workdir_files=[], jsonl_path="",
-            notes=[f"tool {tool!r} not available on this machine"],
-        )
-
     ai_observe = resolve_ai_observe()
-    cmd = [ai_observe, "--session", session, "--"] + TOOLS[tool](prompt, workdir)
+    cmd = [ai_observe, "--session", session, "--"] + list(command)
     env = dict(os.environ)
     env["AI_OBSERVE_DIR"] = str(outdir)
     env["AI_OBSERVE_ROOTS"] = str(roots)
@@ -457,4 +444,38 @@ def run_observed_session(
         workdir_files=list_workdir(workdir), jsonl_path=str(jsonl_path),
         meta={"warnings": meta.get("warnings"), "stderr_tail": stderr_tail},
         notes=notes,
+    )
+
+
+def run_observed_session(
+    tool: str,
+    prompt: str,
+    session: str,
+    workdir: Path,
+    outdir: Path,
+    *,
+    roots: Optional[Path] = None,
+    backends: Optional[str] = None,
+    timeout: float = 240.0,
+    monitor: bool = True,
+    disable_observe: bool = False,
+) -> SessionResult:
+    """Drive `tool` with a single `prompt` under ai-observe; optionally watch the
+    viewer. Thin wrapper over `run_observed_command` using the tool's non-interactive
+    invocation. Returns a SessionResult combining agent output, on-disk canonical
+    events, what the viewer served, and the actual files left in workdir."""
+    if tool not in TOOLS:
+        raise ValueError(f"unknown tool {tool!r}; known: {list(TOOLS)}")
+    if not tool_available(tool):
+        return SessionResult(
+            tool=tool, session=session, prompt=prompt, ok=False, returncode=-1,
+            duration_s=0.0, agent_stdout_tail="", disk_events={}, viewer_events_count=0,
+            viewer_session_info=None, workdir_files=[], jsonl_path="",
+            notes=[f"tool {tool!r} not available on this machine"],
+        )
+    return run_observed_command(
+        TOOLS[tool](prompt, Path(workdir).resolve()),
+        tool=tool, session=session, workdir=workdir, outdir=outdir, prompt=prompt,
+        roots=roots, backends=backends, timeout=timeout, monitor=monitor,
+        disable_observe=disable_observe,
     )

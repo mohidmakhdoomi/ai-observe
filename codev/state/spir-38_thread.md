@@ -59,3 +59,11 @@
   2. Deterministic probes in tool-free selftest tier; empirically confirmed flip = single `OPEN_BUGS[N].active` edit, rot-proof BOTH directions (flip-without-fix → 2 tool-free selftest failures; derived-from-active tests stay green after real fix+flip).
   3. Added non-gating `INFO` status + `note()`; check_ephemeral records "live-run direct-layer deletion captured this run: True/False" — retains live evidence, never flaps.
 - Selftest 40/40. Live ephemeral shows info=1/known-bug=1/pass=1, rc0.
+- Phase 3 3-way: Gemini+Claude APPROVE throughout; Codex REQUEST_CHANGES ×3 (all addressed): S1 content (exact-match), viewer completeness (viewer==canonical, all 4 scenarios), S2 create-captured-live, S3 seed-survival. Force-advanced at iter-3 ceiling.
+
+## Phase 4 (fold round-2: multi-turn Exp4 + timeline Exp9)
+- Refactored harness: extracted `run_observed_command` (arbitrary argv after `--`); `run_observed_session` now a thin wrapper. Live single_write still green post-refactor.
+- `drivers.py`: chained multi-turn (`ai-observe -- bash -lc "<t1> && <t2> && ..."`, per-tool resume flags; codex `--sandbox` before `resume` pinned). `probes.py`: timeline-sampling (non-blocking Popen + in-process viewer, samples backlog on cadence).
+- `check_multi_turn.py` (S5, all tools), `check_timeline.py` (S6, claude-only). selftest_drivers extended: chained-shell argv pins (incl codex ordering footgun) + registration. 44/44 selftests.
+- Note: #33 flip-home already done in Phase 3 (deterministic parser probe); Phase-4 codex path just annotates via that gate.
+- LIVE verified: multi_turn claude 6/6 (turn-2 writes_onto turn2=1, turn-3 writes_onto turn1=2 create+append, continuity one+three, viewer 8/8). timeline claude: 10 distinct increasing ticks during run + final 36/36 complete. Both rc0.
