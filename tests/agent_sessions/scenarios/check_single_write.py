@@ -33,8 +33,10 @@ class SingleWrite:
         out.append(check_agent_file(self.name, tool, res.workdir_files, "hello.txt"))
         target = workdir / "hello.txt"
         content = target.read_text() if target.exists() else ""
-        out.append(hard_check(self.name, tool, "agent-actual", "hello" in content,
-                              f"content={content.strip()!r}"))
+        # Exact-output enforcement (allowing only trailing-newline normalization):
+        # the prompt asks for a file containing exactly the word "hello".
+        out.append(hard_check(self.name, tool, "agent-actual", content.strip() == "hello",
+                              f"content={content.strip()!r} (expected exactly 'hello')"))
         # canonical: a write landed on hello.txt (HARD).
         out.append(check_captured(self.name, tool, writes_onto(events, "hello.txt") >= 1,
                                   f"writes_onto(hello.txt)={writes_onto(events, 'hello.txt')}"))
