@@ -298,6 +298,23 @@ def summarize_events(events: list[dict], workdir: Optional[Path] = None) -> dict
     }
 
 
+def writes_onto(events: list[dict], name: str) -> int:
+    """Count direct (strace) writes whose destination basename == `name`.
+
+    Atomic-write tools (claude) rewrite a file as a fresh tmp+rename, so a
+    modify/append shows up as a *rename* onto the target, not a `modify` — both
+    count as a write here (ported from the round-2 multi-turn probe).
+    """
+    n = 0
+    for e in events:
+        if e.get("source") != "strace":
+            continue
+        dest = (e.get("new_path") or e.get("path") or "").rsplit("/", 1)[-1]
+        if dest == name and e.get("operation") in ("create", "rename", "modify", "write"):
+            n += 1
+    return n
+
+
 def list_workdir(workdir: Path) -> list[str]:
     out = []
     workdir = Path(workdir)

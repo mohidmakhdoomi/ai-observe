@@ -168,53 +168,83 @@ def known_bug_gate(scenario: str, tool: str, view: str, bug: int, *,
 
 
 # ---------------------------------------------------------------------------
-# Bug-specific gates (compute the buggy/correct signatures)
+# Bug-specific gates (#32, #33) — DETERMINISTIC parser probes.
+#
+# #32 and #33 are both `trace_parser` bugs. A LIVE agent is an unreliable trigger
+# (the deletion syscall form and the sandbox's marker probing vary run-to-run), so
+# gating on a live run's events makes the annotation flap. Instead we reproduce each
+# bug the way the round-1 experiment actually verified it (FINDINGS F1/F2): feed the
+# exact syscall forms through ai-observe's real `trace_parser` and assert on the
+# result. Deterministic, tool-free, and rot-proof — the live scenarios still validate
+# agent-actual + viewer, but the bug GATE no longer depends on agent nondeterminism.
 # ---------------------------------------------------------------------------
 
-_MARKER_BASENAMES = {".git", ".agents", ".codex"}
+_BUG32_ROOT = "/tmp/ai-observe-bug32-probe"
+_BUG33_ROOT = "/tmp/ai-observe-bug33-probe"
 
 
-def expect_deletion_captured(scenario: str, tool: str, events: list[dict], name: str,
-                             *, bug: int = 32,
+def _parser_events(lines: list[str], root: str) -> list[dict]:
+    from ai_observe.trace_parser import TraceParser
+
+    parser = TraceParser(
+        session_id="probe", invocation_id="probe", command=["probe"],
+        initial_cwd=root, active_artifacts=set(), include_log_writes=False,
+        watched_roots=(root,))
+    return parser.parse_lines(lines).events
+
+
+def bug32_signature() -> tuple[bool, bool]:
+    """Deterministic #32 probe. Returns (annotated_deletion_dropped, plain_captured).
+
+    #32 reproduces when the annotated `unlinkat(AT_FDCWD<dir>, "f", 0)` form (what
+    claude/agy emit via libc) yields NO delete event, while the plain
+    `unlinkat(AT_FDCWD, "<abs>", 0)` form still does — i.e. the drop is specific to
+    the dirfd annotation, not a total break.
+    """
+    root = _BUG32_ROOT
+    base = [
+        f'1 1.0 openat(AT_FDCWD, "{root}/f.txt", O_WRONLY|O_CREAT, 0600) = 3<{root}/f.txt>',
+        f'1 1.1 write(3<{root}/f.txt>, "x", 1) = 1',
+        f'1 1.2 close(3<{root}/f.txt>) = 0',
+    ]
+    annotated = _parser_events(base + [f'1 1.3 unlinkat(AT_FDCWD<{root}>, "f.txt", 0) = 0'], root)
+    plain = _parser_events(base + [f'1 1.3 unlinkat(AT_FDCWD, "{root}/f.txt", 0) = 0'], root)
+    has_delete = lambda evs: any(e.get("operation") == "delete" for e in evs)
+    return (not has_delete(annotated)), has_delete(plain)
+
+
+def expect_deletion_captured(scenario: str, tool: str, *, bug: int = 32,
                              registry: Mapping[int, KnownBug] = OPEN_BUGS) -> CheckResult:
-    """#32: an ephemeral file's deletion should appear as a canonical `delete`.
-
-    While #32 is open (claude/agy), the delete is silently dropped → buggy.
-    """
-    captured = any(
-        e.get("operation") == "delete"
-        and (e.get("path") or "").rsplit("/", 1)[-1] == name
-        for e in events
-    )
+    """#32: the annotated-dirfd deletion should be captured as a canonical `delete`."""
+    dropped, plain_ok = bug32_signature()
     return known_bug_gate(scenario, tool, "canonical", bug,
-                          buggy_present=not captured, correct_present=captured,
-                          detail=f"delete({name}) captured={captured}", registry=registry)
+                          buggy_present=dropped and plain_ok,
+                          correct_present=(not dropped) and plain_ok,
+                          detail=f"annotated_deletion_dropped={dropped} plain_captured={plain_ok}",
+                          registry=registry)
 
 
-def marker_noise_deletes(events: list[dict]) -> int:
-    """Count codex's #33 marker-noise deletes (`.git`/`.agents`/`.codex` or /newroot)."""
-    n = 0
-    for e in events:
-        if e.get("operation") != "delete":
-            continue
-        path = e.get("path") or ""
-        base = path.rsplit("/", 1)[-1]
-        if base in _MARKER_BASENAMES or "/newroot" in path:
-            n += 1
-    return n
+def bug33_unpaired_marker_delete() -> bool:
+    """Deterministic #33 probe: True if a `/newroot` mkdir + canonical rmdir yields an
+    unpaired `delete` (the marker-noise signature — mkdir dropped by watched-root
+    filtering, rmdir kept)."""
+    root = _BUG33_ROOT
+    evs = _parser_events([
+        f'1 1.0 mkdir("/newroot{root}/.git", 0755) = 0',
+        f'1 1.1 rmdir("{root}/.git") = 0',
+    ], root)
+    creates = sum(1 for e in evs if e.get("operation") == "create")
+    deletes = sum(1 for e in evs if e.get("operation") == "delete")
+    return deletes > creates
 
 
-def expect_no_marker_noise(scenario: str, tool: str, events: list[dict],
-                           *, bug: int = 33,
+def expect_no_marker_noise(scenario: str, tool: str, *, bug: int = 33,
                            registry: Mapping[int, KnownBug] = OPEN_BUGS) -> CheckResult:
-    """#33: codex should not emit `/newroot` marker-noise deletes.
-
-    While #33 is open, dozens of unpaired marker deletes appear → buggy.
-    """
-    noise = marker_noise_deletes(events)
+    """#33: codex's `/newroot` marker probing should not leave unpaired deletes."""
+    unpaired = bug33_unpaired_marker_delete()
     return known_bug_gate(scenario, tool, "canonical", bug,
-                          buggy_present=noise > 0, correct_present=noise == 0,
-                          detail=f"marker_noise_deletes={noise}", registry=registry)
+                          buggy_present=unpaired, correct_present=not unpaired,
+                          detail=f"unpaired_marker_delete={unpaired}", registry=registry)
 
 
 def authority_overstated(meta: Mapping) -> bool:

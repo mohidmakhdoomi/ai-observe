@@ -15,6 +15,8 @@ from ..oracle import (
     PASS,
     KnownBug,
     ToolUnusable,
+    bug32_signature,
+    bug33_unpaired_marker_delete,
     ensure_tool_usable,
     expect_authority_not_overstated,
     expect_deletion_captured,
@@ -52,21 +54,25 @@ class KnownBugGateTests(unittest.TestCase):
 
 
 class BugSpecificGateTests(unittest.TestCase):
-    def test_deletion_dropped_is_known_bug_32(self):
-        # No delete event captured (the #32 signature) → annotated while active.
-        events = [{"operation": "create", "path": "/w/ephemeral.txt"}]
-        r = expect_deletion_captured("ephemeral", "claude", events, "ephemeral.txt")
+    """These drive ai-observe's REAL trace_parser (deterministic, tool-free), so
+    they double as live #32/#33 reproduction checks — rot-proof: when either bug is
+    fixed in ai-observe but its flag is not flipped, the gate fails loudly."""
+
+    def test_bug32_signature_reproduces_at_parser_level(self):
+        dropped, plain_ok = bug32_signature()
+        self.assertTrue(plain_ok, "plain unlinkat should always be captured")
+        self.assertTrue(dropped, "#32 should still drop the annotated-dirfd deletion")
+
+    def test_deletion_gate_is_known_bug_32(self):
+        r = expect_deletion_captured("ephemeral", "claude")
         self.assertEqual(r.status, known_bug_status(32))
 
-    def test_deletion_present_fails_stale_annotation_while_32_active(self):
-        events = [{"operation": "delete", "path": "/w/ephemeral.txt"}]
-        r = expect_deletion_captured("ephemeral", "claude", events, "ephemeral.txt")
-        self.assertEqual(r.status, FAIL)  # bug appears fixed but flag not flipped
+    def test_bug33_signature_reproduces_at_parser_level(self):
+        self.assertTrue(bug33_unpaired_marker_delete(),
+                        "#33 should still leave an unpaired /newroot marker delete")
 
-    def test_marker_noise_is_known_bug_33(self):
-        events = [{"operation": "delete", "path": "/newroot/w/.git"},
-                  {"operation": "create", "path": "/w/a.txt"}]
-        r = expect_no_marker_noise("single_write", "codex", events)
+    def test_marker_noise_gate_is_known_bug_33(self):
+        r = expect_no_marker_noise("single_write", "codex")
         self.assertEqual(r.status, known_bug_status(33))
 
     def test_authority_overstated_is_known_bug_36(self):
