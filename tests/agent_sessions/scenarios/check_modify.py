@@ -33,8 +33,11 @@ class Modify:
         if target.exists():
             content = target.read_text()
         out.append(check_agent_file(self.name, tool, res.workdir_files, "notes.txt"))
-        out.append(hard_check(self.name, tool, "agent-actual", "appended" in content,
-                              f"appended-content-present={'appended' in content}"))
+        # Append (not overwrite): the seed line must SURVIVE and the appended word
+        # must be present — overwriting notes.txt with just "appended" must fail.
+        appended_ok = "line one" in content and "appended" in content
+        out.append(hard_check(self.name, tool, "agent-actual", appended_ok,
+                              f"seed_survived={'line one' in content} appended={'appended' in content}"))
         out.append(check_captured(self.name, tool, writes_onto(events, "notes.txt") >= 1,
                                   f"writes_onto(notes.txt)={writes_onto(events, 'notes.txt')}"))
         # viewer: served all canonical events (HARD completeness).

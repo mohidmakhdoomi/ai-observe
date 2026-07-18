@@ -14,7 +14,15 @@ for this gate.
 
 from __future__ import annotations
 
-from ..oracle import CheckResult, check_agent_file, check_viewer, expect_deletion_captured, note
+from ..harness import writes_onto
+from ..oracle import (
+    CheckResult,
+    check_agent_file,
+    check_captured,
+    check_viewer,
+    expect_deletion_captured,
+    note,
+)
 from . import drive, viewer_served_all
 
 _PROMPT = ("Create a file named ephemeral.txt containing the word temp, then delete "
@@ -28,6 +36,11 @@ class Ephemeral:
     def run(self, tool: str, ctx) -> list[CheckResult]:
         res, events = drive(tool, _PROMPT, f"eph_{tool}", ctx)
         out: list[CheckResult] = []
+        # canonical: the create actually happened this run (HARD) — proves the
+        # create-then-delete scenario ran, so a run that never created the file
+        # cannot pass on final-absence alone.
+        out.append(check_captured(self.name, tool, writes_onto(events, "ephemeral.txt") >= 1,
+                                  f"writes_onto(ephemeral.txt)={writes_onto(events, 'ephemeral.txt')} (create captured live)"))
         # agent-actual: the file must be gone (the agent really deleted it).
         out.append(check_agent_file(self.name, tool, res.workdir_files,
                                     "ephemeral.txt", present=False))

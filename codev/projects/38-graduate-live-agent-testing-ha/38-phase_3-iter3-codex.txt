@@ -1,0 +1,9 @@
+Using direct file reads to review phase_3 implementation against the spec/plan.Running the tool-free self-tests relevant to phase_3 with the repo’s available Python.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 is close, but S2 and S3 currently allow false positives and need stronger live assertions to match the spec.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/scenarios/check_ephemeral.py:31-48` does not actually prove the live run performed the create-then-delete scenario. It only checks the final absence of `ephemeral.txt` plus the deterministic `#32` parser probe. If the agent never creates `ephemeral.txt` (or touches a different file but still produces some watched-root events), this scenario can still pass. Add a hard live assertion that `ephemeral.txt` was created/written during the session; the `#32` gate should only cover deletion capture, not replace the scenario-specific live evidence.
+- `tests/agent_sessions/scenarios/check_modify.py:35-39` is too weak for an append scenario. The hard agent-actual check only requires `"appended" in content`, so overwriting `notes.txt` with just `appended` would still pass even though the spec requires appending a new line to the seeded file. Tighten this to assert the original seed remains and the final content matches the intended append shape.
