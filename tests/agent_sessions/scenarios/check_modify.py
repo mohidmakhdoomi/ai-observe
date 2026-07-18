@@ -8,8 +8,8 @@ atomic-write tools). claude/agy only (per the plan's S3).
 from __future__ import annotations
 
 from ..harness import writes_onto
-from ..oracle import CheckResult, check_agent_file, check_captured, hard_check
-from . import drive, session_dirs
+from ..oracle import CheckResult, check_agent_file, check_captured, check_viewer, hard_check
+from . import drive, session_dirs, viewer_served_all
 
 _SEED = "line one\n"
 _PROMPT = ("Append a new line containing exactly the word appended to the existing "
@@ -37,6 +37,9 @@ class Modify:
                               f"appended-content-present={'appended' in content}"))
         out.append(check_captured(self.name, tool, writes_onto(events, "notes.txt") >= 1,
                                   f"writes_onto(notes.txt)={writes_onto(events, 'notes.txt')}"))
+        # viewer: served all canonical events (HARD completeness).
+        ok, detail = viewer_served_all(res)
+        out.append(check_viewer(self.name, tool, ok, detail))
         return out
 
 

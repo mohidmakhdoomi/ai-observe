@@ -32,6 +32,7 @@ from typing import Iterable, Mapping, Optional
 PASS = "pass"
 FAIL = "fail"
 EXCLUDED = "excluded"
+INFO = "info"      # a non-gating observation recorded for evidence (never fails)
 
 
 def known_bug_status(issue: int) -> str:
@@ -133,6 +134,13 @@ def check_captured(scenario: str, tool: str, ok: bool, detail: str = "") -> Chec
 
 def check_viewer(scenario: str, tool: str, ok: bool, detail: str = "") -> CheckResult:
     return hard_check(scenario, tool, "viewer", ok, detail)
+
+
+def note(scenario: str, tool: str, view: str, detail: str) -> CheckResult:
+    """A non-gating informational record (status INFO): retains live evidence
+    without ever failing. Used e.g. to record which deletion form an agent
+    actually emitted this run, without letting agent nondeterminism flap a gate."""
+    return CheckResult(scenario, tool, view, INFO, detail)
 
 
 # ---------------------------------------------------------------------------

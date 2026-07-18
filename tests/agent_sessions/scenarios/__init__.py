@@ -24,6 +24,15 @@ def session_dirs(ctx, session: str) -> tuple[Path, Path]:
     return workdir, outdir
 
 
+def viewer_served_all(res) -> tuple[bool, str]:
+    """Hard viewer-completeness check: the viewer served EXACTLY the canonical
+    events (round-2 proved a late-attaching viewer loses nothing). Returns
+    (ok, detail) for a `check_viewer` call."""
+    total = (res.disk_events or {}).get("total", 0)
+    ok = total > 0 and res.viewer_events_count == total
+    return ok, f"viewer served {res.viewer_events_count}/{total} canonical events"
+
+
 def drive(tool: str, prompt: str, session: str, ctx, *,
           roots: Path | None = None) -> tuple[SessionResult, list[dict]]:
     """Run one observed session and return (result, canonical events).

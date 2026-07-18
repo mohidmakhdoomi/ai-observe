@@ -14,8 +14,8 @@ for this gate.
 
 from __future__ import annotations
 
-from ..oracle import CheckResult, check_agent_file, expect_deletion_captured
-from . import drive
+from ..oracle import CheckResult, check_agent_file, check_viewer, expect_deletion_captured, note
+from . import drive, viewer_served_all
 
 _PROMPT = ("Create a file named ephemeral.txt containing the word temp, then delete "
            "ephemeral.txt so it no longer exists. Then stop.")
@@ -26,14 +26,29 @@ class Ephemeral:
     applies_to = {"claude", "agy"}
 
     def run(self, tool: str, ctx) -> list[CheckResult]:
-        res, _events = drive(tool, _PROMPT, f"eph_{tool}", ctx)
+        res, events = drive(tool, _PROMPT, f"eph_{tool}", ctx)
         out: list[CheckResult] = []
         # agent-actual: the file must be gone (the agent really deleted it).
         out.append(check_agent_file(self.name, tool, res.workdir_files,
                                     "ephemeral.txt", present=False))
-        # canonical: the #32 deletion-drop gate — deterministic parser probe (a live
-        # deletion's syscall form is nondeterministic, so it can't gate reliably).
+        # informational (non-gating): did ai-observe's DIRECT layer capture the
+        # agent's ACTUAL deletion this run? The deletion syscall form is
+        # agent-nondeterministic (sometimes the annotated dirfd form #32 drops,
+        # sometimes a captured form), so this is recorded as live evidence but must
+        # NOT gate — the #32 gate below is the deterministic parser probe instead.
+        live_direct_delete = any(
+            e.get("source") == "strace" and e.get("operation") == "delete"
+            and (e.get("path") or "").rsplit("/", 1)[-1] == "ephemeral.txt"
+            for e in events)
+        out.append(note(self.name, tool, "canonical",
+                        f"live-run direct-layer deletion captured this run: "
+                        f"{live_direct_delete} (informational; syscall form is "
+                        f"agent-nondeterministic — see the #32 gate)"))
+        # canonical: the #32 deletion-drop gate — deterministic parser probe.
         out.append(expect_deletion_captured(self.name, tool))
+        # viewer: served all canonical events (HARD completeness).
+        ok, detail = viewer_served_all(res)
+        out.append(check_viewer(self.name, tool, ok, detail))
         return out
 
 

@@ -483,6 +483,7 @@ added or removed; no scope change.
 |------|--------|--------|--------|
 | 2026-07-17 | Initial plan | Spec 38 approved | builder spir-38 |
 | 2026-07-17 | Plan iter-1 review fixes (Phase 1 AC, keep-artifacts seal, M4 fake-tool seam, non-applicable exclusion) | 3-way plan review | builder spir-38 |
+| 2026-07-18 | **Phase 3 deviation (architect-endorsed): #32/#33 gates use deterministic `trace_parser` probes, not live-agent events.** During Phase 3 the live #32 gate flapped (known-bug ↔ FAIL) across runs because the deletion syscall form an agent emits is nondeterministic (annotated `unlinkat(AT_FDCWD<dir>)` that #32 drops vs a captured `rm`/plain form). Both #32 and #33 are `trace_parser`/watched-root-filter bugs, so the gates now reproduce them deterministically by feeding the exact annotated-`unlinkat` (#32) and `/newroot` mkdir + canonical rmdir (#33) forms through ai-observe's real `trace_parser` — the same way FINDINGS F1/F2 verified them. Probes live in the **tool-free self-test tier** (flip detection works with no agent; empirically confirmed the flip is the single `OPEN_BUGS[N].active` edit and is rot-proof both directions). Live scenarios keep agent-actual + viewer as HARD checks plus a **non-gating `INFO` record** of which deletion form the agent used each run (retains live evidence without gate flap). | Live nondeterminism found in Phase 3; architect endorsed | builder spir-38 |
 
 ## Notes
 - **CI-unchanged strategy (M2, load-bearing):** *all* new test code — including the

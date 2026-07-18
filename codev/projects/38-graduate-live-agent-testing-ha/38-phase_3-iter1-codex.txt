@@ -1,0 +1,9 @@
+Using direct file reads to review only phase_3 implementation against the plan/spec.Reading the remaining implementation details and running the phase-3 self-test with the available Python executable.Getting line numbers for the phase-3 scenario files to cite precise issues.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 scaffolding is in place, but S1 is missing a required hard content assertion and the scenario suite does not yet implement the planned/spec’d three-view viewer checks.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/scenarios/check_single_write.py:24-30` does not verify the required S1 on-disk content correctness. The spec’s S1 acceptance is “agent file present + content correct (HARD)”, but the scenario only checks that `hello.txt` exists.
+- Viewer assertions are incomplete for this phase’s “three-view oracle” requirement. `check_ephemeral.py:28-49` and `check_modify.py:23-40` have no viewer check at all, and `check_single_write.py:29-30` / `check_subprocess.py:33-34` only assert `viewer_events_count >= 1`, which is weaker than the spec/plan requirement for hard viewer completeness/shape checks tied to the scenario.

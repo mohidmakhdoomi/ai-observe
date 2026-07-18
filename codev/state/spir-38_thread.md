@@ -54,3 +54,8 @@
   - claude single_write: 3/3 pass. claude ephemeral: agent-actual pass + #32 known-bug STABLE (rc0).
   - codex single_write: agent-actual + canonical(writes=3) pass + #33 known-bug + viewer(28ev). agy single_write: 3/3 pass.
 - All exit 0 (known-bug is not a fail). Whole chain (agent→ai-observe→strace→canonical→in-process ephemeral-port viewer→oracle) works.
+- **Architect ENDORSED the deviation** with 3 reqs — all done + verified:
+  1. Recorded in plan Change Log (2026-07-18 entry); TODO: fold into review doc in R phase.
+  2. Deterministic probes in tool-free selftest tier; empirically confirmed flip = single `OPEN_BUGS[N].active` edit, rot-proof BOTH directions (flip-without-fix → 2 tool-free selftest failures; derived-from-active tests stay green after real fix+flip).
+  3. Added non-gating `INFO` status + `note()`; check_ephemeral records "live-run direct-layer deletion captured this run: True/False" — retains live evidence, never flaps.
+- Selftest 40/40. Live ephemeral shows info=1/known-bug=1/pass=1, rc0.

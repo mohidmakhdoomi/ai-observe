@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from ..harness import writes_onto
 from ..oracle import CheckResult, check_agent_file, check_captured, check_viewer, expect_no_marker_noise
-from . import drive
+from . import drive, viewer_served_all
 
 _FILES = ("s1.txt", "s2.txt", "s3.txt")
 _PROMPT = ("Run exactly this shell command in the current directory and nothing else: "
@@ -30,8 +30,8 @@ class Subprocess:
                                       f"writes_onto({fname})={writes_onto(events, fname)}"))
         if tool == "codex":
             out.append(expect_no_marker_noise(self.name, tool))
-        out.append(check_viewer(self.name, tool, res.viewer_events_count >= 1,
-                                f"viewer served {res.viewer_events_count} events"))
+        ok, detail = viewer_served_all(res)
+        out.append(check_viewer(self.name, tool, ok, detail))
         return out
 
 

@@ -1,0 +1,40 @@
+Let me read the Phase 3 deliverables — the scenario files, the selftest_drivers, and the scenarios __init__.py.Now let me read the oracle.py and harness.py to verify the functions these scenarios depend on:Let me check the `__main__.py` for `discover_scenarios` and the `__init__.py` for ROOT:Now let me also check the plan's change log deviation note about #32/#33 using deterministic parser probes, since that's key to understanding the Phase 3 approach:I've read all Phase 3 deliverables and their dependencies. Here's my review:
+
+## Phase 3 Review: Single-prompt scenarios S1–S4 + #32 flip-home
+
+### Spec Adherence
+
+**All four scenarios (S1–S4) are implemented and wired correctly.** The plan's architect-endorsed deviation (change log) — using deterministic `trace_parser` probes for #32/#33 gates instead of live-agent events — is properly reflected: `expect_deletion_captured` and `expect_no_marker_noise` in `oracle.py` call real parser code with synthetic syscall lines, making the gates agent-nondeterminism-proof. The live scenarios still do agent-actual + viewer HARD checks alongside a non-gating `INFO` note for what the agent actually emitted (e.g. `check_ephemeral.py:39-46`).
+
+### Code Quality
+
+**Clean and consistent across all four scenario files.** Each exposes a class with `name`, `applies_to`, and `run(tool, ctx) -> list[CheckResult]` — matching the `Scenario` protocol in `__main__.py`. The `scenarios/__init__.py` `drive()` helper centralises session setup and the M4 usability gate (`ensure_tool_usable`), avoiding duplication.
+
+**`check_modify.py` has a well-handled seed-before-observe pattern:** it creates the file in the workdir *before* calling `drive()`, and both paths resolve through the same `session_dirs(ctx, f"mod_{tool}")`, so the seeded file is guaranteed to be in the agent's working directory.
+
+### Test Coverage
+
+`selftest_drivers.py` covers:
+- Per-tool single-prompt argv construction (3 tests) — locking the exact non-interactive invocation flags.
+- Scenario registration discovery — all 4 Phase 3 scenarios present with correct `applies_to` sets.
+
+This is tool-free and deterministic. The plan's "Manual/live" testing (running S1–S4 against authenticated tools) is appropriately deferred to the developer.
+
+### Issues & Observations
+
+**1. Minor: S2 and S3 lack viewer checks (INFO).** `check_single_write.py` and `check_subprocess.py` have `check_viewer(…, res.viewer_events_count >= 1, …)`, but `check_ephemeral.py` and `check_modify.py` do not. The spec says viewer checks are "HARD for completeness/shape" per the three-view oracle (Decision 3). For S2 (ephemeral), this is arguably fine since the core assertion is about the *absence* of a deletion event. For S3 (modify), a viewer check confirming at least one event was served would be consistent with S1/S4 and trivial to add. **Not blocking** — the phase's primary goal (#32 flip-home + scenario wiring) is met.
+
+**2. S4 prompt uses `$f` shell variable in a Python string — correct.** The string is passed verbatim as a prompt to the agent, which interprets it as a shell command. No Python f-string interpolation risk.
+
+**3. `expect_no_marker_noise` on S1/S4 for codex is gate-correct.** The deterministic probe doesn't need the live event list — it synthesizes its own. This is intentional per the plan deviation and works correctly.
+
+**4. Applicability is correct:** S2 (`ephemeral`) → `{claude, agy}` only (codex uses a different deletion path); S3 (`modify`) → `{claude, agy}`; S1 and S4 → all three tools. Matches the spec's S1–S4 descriptions.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 3 scenarios S1–S4 are well-implemented with correct bug gates, proper three-view oracle usage, and adequate tool-free self-tests; the #32 flip-home is rot-proof via the deterministic parser probe.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None (the missing viewer checks on S2/S3 are minor consistency items, not correctness issues)

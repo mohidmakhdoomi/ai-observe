@@ -12,6 +12,7 @@ import unittest
 
 from ..oracle import (
     FAIL,
+    OPEN_BUGS,
     PASS,
     KnownBug,
     ToolUnusable,
@@ -54,26 +55,40 @@ class KnownBugGateTests(unittest.TestCase):
 
 
 class BugSpecificGateTests(unittest.TestCase):
-    """These drive ai-observe's REAL trace_parser (deterministic, tool-free), so
-    they double as live #32/#33 reproduction checks — rot-proof: when either bug is
-    fixed in ai-observe but its flag is not flipped, the gate fails loudly."""
+    """Deterministic #32/#33 flip-homes driving ai-observe's REAL trace_parser,
+    tool-free — so flip detection works with NO agent.
 
-    def test_bug32_signature_reproduces_at_parser_level(self):
+    Every assertion is derived from `OPEN_BUGS[N].active`, so flipping a bug is a
+    TRUE single edit (`OPEN_BUGS[N].active = False`) that keeps these tests green
+    once the ai-observe fix lands — while remaining rot-proof in BOTH directions:
+      * fix landed but flag NOT flipped (active, no longer reproduces) → FAIL loud
+      * flag flipped but fix NOT landed (inactive, still reproduces)  → FAIL loud
+    """
+
+    def test_bug32_reproduction_matches_registry(self):
         dropped, plain_ok = bug32_signature()
         self.assertTrue(plain_ok, "plain unlinkat should always be captured")
-        self.assertTrue(dropped, "#32 should still drop the annotated-dirfd deletion")
+        if OPEN_BUGS[32].active:
+            self.assertTrue(dropped, "#32 active but not reproducing — fix landed? flip the flag")
+        else:
+            self.assertFalse(dropped, "#32 flipped inactive but the annotated deletion still drops")
 
-    def test_deletion_gate_is_known_bug_32(self):
+    def test_deletion_gate_tracks_registry(self):
         r = expect_deletion_captured("ephemeral", "claude")
-        self.assertEqual(r.status, known_bug_status(32))
+        expected = known_bug_status(32) if OPEN_BUGS[32].active else PASS
+        self.assertEqual(r.status, expected)
 
-    def test_bug33_signature_reproduces_at_parser_level(self):
-        self.assertTrue(bug33_unpaired_marker_delete(),
-                        "#33 should still leave an unpaired /newroot marker delete")
+    def test_bug33_reproduction_matches_registry(self):
+        unpaired = bug33_unpaired_marker_delete()
+        if OPEN_BUGS[33].active:
+            self.assertTrue(unpaired, "#33 active but no unpaired marker delete — fix landed? flip the flag")
+        else:
+            self.assertFalse(unpaired, "#33 flipped inactive but the /newroot marker delete is still unpaired")
 
-    def test_marker_noise_gate_is_known_bug_33(self):
+    def test_marker_noise_gate_tracks_registry(self):
         r = expect_no_marker_noise("single_write", "codex")
-        self.assertEqual(r.status, known_bug_status(33))
+        expected = known_bug_status(33) if OPEN_BUGS[33].active else PASS
+        self.assertEqual(r.status, expected)
 
     def test_authority_overstated_is_known_bug_36(self):
         meta = {"parser": {"status": "parser_failure_partial"},
