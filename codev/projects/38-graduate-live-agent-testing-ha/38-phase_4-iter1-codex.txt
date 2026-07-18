@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 4 mostly lands the new multi-turn/timeline pieces, but the timeline path misses one required hard check and one required loud-failure path.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/probes.py:107` weakens the S6 completeness assertion to `final_visible >= len(canonical)`. The spec/plan for Phase 4 requires the final viewer result to equal the canonical count, not merely be at least that large. An over-serving viewer would incorrectly pass.
+- `tests/agent_sessions/probes.py:49-85` / `tests/agent_sessions/scenarios/check_timeline.py:25-35` bypass the suite’s `ToolUnusable` gate. If `claude` is installed but unauthenticated / exits nonzero / produces zero watched-root events, S6 currently degrades into generic viewer failures instead of the required loud, named tool failure from Decision 4.

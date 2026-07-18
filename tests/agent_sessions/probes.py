@@ -78,6 +78,7 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
         proc.wait(timeout=30)
     except Exception:
         proc.kill()
+    returncode = proc.returncode
     run_duration = round(time.time() - t0, 1)
 
     final_visible = len(mon.collect_events(max_wait=8, settle=2.0)) if started else 0
@@ -94,6 +95,7 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
 
     return {
         "tool": tool,
+        "returncode": returncode,
         "run_duration_s": run_duration,
         "viewer_started": started,
         "n_samples": len(timeline),
@@ -104,6 +106,8 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
         "canonical_total": len(canonical),
         "canonical_by_operation": summarize_events(canonical, workdir=workdir).get("by_operation"),
         "incremental_confirmed": distinct_increasing >= 3 and max_during_run > 0,
-        "final_complete": final_visible >= len(canonical) and len(canonical) > 0,
+        # Completeness is EQUALITY: the viewer served exactly the canonical events.
+        # An over-serving viewer (final_visible > canonical) must NOT pass.
+        "final_complete": final_visible == len(canonical) and len(canonical) > 0,
         "actual_files": sorted(p.name for p in workdir.glob("w*.txt")),
     }
