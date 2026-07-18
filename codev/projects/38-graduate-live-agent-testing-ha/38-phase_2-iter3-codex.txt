@@ -1,0 +1,9 @@
+Using direct file reads to review the phase-2 implementation against the plan/spec.Reading the remaining phase-2 files and validating the self-tests/runner behavior directly.Checking project Python version support and getting line-numbered views for precise review notes.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 2 is close, but the runner still has a silent no-op success path that undermines the loud-gating contract.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/__main__.py:250-282` + `tests/agent_sessions/__main__.py:175-182` allow a green exit with **zero checks run** when no scenarios are discovered/selected (or none are applicable). In that path, `used` is empty, no tool preflight happens, `run_suite()` returns `[]`, and `exit_code_for()` returns `0`. For an opt-in capability whose phase-2 job is gating/loud failure, this is too silent; the runner should fail loudly when there is nothing runnable.
+- Related coverage gap: `tests/agent_sessions/selftest/selftest_runner.py` does not test the empty-registry / zero-check path, so the silent-success behavior above is currently unguarded.

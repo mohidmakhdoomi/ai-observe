@@ -222,6 +222,22 @@ class CliMainApplicabilityTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("nope", err)
 
+    def test_empty_registry_is_loud_nothing_runnable(self):
+        # No scenarios discovered → zero checks → loud nonzero, never silent green.
+        rc, out, err = self._main(["--tools", "claude"], {}, lambda t: True)
+        self.assertEqual(rc, 3)
+        self.assertIn("no checks were run", err)
+
+    def test_all_excluded_is_loud_nothing_runnable(self):
+        # Only excluded records (no actual check) → still loud nonzero.
+        scen = _FakeScenario("timeline", {"claude"},
+                             lambda tool, ctx: [CheckResult("timeline", tool, "viewer", PASS)])
+        rc, out, err = self._main(
+            ["--tools", "codex", "--scenarios", "timeline"],
+            {"timeline": scen}, lambda t: True)
+        self.assertEqual(rc, 3)
+        self.assertIn("no checks were run", err)
+
 
 class CliSubprocessTests(unittest.TestCase):
     """End-to-end via the real CLI, run from the repo root (inherits sys.path)."""

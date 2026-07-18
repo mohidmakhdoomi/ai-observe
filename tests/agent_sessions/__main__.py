@@ -178,8 +178,22 @@ def render_summary(results: Sequence[CheckResult]) -> str:
     return header + ("\n" + "\n".join(lines) if lines else "")
 
 
-def exit_code_for(results: Sequence[CheckResult]) -> int:
-    return 1 if any(r.is_fail for r in results) else 0
+# Exit codes: 0 = checks ran, none failed; 1 = a check failed; 2 = usage/arg error;
+# 3 = nothing runnable (zero actual checks — loud, never a silent green).
+EXIT_NOTHING_RUNNABLE = 3
+
+
+def real_checks(results: Sequence[CheckResult]) -> list[CheckResult]:
+    """Results that represent an actual assertion (not an `excluded` report)."""
+    return [r for r in results if r.status != EXCLUDED]
+
+
+def final_exit_code(results: Sequence[CheckResult]) -> int:
+    if any(r.is_fail for r in results):
+        return 1
+    if not real_checks(results):
+        return EXIT_NOTHING_RUNNABLE
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +298,16 @@ def main(argv: Optional[list] = None) -> int:
     print(render_summary(results), file=sys.stderr)
     if args.json:
         print(json.dumps([r.to_dict() for r in results], indent=2))
-    return exit_code_for(results)
+
+    code = final_exit_code(results)
+    if code == EXIT_NOTHING_RUNNABLE:
+        # Loud, never a silent green: an opt-in gating capability that ran zero
+        # actual checks (no scenarios discovered/selected, or none applicable to the
+        # requested tools) is a failure, not a success.
+        print("no checks were run — nothing runnable for the requested tools/scenarios "
+              "(no applicable scenario). This is not success; narrow or fix "
+              "--tools/--scenarios.", file=sys.stderr)
+    return code
 
 
 if __name__ == "__main__":
