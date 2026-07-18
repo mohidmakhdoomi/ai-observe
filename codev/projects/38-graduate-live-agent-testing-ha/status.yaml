@@ -8,10 +8,10 @@ plan_phases:
     status: complete
   - id: phase_2
     title: Oracle, known-bug registry, and opt-in runner (CLI + gating)
-    status: in_progress
+    status: complete
   - id: phase_3
     title: 'Single-prompt scenarios S1-S4 + #32 flip-home'
-    status: pending
+    status: in_progress
   - id: phase_4
     title: 'Fold in round-2 drivers: multi-turn (Exp4) + timeline (Exp9) + #33 flip-home'
     status: pending
@@ -21,7 +21,7 @@ plan_phases:
   - id: phase_6
     title: Docs, gitignore, README pointer, acceptance sweep
     status: pending
-current_plan_phase: phase_2
+current_plan_phase: phase_3
 gates:
   spec-approval:
     status: approved
@@ -35,8 +35,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 3
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -103,7 +103,7 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter3-claude.txt
 started_at: '2026-07-17T16:49:04.061Z'
-updated_at: '2026-07-18T03:15:34.672Z'
+updated_at: '2026-07-18T03:15:35.865Z'
 force_advanced:
   phase: phase_2
   iteration: 3
