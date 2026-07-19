@@ -255,14 +255,26 @@ codex session shape distilled from FINDINGS F1: a marker
 `mkdir("/newroot/tmp/work/.git")` → canonical `rmdir("/tmp/work/.git")` pair,
 plus a real-file sequence (`openat` create via the `/newroot` spelling with a
 `-yy` result annotation, `write` through that fd, canonical `unlink`).
-Registered in `test_committed_fixture_files_parse` (flat name→ops dict, one
-entry) with expected ops `["create", "delete", "create", "modify", "delete"]`
-(exact order finalized against the fixture when written). Note: the shared
-fixture harness parses with `watched_roots=["/tmp/work"]` only if the existing
-`self.parse` helper is used with that default — verify the committed-fixtures
-test's parse configuration and thread watched roots through it the way the
-existing entries do (adjusting only the new entry's expectations, never the
-existing ones).
+The fixture is wired into tests through **two explicit paths** (consultation
+feedback, iteration 1 — the existing `test_committed_fixture_files_parse`
+calls `self.parse(text)` with *no* `watched_roots`, so a registry entry alone
+would never exercise the remap):
+
+1. **Registry entry (no-roots path)**: add `newroot_sandbox.strace` to the
+   flat name→ops dict in `test_committed_fixture_files_parse`, parsed exactly
+   like the existing entries (no `watched_roots`). With no roots nothing is
+   dropped and no remap fires, so this entry pins the fixture's parse/header
+   validity and the S9 no-roots behavior at file level. Expected ops finalized
+   against the fixture when written (`["create", "delete", "create", "modify",
+   "delete"]` shape). The existing test method and its entries are not
+   restructured.
+2. **Dedicated end-to-end method (remap path)**: a new test method
+   `test_newroot_sandbox_fixture_remaps_to_canonical` reads the same fixture
+   file and feeds it through the existing `self.parse(text,
+   watched_roots=["/tmp/work"])` helper (the helper already accepts the
+   kwarg), asserting the exact `(operation, path)` sequence with **every path
+   canonical** and the marker create/delete pair present. This is the
+   `parse`-level remap proof over the committed session shape.
 
 **`docs/observe.md`** — one short paragraph in the visibility-boundary section
 (near lines 105–110): direct events whose paths arrive under a known
@@ -349,7 +361,26 @@ infrastructure, configuration, or monitoring changes.
 
 ## Expert Review
 
-*(pending — populated after 3-way review)*
+### Plan, iteration 1 (gemini / codex / claude) — 2× APPROVE + 1× COMMENT, all HIGH confidence
+
+- **claude** — APPROVE (HIGH): independently re-verified every line reference
+  (constant placement, the single `events.append` choke point, oracle.py:58,
+  both docs line ranges), the guard logic including the degenerate
+  `path == "/newroot"` case, and the state-table reasoning. Flagged the same
+  fixture-wiring detail as codex (non-blocking).
+- **gemini** — APPROVE (HIGH): validated the choke-point interception, the
+  atomic fix-and-flip, and the matrix/fixture coverage. No key issues.
+- **codex** — COMMENT (HIGH): one actionable gap — the committed-fixture
+  registry parses with no `watched_roots`, so the plan had to specify the
+  exact wiring mechanism rather than a "verify at implementation" note.
+  **Addressed**: Phase 2 now prescribes the two-path wiring explicitly
+  (registry entry pins the no-roots parse; a dedicated
+  `test_newroot_sandbox_fixture_remaps_to_canonical` method feeds the same
+  fixture through `self.parse(..., watched_roots=["/tmp/work"])` for the
+  remap proof).
+
+**Plan Adjustments**: Phase 2 fixture-wiring subsection rewritten as above; no
+other changes requested by any reviewer.
 
 ## Approval
 - [ ] Expert AI consultation complete (porch 3-way)
