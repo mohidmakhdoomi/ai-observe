@@ -104,3 +104,12 @@ strace tokens with annotations in mind") with a matching map line in
 lessons-critical.md (12/12 topics, 27 lines — within cap); no arch updates
 (parser-internal fix, no system-shape change). Plan status → completed.
 Opening PR next (Fixes #32), then porch done → PR consultation.
+
+### PR consultation (round 1)
+
+PR #40 opened (Fixes #32) and recorded in pr_history. Verdicts: gemini APPROVE,
+claude APPROVE (after a session-limit re-run), codex REQUEST_CHANGES on branch
+hygiene only — untracked consult artifacts. Repo convention (project 1 on main)
+is to commit them, so all 15 project-32 consult outputs staged+committed;
+codex's [Phase:] commit-format note rebutted (porch owns phase commits in
+strict mode). Review doc's consultation log updated. Code itself: no findings.

@@ -1,0 +1,76 @@
+I'll review this spec by verifying its claims against the actual codebase. Let me read the key files referenced.Good, the core claims check out. Let me now verify the oracle file and the remaining references.Let me check the OPEN_BUGS registry and the `known_bug_gate` function:All the core claims are verified. Let me also quickly check the selftest file for completeness:I've now verified every key claim in the spec against the actual source code. Here's my review:
+
+---
+
+## Specification Review: #32 — trace_parser drops deletions with annotated AT_FDCWD
+
+### 1. Completeness
+
+**Excellent.** This is one of the most thorough specs I've seen. It includes:
+
+- A precise root-cause chain verified against the actual code, with line numbers — all of which I confirmed match the current source.
+- A complete blast-radius matrix enumerating every affected call site (verified: all eight `_at_path` call sites in the dispatch logic at lines 342–398 are accounted for).
+- The "rescued in practice" nuance for `openat`/`openat2` (verified: lines 288–290 show `result_path` preference).
+- Clear success criteria — 10 items spanning functional, non-functional, and verification dimensions, all testable.
+- The oracle flip obligation is well-specified as a mandatory part of the change (not a follow-up).
+
+### 2. Correctness
+
+**All technical claims verified against the codebase:**
+
+- `_FD_ANNOT_RE` at line 47: confirmed the `^(?P<fd>-?\d+)...` pattern requires a numeric fd. `AT_FDCWD<...>` will not match.
+- `_at_path` at line 484: confirmed `args[dirfd_index].strip() != "AT_FDCWD"` is the exact check — annotated form falls through.
+- `_dirfd_path` at line 490–497: confirmed it calls `fd_path_annotation` then `fd_number`, both gated by the numeric-fd regex.
+- `_drop_out_of_scope_event` at line 444–451: confirmed pathless events are dropped when `watched_roots` is set.
+- `-yy` flag at `strace.py:61`: confirmed — this is what triggers strace annotations.
+- `OPEN_BUGS[32]` at oracle.py:57: confirmed `active=True`, and `bug32_signature()` at line 210 feeds the exact annotated/plain forms through the real parser.
+- The selftest at selftest_oracle.py:68–79 matches the spec's description precisely — flipping `active=False` is truly a one-line change that converts the known-bug gate into a regression assertion.
+
+**No contradictions found** between the spec and the code.
+
+### 3. Feasibility
+
+**High confidence this is implementable as described.** 
+
+- Approach B is well-scoped: the fix is local to `_at_path` (a 14-line function). The `split_args` angle-depth tracking (lines 521–524, verified) already preserves `AT_FDCWD</path>` as a single token, so no upstream parsing changes are needed.
+- The spec correctly notes `_FD_ANNOT_RE` and its three callers stay untouched — this avoids the blast-radius risk of Approach C.
+- The `AT_FDCWD<>` (empty annotation) fallback edge case is explicitly called out in success criterion 4.
+
+### 4. Edge Cases
+
+Well-handled:
+
+- **Empty annotation** (`AT_FDCWD<>`): explicitly required to fall back to tracked cwd (criterion 4).
+- **Paths containing `>`**: acknowledged as a pre-existing limitation, correctly scoped out.
+- **`openat` result_path rescue**: correctly identified as still working post-fix, but fix covers the robustness gap (truncated result_path).
+- **Numeric dirfds**: explicit criterion that existing behavior is unchanged (criterion 5).
+
+**One minor observation** (not blocking): The spec doesn't explicitly state what happens if the annotation path is a relative path (e.g., `AT_FDCWD<relative/dir>`). In practice strace always reports absolute paths for the annotation, so this is academic — but a builder might wonder. The fix direction (use annotation as base, join with relative arg path) would produce a correct-by-construction result even for a relative annotation joined with `os.path.join`, so this is fine.
+
+### 5. Testing Strategy
+
+**Strong.** Three tiers:
+
+1. **Unit (CI, deterministic)**: parameterized tests across the full blast-radius matrix + edge cases — no capability gates needed (pure parsing). Correctly notes zero-skip constraint from arch-critical.
+2. **Oracle probe (deterministic, selftest)**: `bug32_signature()` flip + both selftests. The rot-proof design means the flag flip *must* accompany the fix — if a builder ships one without the other, tests fail loudly. This is excellent.
+3. **Live (optional)**: correctly scoped as evidence, not a gate.
+
+### 6. Security
+
+No security concerns. This is a parser correctness fix with no I/O, no new dependencies, no user-facing attack surface changes.
+
+### 7. Minor Observations (non-blocking)
+
+- The consultation log section is empty (`*(To be filled...)*`). Presumably this is expected at this stage and gets populated during porch's review cycle.
+- The spec's line-number references (e.g., "line 475", "line 47") all match the current source — but if any pre-existing work lands before this change, they'll drift. The builder should verify. This is inherent to specs that reference line numbers and not really avoidable.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally thorough spec — every claim verified against actual source; root cause, blast radius, fix approach, oracle integration, and testing strategy are all correct and complete.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

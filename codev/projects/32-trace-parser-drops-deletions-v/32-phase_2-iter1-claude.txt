@@ -1,0 +1,88 @@
+I'll start by reading the key implementation files for Phase 2 review.Now let me verify the oracle flip and check the existing tests to understand the full scope:Let me run the tests to verify everything passes:All 56 oracle selftests pass, including `test_bug32_reproduction_matches_registry` and `test_deletion_gate_tracks_registry`. Let me now verify the Phase 2 deliverables against the plan in detail.
+
+Let me check that no product code was changed in Phase 2 (the plan says Phase 2 is tests + fixture only):Good — Phase 2 touched no product code (`src/ai_observe/trace_parser.py` unchanged), only test files, fixture, and protocol state files. That aligns with the plan's acceptance criterion: "No product-code changes in this phase."
+
+Now let me do a detailed verification against the plan's Phase 2 deliverables:Now let me verify the fixture against the plan's specification:Good, I already have the fixture content. Let me now do a systematic checklist against the Phase 2 plan.
+
+---
+
+## Phase 2 Review: Blast-radius defense matrix + end-to-end annotated fixture
+
+### 1. Spec Adherence (S2 — every affected call site enumerated)
+
+Checking the blast-radius matrix (`test_annotated_at_fdcwd_blast_radius_matrix`) against the spec's table:
+
+| Spec call site | In matrix? | Status |
+|---|---|---|
+| `unlinkat` | ✅ line 228 | ✓ |
+| `renameat` (both paths) | ✅ line 229 | ✓ |
+| `renameat2` (both paths) | ✅ line 230 | ✓ |
+| `fchmodat` | ✅ line 231 | ✓ |
+| `fchownat` | ✅ line 232 | ✓ |
+| `utimensat` | ✅ line 233 | ✓ |
+| `futimesat` | ✅ line 234 | ✓ |
+| `mkdirat` | ✅ line 235 | ✓ |
+| `mknodat` | ✅ line 236 | ✓ |
+| `symlinkat` | ✅ line 237 | ✓ |
+| `linkat` | ✅ line 238 | ✓ |
+| `openat` (no result annotation — robustness case) | ✅ line 241 | ✓ |
+
+All 12 rows from the plan's matrix are present. The `openat` robustness row correctly omits the result path annotation (`= 3` with no `</path>`), matching the plan's explicit instruction that this case bypasses the return-value rescue.
+
+### 2. Mixed-form rename guard
+
+`test_renameat2_mixed_annotated_and_plain_dirfd_resolve_independently` (line 253): `renameat2(AT_FDCWD</a>, "x", AT_FDCWD, "y", 0)` with `cwd="/b"` → old `/a/x`, new `/b/y`. ✅ Matches the plan exactly — each side resolves independently, proving annotated and plain forms can coexist in a single syscall.
+
+### 3. No-watched-roots pathless-event elimination
+
+`test_no_watched_roots_annotated_events_are_fully_pathed` (line 259): `watched_roots` not passed (defaults to empty `()`), annotated `renameat2` and `unlinkat` produce fully-pathed events. ✅ Locks the spec's "no pathless junk" clause.
+
+### 4. Committed fixture
+
+`annotated_at_fdcwd.strace`:
+- First line contains `strace` ✅ (satisfies the existing fixture-header assertion in `test_committed_fixture_files_parse`)
+- Contains an annotated create → modify → delete lifecycle ✅ (`openat` with both dirfd and return annotations → `write` via annotated fd → `close` → `unlinkat(AT_FDCWD</tmp/work>, ...)`)
+- Expected ops `["create", "modify", "delete"]` ✅
+
+### 5. Fixture registered in `test_committed_fixture_files_parse`
+
+Line 44: `"annotated_at_fdcwd.strace": ["create", "modify", "delete"]` ✅
+
+### 6. Test quality
+
+- Uses `subTest` per syscall in the matrix ✅ (plan specified this)
+- No mocking ✅ (house style)
+- No skips introduced ✅ (CI no-skip rule)
+- No product code changes in this phase ✅
+- Tests use the real parser end-to-end via `self.parse()` → `parse_trace_file` ✅
+
+### 7. Test suite results
+
+- Full unit suite: 30 tests, all OK, zero skips ✅
+- Oracle selftests: 56 tests, all OK ✅
+- Both `test_bug32_reproduction_matches_registry` and `test_deletion_gate_tracks_registry` pass ✅
+
+### 8. Code quality
+
+The tests are clean, readable, and follow the existing house style. The `subTest` decomposition gives per-syscall failure granularity. The tuple structure `(line, op, path, old_path, new_path)` is compact but clear, and the conditional assertions on `old_path`/`new_path` (only checking when non-None) correctly handle the rename vs. non-rename split.
+
+One minor observation: the `subTest` label uses `syscall=line.split("(")[0]` which will produce labels like `unlinkat`, `renameat`, etc. — nicely descriptive for debugging any future failure.
+
+### 9. Potential gaps
+
+I checked whether there's anything the plan specified that's missing:
+
+- **"No product-code changes in this phase"**: Confirmed — only test/fixture/state files changed ✅
+- The fixture exercises the `parse_trace_file` end-to-end path (via `self.parse` which calls `parse_trace_file`) ✅
+- `S8` (full suite + selftests green, zero skips): Confirmed ✅
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 2 delivers the complete blast-radius defense matrix across all 12 affected call sites, mixed-form rename guard, no-watched-roots pathless-event elimination test, and a committed end-to-end fixture — all green, no product code touched.
+CONFIDENCE: HIGH
+
+---
+
+KEY_ISSUES:
+- None

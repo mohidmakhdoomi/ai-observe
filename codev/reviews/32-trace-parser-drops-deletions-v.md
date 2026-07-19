@@ -161,6 +161,30 @@ Non-blocking notes and how they were handled:
   Claude's reviewer confirmed all 12 matrix rows, the mixed-form guard, the
   no-watched-roots test, and that no product code changed in the phase.
 
+### Review Phase — PR (Round 1)
+
+#### Gemini
+- APPROVE, high confidence. No concerns.
+
+#### Codex
+- REQUEST_CHANGES, high confidence. Two issues:
+  - 12 untracked `32-*-iter1-*.txt` consultation artifacts left the branch
+    not PR-clean.
+    - **Addressed**: repo convention (project 1 on `main`) is that consultation
+      artifacts are committed; all project-32 consult outputs staged and
+      committed.
+  - Builder commits use `[Spec 32] ...` without a `[Phase: ...]` suffix.
+    - **Rebutted**: under porch strict mode the phase commits are porch's
+      `chore(porch)` sweeps; the plain `[Spec ####] <stage>: <description>`
+      form is the documented format for document/stage commits (spec, plan,
+      review, thread), which is all the builder commits here are.
+  - (Codex also noted it could not reproduce full-suite/selftest runs in its
+    sandbox — environment-only, "not evidence against this patch".)
+
+#### Claude
+- APPROVE, high confidence. No concerns. (First run aborted on an external
+  session limit and was re-run — noted for completeness, not a review finding.)
+
 ## Architecture Updates
 
 No architecture updates needed. The fix is parser-internal: it changes no
