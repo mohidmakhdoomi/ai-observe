@@ -280,4 +280,21 @@ shape is a Plan decision). `_FD_ANNOT_RE` and its three callers stay untouched.
 
 ## Consultation Log
 
-*(To be filled by porch's 3-way review cycle.)*
+### Specify, iteration 1 (gemini / codex / claude) — unanimous APPROVE, high confidence
+
+- **codex**: APPROVE, no issues. "Well-scoped, technically sound, and specific
+  enough for implementation and verification."
+- **gemini**: APPROVE, no issues. Confirmed root cause, blast radius, and that
+  Approach B "safely isolates the fix without breaking existing fd resolution."
+  (Its one minor note — a suspected markdown typo in Success Criterion 3 — was a
+  false positive; `AT_FDCWD</b>` is the intended literal form.)
+- **claude**: APPROVE, no issues. Independently verified every code claim
+  (regex, `_at_path` check, `_dirfd_path` chain, out-of-scope drop, `-yy` flag,
+  `OPEN_BUGS[32]` gate and selftests) against source. Two non-blocking notes,
+  both acknowledged: (1) a relative annotation path (`AT_FDCWD<rel/dir>`) does
+  not occur in practice — strace reports absolute annotation paths — and the
+  join-based fix is correct-by-construction even if it did; (2) line-number
+  references may drift if other work lands first — the builder re-verifies at
+  implementation time.
+
+No spec changes were required by any reviewer.
