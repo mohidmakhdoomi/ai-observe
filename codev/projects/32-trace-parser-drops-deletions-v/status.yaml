@@ -5,11 +5,11 @@ phase: implement
 plan_phases:
   - id: phase_1
     title: Annotated-AT_FDCWD resolution fix + core tests + OPEN_BUGS[32] flip
-    status: in_progress
+    status: complete
   - id: phase_2
     title: Blast-radius defense matrix + end-to-end annotated fixture
-    status: pending
-current_plan_phase: phase_1
+    status: in_progress
+current_plan_phase: phase_2
 gates:
   spec-approval:
     status: approved
@@ -24,7 +24,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-19T22:21:01.828Z'
-updated_at: '2026-07-19T22:38:25.926Z'
+updated_at: '2026-07-19T22:40:41.215Z'
