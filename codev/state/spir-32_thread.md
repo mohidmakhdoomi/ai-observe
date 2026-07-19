@@ -121,3 +121,16 @@ artifacts; [Phase:] format point rebutted — porch owns phase commits in strict
 mode). porch done → GATE REQUIRED: pr. Gate requested; waiting for human
 approval (porch approve 32 pr). PR #40 has 2/3 APPROVE + codex's only findings
 resolved on-branch.
+
+## Verify phase
+
+pr gate approved by architect (integration review on PR #40: APPROVE, no
+concerns). CI 6/6 green (3.10/3.12/3.13 × 2 runs); merged as squash fe19ff8
+following the most recent spec-PR precedent (#39) — noting porch's verify-task
+text prefers merge commits; flagged to architect, no history rewrite attempted.
+origin/main merged back into the worktree (only conflict: porch's status.yaml,
+resolved keeping porch's newer verify-phase state; src/tests identical).
+
+Post-merge verification on the integrated tree: full suite 222 green zero
+skips; --selftest 56 green; bug32_signature() == (False, True). Signaling
+porch done → verify-approval gate.
