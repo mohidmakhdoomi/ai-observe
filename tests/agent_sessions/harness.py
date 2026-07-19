@@ -364,13 +364,18 @@ def run_observed_command(
     timeout: float = 240.0,
     monitor: bool = True,
     disable_observe: bool = False,
+    extra_env: Optional[dict] = None,
 ) -> SessionResult:
     """Run an arbitrary `command` (argv after the `--`) under ai-observe.
 
-    The lower-level core shared by `run_observed_session` (single prompt) and the
-    round-2 chained multi-turn driver (`bash -lc "<t1> && <t2> && …"`). Sequencing
-    (Decision 11 / F5): the session runs to a finalized `.jsonl` first, then the
-    in-process viewer attaches.
+    The lower-level core shared by `run_observed_session` (single prompt), the
+    round-2 chained multi-turn driver (`bash -lc "<t1> && <t2> && …"`), and the S7
+    degraded scenario. Sequencing (Decision 11 / F5): the session runs to a finalized
+    `.jsonl` first, then the in-process viewer attaches.
+
+    `extra_env` injects additional ai-observe env knobs into the wrapper process
+    (e.g. `AI_OBSERVE_TEST_FAIL_AFTER` for the S7 forced-degraded path); it is applied
+    last, so a caller can override the defaults set here if ever needed.
     """
     workdir = Path(workdir).resolve()
     outdir = Path(outdir).resolve()
@@ -387,6 +392,8 @@ def run_observed_command(
         env["AI_OBSERVE_BACKENDS"] = backends
     if disable_observe:
         env["AI_OBSERVE_DISABLE"] = "1"
+    if extra_env:
+        env.update(extra_env)
 
     jsonl_path = outdir / f"{session}.jsonl"
 

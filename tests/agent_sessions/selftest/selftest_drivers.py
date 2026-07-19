@@ -77,7 +77,7 @@ class ScenarioRegistrationTests(unittest.TestCase):
 
     def test_all_scenarios_present(self):
         for name in ("single_write", "ephemeral", "modify", "subprocess",
-                     "multi_turn", "timeline"):
+                     "multi_turn", "timeline", "degraded"):
             self.assertIn(name, self.reg, f"scenario {name!r} not discovered")
 
     def test_applicability(self):
@@ -87,6 +87,7 @@ class ScenarioRegistrationTests(unittest.TestCase):
         self.assertEqual(self.reg["subprocess"].applies_to, {"claude", "agy", "codex"})
         self.assertEqual(self.reg["multi_turn"].applies_to, {"claude", "agy", "codex"})
         self.assertEqual(self.reg["timeline"].applies_to, {"claude"})  # claude-only
+        self.assertEqual(self.reg["degraded"].applies_to, {"claude"})  # #36 path, claude-only
 
 
 if __name__ == "__main__":
