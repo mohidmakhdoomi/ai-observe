@@ -1,0 +1,47 @@
+Let me read the implementation files for Phase 1.Let me verify the ViewerServer API the harness depends on, and check the fixture exists.Good — `ViewerServer` has `.url`, `.port`, `.start()`, `.stop()` exactly as the harness expects. Let me also verify the existing smoke test for the pattern:No hard-coded port constants. Let me also quickly verify the self-test actually runs:All 4 tests pass. The malformed JSONL line warnings are from the viewer's own parser (likely blank lines in the fixture) — not an issue.
+
+Now let me verify the Phase 1 acceptance criteria systematically:
+
+1. ✅ **Self-test passes tool-free** — confirmed: 4 tests, all OK
+2. ✅ **Two ViewerMonitors bind distinct nonzero ports** — `test_ephemeral_ports_are_distinct_and_nonzero` passes
+3. ✅ **`resolve_ai_observe()` returns checkout `bin/ai-observe`** — `test_prefers_checkout_bin_ai_observe` passes
+4. ✅ **No hard-coded viewer port constants** — grep found zero matches for `78xx`/`79xx` patterns
+5. ✅ **No `sys.path.insert` into experiments/** — `test_no_experiments_dir_on_syspath` passes
+
+Let me check a few code quality details:Only a docstring mention — clean.
+
+Let me verify the `ViewerServer.url` return format to make sure the `/session` path join works correctly:The URL ends with `/`, so `self.url + "session"` at line 147 produces `http://127.0.0.1:PORT/session` — correct.
+
+---
+
+This is a clean Phase 1 implementation. Here's my assessment:
+
+**Spec Adherence (Phase 1):**
+- ✅ `__init__.py` puts `src/` on `sys.path` once, no live work at import
+- ✅ `harness.py` graduates all required functions: `run_observed_session`, `SessionResult`, `ViewerMonitor`, `load_events`, `summarize_events`, `list_workdir`, `TOOLS`, `tool_available`, `resolve_ai_observe()`
+- ✅ ViewerMonitor uses `ViewerServer(jsonl, port=0)` in-process with ephemeral ports (Decision 6 / M6)
+- ✅ Checkout-first entrypoint resolution (Decision 8)
+- ✅ Decision 11 sequencing: session runs first, viewer attaches only after `.jsonl` exists and is non-empty (line 404)
+- ✅ Stdlib-only (N1), no experiments path hack
+- ✅ `selftest/__init__.py` present as a subpackage
+
+**Code Quality:**
+- Clean, well-documented, faithful port with clear behavioral-change documentation in the module docstring
+- `ViewerMonitor.stop()` properly called via `addCleanup` in tests — good resource management
+- Error handling is appropriate: timeouts, failed starts, missing tools all handled gracefully
+- The `_handle_frame` SSE parsing is simple and correct for the `append_batch` event type
+
+**Test Coverage:**
+- 4 tool-free tests covering: viewer-monitor end-to-end on fixture, ephemeral port distinctness, checkout entrypoint resolution, and no-experiments-path-hack
+- All tests pass (verified)
+
+**Minor observations (non-blocking):**
+- The `ViewerMonitor._fetch_session` URL construction (`self.url + "session"`) works because `.url` ends with `/`, but this is an implicit coupling. Fine for now since both sides are in the same project.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers a clean, well-tested graduation of the core harness with in-process ephemeral-port viewer — all acceptance criteria verified passing.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

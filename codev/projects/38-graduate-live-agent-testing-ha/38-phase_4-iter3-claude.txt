@@ -1,0 +1,47 @@
+I'll read the Phase 4 deliverable files to review them against the plan and spec. Let me start with the core files.Good, I've read the core Phase 4 deliverables. Now let me check the supporting files for integration correctness.Now let me check the runner integration and verify the self-tests pass:All 44 self-tests pass. Let me verify one more detail — that the scenario registration correctly picks up the new Phase 4 scenarios, and check the `__init__.py` for the scenarios package:I've completed my review of Phase 4. Here's my assessment:
+
+## Review Summary
+
+**Phase 4 scope:** Fold in round-2 drivers — multi-turn (Exp4) + timeline (Exp9) + #33 flip-home.
+
+### Deliverables — All Present ✅
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| `drivers.py` | ✅ | `chain_for`, `chained_command`, `run_multi_turn` — clean decomposition |
+| `probes.py` | ✅ | `sample_timeline` with non-blocking Popen, ephemeral-port viewer, stderr persistence |
+| `scenarios/check_multi_turn.py` (S5) | ✅ | 3-turn chain, agent-actual+canonical+viewer checks, #33 gate for codex |
+| `scenarios/check_timeline.py` (S6) | ✅ | Timeliness (≥3 increasing) + completeness (equality), M4 gate with stderr enrichment |
+| `selftest/selftest_drivers.py` extended | ✅ | `ChainedMultiTurnArgvTests` pinning exact shell strings + codex `--sandbox`-before-`resume` footgun |
+
+### Iter-1 & Iter-2 Fixes Verified
+
+- **S6 completeness equality:** `final_visible == len(canonical) and len(canonical) > 0` (`probes.py:139`) — over-serving viewer can't pass ✅
+- **M4 gate in timeline path:** `ensure_tool_usable` called with returncode + canonical_total (`check_timeline.py:34`) ✅
+- **Stderr persistence (iter-2):** wrapper streams redirected to `<session>.{stdout,stderr}.log` in outdir (`probes.py:55-60`), flushed in `finally` block (`probes.py:95-99`), report carries `stderr_tail` ✅
+- **ToolUnusable enrichment:** stderr tail appended inline on failure (`check_timeline.py:38-40`) ✅
+
+### Code Quality
+
+- **Readable:** Modules are well-documented with docstrings explaining the "why" (round-2 context, footguns, decisions).
+- **Error handling:** `ViewerMonitor.start()` failure returns `False` gracefully; process timeout/kill handled; file handles closed in `finally`.
+- **No port constants:** Entirely ephemeral via `ViewerServer(port=0)` — M6 satisfied.
+- **Stdlib-only:** No third-party imports — N1 satisfied.
+- **No `sys.path` into experiments:** imports via the package's own `__init__.py` convention — N1 satisfied.
+
+### Self-Tests: 44/44 Green
+
+The `ScenarioRegistrationTests` at `selftest_drivers.py:73-83` explicitly verify that `multi_turn` and `timeline` are discoverable with correct `applies_to` sets — locking the Phase 4 integration without agents.
+
+### Minor Observation (Non-blocking)
+
+In `probes.py:59-60`, if `open(stderr_log, "w")` were to raise after `open(stdout_log, "w")` succeeds, the `out_fh` handle would leak. In practice this is a local temp-dir write that essentially can't fail, and Python's GC would close it — so this is a theoretical nit, not a real concern.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 correctly graduates Exp-4 multi-turn and Exp-9 timeline into the maintained suite with all iter-1/iter-2 fixes applied, the #33 flip-home wired, deterministic self-tests passing 44/44, and clean integration.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

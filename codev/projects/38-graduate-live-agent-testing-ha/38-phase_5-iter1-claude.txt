@@ -1,0 +1,52 @@
+Now let me check the harness for `run_observed_command` and the scenarios `__init__.py` for `session_dirs`:Let me verify the `AI_OBSERVE_TEST_FAIL_AFTER` env var usage in the source and check the existing experiment for reference:Good — `env_value(env, "TEST_FAIL_AFTER")` maps to `AI_OBSERVE_TEST_FAIL_AFTER`, which is exactly what `check_degraded.py` passes. Now let me check the `__main__.py` to verify how scenarios are registered and the degraded scenario is wired in:Now let me verify the selftest for Phase 5 actually runs:All 8 self-tests pass. Now let me verify the full selftest suite still passes (to check nothing in Phase 5 broke earlier phases):All 52 self-tests pass. Let me also verify the `check_degraded.py` scenario is correctly discoverable via the runner:Let me also verify the `applies_to` set is correct (claude-only) and the `monitor=False` flag usage in the degraded scenario:Now let me check one important detail — the scenario sets `monitor=False` in `run_observed_command`. Let me verify this is intentional and correct. On the degraded path, the direct parser fails and the snapshot fallback writes a `.jsonl`, but the sidecar/meta may not have the full expected state for the viewer. Let me re-read the scenario rationale:Let me check the oracle.py for the `authority_overstated` function which is the Phase 5 deliverable:Let me also verify that the `authority_overstated` function handles the mixed-type artifacts map correctly. The self-test includes a test for `authoritative_event_path` being a bare string (`test_mixed_type_artifacts_map_does_not_raise`). Looking at line 269:
+
+```python
+role = entry.get("role") if isinstance(entry, Mapping) else entry
+```
+
+If `entry` is a bare string (like `"deg_probe.jsonl"`), it calls `entry` directly and checks `if role == "authoritative_complete"` — this is correct. The bare string `"deg_probe.jsonl"` won't match `"authoritative_complete"`, so it's safe. But importantly, the logic correctly skips `.get("role")` for non-dict entries without raising.
+
+Let me also quickly verify no test files break CI:Good — no new `test_*.py` files. The Phase 5 additions are under `tests/agent_sessions/` as `check_degraded.py` and `selftest_degraded.py`, neither matching the CI glob.
+
+Let me check whether `experiments/` is unmodified in this branch:Clean — `experiments/` is untouched. Let me do one final check: verify the `ensure_tool_usable` in the degraded scenario properly handles the parser-failure case. When `AI_OBSERVE_TEST_FAIL_AFTER=2` is set and the session runs, the snapshot fallback should still produce events in the `.jsonl`, so `disk_events["total"]` should be > 0. The scenario's comment confirms: "The snapshot fallback yields net events on disk for an authenticated run, so only a broken tool trips this."
+
+Let me also quickly verify that the `run_observed_command` in the degraded scenario handles the missing-meta case gracefully (lines 73–91):The implementation is thorough and correct. Let me summarize my findings.
+
+---
+
+## Review Summary — Phase 5: Degraded parse-failure scenario (Exp6) + #36 flip-home
+
+### Deliverables Verified
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| `scenarios/check_degraded.py` (S7) | ✅ | Claude-only, forced via `AI_OBSERVE_TEST_FAIL_AFTER`, reads `.meta.json`, HARD agent-actual + bug-gated canonical |
+| `selftest/selftest_degraded.py` | ✅ | 8 tests covering both shapes × both registry states; all pass |
+| `expect_authority_not_overstated` in oracle | ✅ | Correctly delegates to `known_bug_gate`; mixed-type artifacts map handled safely |
+
+### Acceptance Criteria
+
+- ✅ `--scenarios degraded` wired correctly — discoverable via the runner's `check_*.py` glob, `applies_to = {"claude"}`
+- ✅ `selftest_degraded` passes tool-free (8/8 green, 0.000s)
+- ✅ **M3 satisfied** — all three bugs (#32, #33, #36) now have dedicated flip-homes with rot-proof one-line flips
+- ✅ Full `--selftest` suite still passes (52 tests, 2.9s)
+- ✅ No new `test_*.py` at top level (CI-unchanged guarantee intact)
+- ✅ `experiments/` untouched (I1)
+
+### Code Quality Assessment
+
+**Strengths:**
+- **Defensive meta handling** (lines 72–92): guards against missing meta, unreadable meta, AND the case where the forced failure didn't take (preventing a misleading "flip the flag" message)
+- **Correct `monitor=False`**: S7 is about the sidecar authority label, not viewer completeness — skipping the viewer monitor is appropriate and well-commented
+- **Mixed-type `artifacts` map tolerance**: `authority_overstated` correctly handles the real sidecar shape where `authoritative_event_path` is a bare string alongside dict entries (line 269: `entry.get("role") if isinstance(entry, Mapping) else entry`)
+- **Rot-proof in both directions**: the self-test exercises all four branches of the known-bug gate (active×buggy, active×fixed, flipped×fixed, flipped×buggy) — verified passing
+
+**No issues found.** The env var name (`AI_OBSERVE_TEST_FAIL_AFTER`) matches the source code's `env_value(env, "TEST_FAIL_AFTER")` at `observe.py:246` exactly.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 5 delivers a clean, well-tested S7 degraded scenario with a rot-proof #36 flip-home, completing M3 for all three open bugs.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

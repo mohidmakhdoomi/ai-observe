@@ -1,0 +1,8 @@
+Using direct file reads to review phase_1 implementation against the spec/plan.Running the phase-1 self-tests and a couple of verification checks from the plan.`python` isn't on PATH here, so I'm verifying with `python3` instead.Investigating the self-test failure to see whether the harness or the test assumptions are off.I want to separate “real regression” from “sandbox can’t open loopback sockets,” so I’m checking the repo’s existing viewer smoke test too.Comparing the graduated harness to the original experiment harness for phase-1 parity.I’m skimming the remaining phase-1-related project notes/review artifacts so I don’t re-raise something already discussed.---
+VERDICT: APPROVE
+SUMMARY: Phase 1 delivers the planned package scaffold, checkout-first harness, and in-process ephemeral-port ViewerMonitor with appropriate tool-free self-tests.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

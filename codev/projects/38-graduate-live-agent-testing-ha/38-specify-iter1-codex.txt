@@ -1,0 +1,9 @@
+Using local project files to verify the spec against referenced architecture/testing constraints.Checking the concrete implementation references the spec relies on: viewer server, experiment harnesses, and packaging entrypoints.Verifying a couple of runner-shape details that could affect feasibility: `tests` packaging and the degraded-path hook.One more quick check on how tests currently import `src/`, since the spec leans on that convention.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong, feasible spec overall, but it leaves one in-scope requirement unresolved and underspecifies how persisted raw artifacts stay out of git.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The spec is internally inconsistent on bug **#36**. The Summary, Constraints, and acceptance criteria frame **#32/#33/#36** as in-scope open-bug signatures the graduated suite must cover, but the Open Questions section still defers “Is the #36 degraded scenario in v1 scope?” to the architect. That is a real scope contradiction: builders cannot know whether `check_degraded.py`/S7 are required. Recommend deciding this in the spec now (preferably **include #36** and remove the conditional language around M3/S7).
+- The artifact-retention rule needs one more hard boundary. Decision 7 says raw artifacts default to temp dirs, good, but `--keep-artifacts <dir>` appears to allow arbitrary in-worktree destinations while only adding `tests/agent_sessions/.gitignore` as protection. That does **not** keep artifacts out of git if a developer points at some other tracked subtree. Recommend specifying one of: (a) `--keep-artifacts` only accepts paths outside the repo, (b) it only accepts a fixed ignored subtree, or (c) it refuses in-repo paths unless they are under a known ignored location.
+

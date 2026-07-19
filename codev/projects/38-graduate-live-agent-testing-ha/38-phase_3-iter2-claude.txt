@@ -1,0 +1,70 @@
+Let me read the Phase 3 deliverables - the scenario files and the selftest_drivers.Now let me check the oracle and harness for the functions these scenarios depend on:Now let me check the `__main__.py` for the `discover_scenarios` function and scenario wiring, and the previous iteration's review context:Now let me also check the plan's change log deviation note about #32/#33 deterministic probes and the `__init__.py`:Let me verify the selftests pass for the Phase 3 deliverables:Good, all Phase 3 selftests pass. Let me also quickly verify the full selftest suite still passes and that no top-level `test_*.py` was added:All 40 selftests pass. No new `test_*.py` added — the existing set is unchanged. Let me now do a final check on the plan deviation (the deterministic parser probes for #32/#33 instead of live-event gating):Good. The deterministic parser probes are well-integrated. Let me verify the selftest_oracle covers the #32/#33 probes:I have a thorough picture of the Phase 3 implementation now. Let me compile my review.
+
+---
+
+## Phase 3 Review: Single-prompt scenarios S1–S4 + #32 flip-home
+
+### 1. Spec Adherence
+
+**S1 (single_write)** ✅ — Hard agent-actual (presence + content), hard canonical (writes_onto), codex #33 annotation, hard viewer completeness. Matches spec S1.
+
+**S2 (ephemeral)** ✅ — Hard agent-actual (file absent), deterministic #32 parser probe as the bug gate (architect-endorsed deviation from live-event gating, documented in plan Change Log), informational `note()` for the live deletion form, hard viewer completeness. The #32 flip-home is `OPEN_BUGS[32].active = False` — a one-line change (M3 partial).
+
+**S3 (modify)** ✅ — Seeds a file before the session, hard agent-actual (presence + appended content), hard canonical, hard viewer completeness.
+
+**S4 (subprocess)** ✅ — Three grandchild-shell files, hard agent-actual per file, hard canonical per file, codex #33 annotation, hard viewer completeness.
+
+**selftest_drivers** ✅ — Locks per-tool argv construction and scenario registration/applicability (tool-free).
+
+### 2. Code Quality
+
+The code is clean, well-documented, and consistent. Observations:
+
+- The `scenarios/__init__.py` provides clean shared helpers (`drive`, `session_dirs`, `viewer_served_all`) that reduce duplication across scenarios.
+- The deterministic parser probes in `oracle.py` (`bug32_signature`, `bug33_unpaired_marker_delete`) are elegant — they exercise the real `trace_parser` with crafted strace lines rather than depending on nondeterministic agent behavior. The plan's Change Log documents this deviation and the architect endorsed it.
+- The `note()` function for non-gating informational records is a good design choice — it retains live evidence without gate flap.
+
+One minor observation: in `check_single_write.py:42`, `expect_no_marker_noise` is called for codex without passing any events — it's a deterministic probe that doesn't need them (it drives the parser internally). This is correct but might surprise a reader expecting the live events to be inspected. The docstring/comment in `oracle.py` makes this clear though.
+
+### 3. Test Coverage
+
+- **selftest_drivers.py**: 5 tests — argv construction for all 3 tools + scenario registration + applicability sets. All pass.
+- **selftest_oracle.py**: Already covers the #32/#33 deterministic probes (both signature detection and gate tracking), plus all four `known_bug_gate` branches, `ensure_tool_usable`, and #36 authority checks. 14 tests, all pass.
+- Full suite: **40/40 green**, tool-free.
+
+The test coverage is strong. The Phase 3 deliverables add the scenario modules themselves (live-tier, require agents) and the argv/registration selftests (tool-free), which is the right split.
+
+### 4. Error Handling
+
+- `drive()` in `scenarios/__init__.py` applies the M4 usability gate via `ensure_tool_usable` — any nonzero return or zero events raises `ToolUnusable`, which `run_suite` converts to a loud named fail.
+- File reads in scenarios use defensive patterns (e.g., `target.read_text() if target.exists() else ""`).
+- The viewer completeness check handles the `disk_events` being `None` via `(res.disk_events or {}).get("total", 0)`.
+
+### 5. Plan Alignment
+
+All Phase 3 deliverables are present:
+- [x] `scenarios/__init__.py`
+- [x] `scenarios/check_single_write.py` (S1; codex #33 annotated)
+- [x] `scenarios/check_ephemeral.py` (S2; #32 flip-home)
+- [x] `scenarios/check_modify.py` (S3)
+- [x] `scenarios/check_subprocess.py` (S4)
+- [x] `selftest/selftest_drivers.py` (tool-free argv + registration tests)
+
+The architect-endorsed deviation (deterministic parser probes for #32/#33 instead of live-event gating) is documented in the plan's Change Log and implemented correctly. The `note()` mechanism retains live evidence without gating — this is a sound compromise for agent nondeterminism.
+
+### 6. Previous Iteration Context
+
+The iter-1 rebuttals show two Codex issues were accepted and fixed:
+1. S1 content assertion added ✅ (verified in `check_single_write.py:36`)
+2. Viewer completeness upgraded via `viewer_served_all` ✅ (verified in all four scenarios)
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Phase 3 delivers all four single-prompt scenarios (S1–S4) with correct three-view oracle assertions, the #32 deterministic flip-home, codex #33 annotations, and tool-free selftests — all 40 selftests pass, no CI impact.
+CONFIDENCE: HIGH
+
+---
+
+KEY_ISSUES:
+- None

@@ -1,0 +1,16 @@
+# Raw ai-observe artifacts from live-agent suite runs are large and SENSITIVE:
+# absolute paths, wrapped-command argv/prompts, and raw syscall text — see the repo
+# README's severe sensitive-data warning. By default the suite writes them to an
+# auto-cleaning temp dir OUTSIDE the repo; the only in-repo destination that
+# `--keep-artifacts` accepts is this ignored `.artifacts/` subtree. Never commit them.
+.artifacts/
+
+# Defense-in-depth: raw artifact files + the wrapper stdout/stderr logs, wherever they
+# land under this tree (mirrors experiments/.gitignore).
+*.trace
+*.jsonl
+*.jsonl.partial
+*.jsonl.rebuilt
+*.meta.json
+*.stdout.log
+*.stderr.log

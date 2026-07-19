@@ -1,0 +1,8 @@
+Using filesystem reads to review the phase-4 implementation against the spec/plan.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 4 implementation is functionally in place and the prior timeline fixes are present, but the tool-free coverage does not fully satisfy the phase’s “exact chained-shell string per tool” acceptance bar.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/selftest/selftest_drivers.py:49-52` only uses `assertIn(...)` for the agy multi-turn chain, so it does **not** pin the exact chained shell string for agy as required by the phase 4 plan/acceptance criteria. This leaves ordering/omission regressions in the 3-turn agy chain unguarded; the test should assert the full expected string, analogous to the claude/codex cases.

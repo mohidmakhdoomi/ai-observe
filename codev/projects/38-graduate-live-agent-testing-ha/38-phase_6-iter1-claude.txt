@@ -1,0 +1,46 @@
+Now let me verify the M2 acceptance criterion — that no new top-level `test_*.py` was added:Good — no new `test_*.py` and `experiments/` is clean. Let me run the selftest to verify it passes:All 52 self-tests pass. Let me verify the `.gitignore` mirrors the `experiments/.gitignore` patterns as required:I've reviewed all Phase 6 deliverables. Let me summarize my findings:
+
+## Phase 6 Review: Docs, gitignore, README pointer, acceptance sweep
+
+### Deliverables Check
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| `docs/agent-sessions.md` | ✅ Complete | 169 lines, thorough and well-structured |
+| `tests/agent_sessions/.gitignore` | ✅ Complete | Mirrors `experiments/.gitignore` patterns with defense-in-depth |
+| `README.md` pointer | ✅ Complete | Clean 3-line addition in Documentation section |
+
+### N3 Coverage (docs content)
+
+| Required Item | Present? |
+|---|---|
+| Per-tool prereqs + auth expectations | ✅ "Per-tool prerequisites" section |
+| Why CI is local-only | ✅ "Why this is not in CI" section |
+| `--dangerously-skip-permissions` implications | ✅ Dedicated subsection |
+| Sandbox-friendly throwaway workdir guidance | ✅ Same section, clear warning |
+| Known-bug annotations + how to flip | ✅ Table + code example |
+| F5 (viewer requires `.jsonl` at launch) | ✅ Dedicated subsection |
+| F7 (orphaned-session recovery via `.trace`) | ✅ Dedicated subsection |
+| Run-from-root (PEP 420 note) | ✅ Callout box after "The one command" |
+
+### Acceptance Criteria Verification
+
+- **M2**: `ls tests/test_*.py` yields the same 18 files — no new top-level test module. ✅
+- **I1**: `git status --porcelain experiments/` is empty. ✅
+- **Selftest**: `python -m tests.agent_sessions --selftest` → 52 tests, all OK, 2.9s. ✅
+- **Docs cover N3**: All items present including F5 and F7. ✅
+
+### Quality Notes
+
+- Cross-document links are all valid (`../tests/agent_sessions/oracle.py`, `observe.md`, `viewer.md`, `../README.md`).
+- The `.gitignore` comment explains *why* the files are sensitive — helpful for future contributors.
+- The README addition is minimal and placed correctly (alphabetically between `viewer.md` and `RELEASING.md`).
+- Exit codes are documented (0/1/2/3) — a nice touch not explicitly required but useful.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 6 delivers clean docs covering all N3 items (prereqs, auth, permissions, sandbox, F5/F7), a correct .gitignore, a README pointer, and all acceptance criteria (M2, I1, selftest green) are verified.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

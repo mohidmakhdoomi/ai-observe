@@ -1,0 +1,15 @@
+---
+VERDICT: APPROVE
+SUMMARY: The core harness and ephemeral ViewerMonitor are implemented perfectly according to the Phase 1 spec.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+**Notes on implementation:**
+- `ViewerMonitor` correctly instantiates `ViewerServer(..., port=0)` and reads the dynamically assigned `.url` and `.port`, removing the risk of port collisions.
+- `resolve_ai_observe` properly prioritizes the checkout `bin/ai-observe` script before falling back to `PATH`, ensuring tests run against the local worktree.
+- `run_observed_session` adheres to the sequencing contract (F5) by running the tool first and only attaching the viewer monitor once the `.jsonl` exists and is non-empty.
+- The `sys.path` injection in `tests/agent_sessions/__init__.py` correctly scopes to the `src` directory without polluting it with the `experiments` folder.
+- `tests/agent_sessions/selftest/selftest_harness.py` completely covers the core logic and does not depend on agent tooling.

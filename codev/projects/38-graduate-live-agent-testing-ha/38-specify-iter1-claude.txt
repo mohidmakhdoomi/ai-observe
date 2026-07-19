@@ -1,0 +1,81 @@
+I'll review this spec by verifying its claims against the actual codebase. Let me read the key files referenced.Good — the `.url` property exists on `ViewerServer` as the spec claims. Let me check one more thing about the CI workflow to verify the spec's claim about how tests are discovered.Good. I've now verified the key claims. Let me also quickly check the `AI_OBSERVE_TEST_FAIL_AFTER` hook actually exists in the source (the grep found it only in tests and experiments, not in `src/`):Good — the `TEST_FAIL_AFTER` hook exists in `src/ai_observe/observe.py` via `env_value` (which presumably prepends `AI_OBSERVE_`). The spec's claim about the "in-tree hook" is correct.
+
+Now I have enough information for a thorough review.
+
+---
+
+## Specification Review: Graduate Live-Agent Testing Harness (Spec 38)
+
+### 1. Clarity and Completeness
+
+**Excellent.** This is one of the most thorough specs I've seen. Key strengths:
+
+- The problem statement clearly frames why the experiment code needs graduation (throwaway → maintained).
+- Every design decision is numbered, justified, and alternatives are documented with rejection reasons.
+- The known-bug oracle mechanism (Decision 5) is explained with both the semantic model *and* concrete code examples.
+- Success criteria are specific and testable (M1–M6, N1–N3, I1).
+- Test scenarios (S1–S8) map directly to acceptance criteria.
+
+### 2. Technical Feasibility — Verified Against the Codebase
+
+All key claims check out:
+
+- ✅ **CI glob is `ls test_*.py`** — confirmed in `.github/workflows/ci.yml:82`. A `tests/agent_sessions/` package with `check_*.py` files is genuinely invisible to CI.
+- ✅ **`ViewerServer` supports `port=0` and `.url`** — confirmed in `server.py:370` (`_HOST, port`) and `server.py:376` (the `.url` property).
+- ✅ **Harness is 438 lines, stdlib-only** — confirmed.
+- ✅ **`AI_OBSERVE_TEST_FAIL_AFTER` hook exists in `src/`** — confirmed in `observe.py:246`.
+- ✅ **`experiments/.gitignore` patterns** — confirmed; the spec's belt-and-suspenders `.gitignore` mirrors them.
+- ✅ **All referenced experiment files exist** (Exp 4 `multiturn.py`, Exp 6 `degraded.py`, Exp 9 `incremental.py`).
+- ✅ **`tests/` has no `__init__.py`** — so adding `tests/agent_sessions/__init__.py` as a package won't change how CI discovers top-level modules (since CI uses `ls test_*.py`, not `discover`).
+
+### 3. Edge Cases and Error Scenarios
+
+**Well covered.** The spec addresses:
+
+- Missing tools (preflight with `shutil.which`, loud failure).
+- Unauthenticated tools (first scenario as auth probe, loud failure naming the tool).
+- Port collisions (OS-assigned ephemeral ports).
+- Artifact leakage (temp-dir default + gitignore belt-and-suspenders).
+- Bug rot (annotation flips loud if bug stops reproducing).
+
+**One minor gap I'd flag:**
+
+- **Concurrent suite runs sharing a viewer**: the spec says parallel runs can't collide on ports (correct), but doesn't mention whether the `ViewerServer` can handle being started against a `.jsonl` that's still being actively written by `ai-observe`. The experiments proved this works in practice, but the spec could be more explicit that the viewer attaches to an in-progress artifact. This is addressed obliquely by F5 ("start the session first, then attach the viewer") but the graduated harness presumably automates this sequencing — worth confirming the scenario ordering is spec'd in the driver layer.
+
+### 4. Security Considerations
+
+- Raw artifacts in temp dirs + gitignore is the right call — `.trace` files contain absolute paths, prompts, and raw syscalls.
+- `--dangerously-skip-permissions` is documented with a sandbox-workdir recommendation.
+- No network credentials are stored; tools use their own auth mechanisms.
+
+No concerns here.
+
+### 5. Testing Strategy
+
+The S1–S8 scenario matrix is thorough and well-mapped to the acceptance criteria. **S8 (tool-absence)** is particularly clever — it tests the gating mechanism itself without needing any agent installed, making it the one scenario that's actually runnable everywhere.
+
+### 6. Minor Observations (non-blocking)
+
+1. **Open Question 1 (Decision-Q1: include #36 degraded scenario?)** — The spec recommends "yes" and I agree. Deferring it means #36 is the only open bug without an oracle home, which undermines the completeness story. The forced-degraded path is claude-only and uses an in-tree hook, so the marginal cost is low.
+
+2. **Open Question 2 (auth-probe cost)** — Reusing the first scenario is pragmatic. A separate warmup prompt doubles wall-clock time per tool for marginal UX improvement (seconds vs. minutes).
+
+3. **`__main__.py` report format** — The spec mentions "report" output but doesn't specify its shape (structured JSON? human-readable table? both?). This is a plan-phase detail, but a builder might benefit from a one-line pointer like "human-readable summary to stderr, optional `--json` for structured output."
+
+4. **`--scenarios` filter** — The spec mentions this flag but doesn't specify the naming convention for targeting scenarios. Is it `--scenarios single_write,ephemeral` (dropping the `check_` prefix)? Again, plan-phase, but a nod toward the convention would help.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Thorough, well-grounded spec whose claims are verified against the codebase; ready for human review.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None — all critical design decisions are sound and technically verified.
+MINOR_SUGGESTIONS:
+- Include the #36 degraded scenario (Decision-Q1) to give all three open bugs an oracle home.
+- Consider noting the report output format (human-readable? JSON?) to guide the builder.
+- Confirm that the driver layer's sequencing (start session → attach viewer) is explicit in the harness contract.
+```

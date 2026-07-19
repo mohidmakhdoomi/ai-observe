@@ -1,0 +1,56 @@
+I'll read the Phase 4 deliverables - the key files that were added or modified in this phase.Now let me check the supporting files that were modified or referenced by Phase 4:Let me also check the oracle's `expect_no_marker_noise` and `ensure_tool_usable` functions, and look at `harness.py`'s `writes_onto` and `run_observed_command`:Now let me check the `bug33_unpaired_marker_delete` function and how #33 is actually probed:Now let me check the plan's change log note about the Phase 3 deviation that affects Phase 4, and verify `check_multi_turn.py`'s #33 handling aligns with that deviation:Now let me run the selftest to verify Phase 4 tests pass:Good, all selftest_drivers tests pass. Let me also run the full selftest suite to confirm nothing regressed:All 44 tests pass. Let me now verify the Phase 4 deliverables against the plan's checklist:Let me verify one thing about the `__main__.py` scenario discovery to make sure Phase 4 scenarios are properly registered:Good — auto-discovery via glob. Phase 4's `check_multi_turn.py` and `check_timeline.py` will be auto-discovered.
+
+Now I have a thorough understanding of the Phase 4 implementation. Let me summarize my review:
+
+---
+
+## Phase 4 Review: Multi-turn (Exp4) + Timeline (Exp9) + #33 flip-home
+
+### Deliverables Checklist
+
+| Deliverable | Status | Notes |
+|---|---|---|
+| `drivers.py` — chained multi-turn driver | ✅ | Clean port with per-tool resume flags, `&&`-chained, correct codex `--sandbox`-before-`resume` ordering |
+| `probes.py` — timeline-sampling probe | ✅ | Non-blocking `Popen`, in-process ephemeral-port viewer, F5 sequencing honored |
+| `scenarios/check_multi_turn.py` (S5) | ✅ | Three-turn chain, agent-actual HARD, canonical HARD, codex #33 annotated, viewer completeness |
+| `scenarios/check_timeline.py` (S6) | ✅ | claude-only, ≥3 distinct increasing ticks, final completeness |
+| `selftest/selftest_drivers.py` extended | ✅ | Chained argv tests for all 3 tools, codex footgun assertion, scenario registration + applicability |
+
+### Spec Adherence
+
+- **M5** (Exp-4 + Exp-9 folded in): Both drivers graduated into `drivers.py` and `probes.py` with dedicated scenarios. ✅
+- **#33 flip-home**: `expect_no_marker_noise` in `check_multi_turn.py` for codex, using the deterministic `trace_parser` probe (per the Phase 3 deviation). The flip is `OPEN_BUGS[33].active = False`. ✅
+- **S5 later-turn ops**: Asserts `writes_onto(turn2.txt) >= 1` (turn-2 captured) and `writes_onto(turn1.txt) >= 2` (turn-1 create + turn-3 append). ✅
+- **S6 timeliness**: Asserts `distinct_increasing >= 3` and `final_visible >= canonical_total`. ✅
+- **Decision 11** (start session first, then attach viewer): `probes.py:55-60` waits for `.jsonl` to exist before attaching the viewer. ✅
+
+### Code Quality
+
+- **`drivers.py`**: Clean, well-documented. The `_sh_quote` helper is correct (POSIX single-quote escaping). `chain_for` is straightforward and the `chained_command` wrapper is minimal.
+- **`probes.py`**: The timeline sampling loop is well-structured. Process cleanup in the `try/except` at line 77-80 handles the timeout case. The `start_new_session=True` in `Popen` is a nice detail for clean process group cleanup.
+- **Scenarios**: Both follow the established pattern (`SCENARIO` object with `.name`, `.applies_to`, `.run()`). `check_multi_turn` correctly validates continuity (seed + append in turn1.txt).
+
+### Potential Concern (Minor)
+
+1. **`probes.py` line 69**: `mon.collect_events(max_wait=1.8, settle=0.5)` is called inside the sampling loop. Each call opens a new socket connection and reads all events. For a long run with many events this re-reads the full SSE stream each tick. This mirrors the experiment's behavior and is fine for the current scale, but it's worth noting as a scaling consideration if the probe is ever pointed at much larger sessions.
+
+2. **`probes.py` process cleanup**: If the process finishes before the `.jsonl` exists (line 56-57 `proc.poll() is not None`), the code falls through to `ViewerMonitor(jsonl)` on a potentially non-existent file. The `mon.start(timeout=10.0)` would then return `False` (the `started` flag), and subsequent `collect_events` calls return `0` — so it degrades gracefully. This is fine behavior.
+
+3. **`check_multi_turn.py` line 61**: `expect_no_marker_noise` is called with no event data — per the Phase 3 deviation, #33 is a deterministic `trace_parser` probe, not live-event dependent. This is correct and consistent with the deviation rationale in the plan's change log.
+
+### Test Coverage
+
+- **Tool-free selftests**: `selftest_drivers.py` has 9 tests covering single-prompt argv (3 tools), chained multi-turn argv (4 tests including the codex footgun negative assertion), and scenario registration (2 tests covering all 6 scenarios including the Phase 4 additions). All pass. ✅
+- **Scenario applicability**: `multi_turn` → `{claude, agy, codex}`, `timeline` → `{claude}` — both verified in `test_applicability`. ✅
+
+### Plan Alignment
+
+The implementation matches the Phase 4 plan precisely. The deviation from the original plan (using deterministic `trace_parser` probes for #33 instead of live-agent events) was architect-endorsed in Phase 3 and is correctly carried forward here.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 cleanly graduates the multi-turn driver and timeline probe with correct #33 flip-home, adequate selftests, and faithful plan alignment.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

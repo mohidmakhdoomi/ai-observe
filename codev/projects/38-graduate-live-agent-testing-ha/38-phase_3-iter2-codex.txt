@@ -1,0 +1,8 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 3 is mostly in place, but S1’s hard agent-actual content check is too weak and does not enforce the spec’s exact-output requirement.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/scenarios/check_single_write.py:35-37` only checks `"hello" in content`, which would pass incorrect outputs like `"hello world"` or `"say hello"`. Phase 3/S1 requires `hello.txt` content to be correct for the hard agent-actual assertion; this should enforce exact content (typically allowing only trivial newline normalization).

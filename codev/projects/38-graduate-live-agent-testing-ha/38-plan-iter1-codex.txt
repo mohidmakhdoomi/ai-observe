@@ -1,0 +1,9 @@
+Using direct file reads to verify the plan against the actual codebase and referenced spec/tests.Reading the referenced experiment drivers and current repo layout to verify the plan’s file targets and assumptions.One more pass on existing test conventions and utility imports, to check the proposed package shape against current practice.Quick check of README structure to see whether the proposed Phase 6 pointer target is grounded in the current docs layout.Verifying the fixture path assumptions called out in the self-test plan.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Strong, well-ordered plan, but it leaves two spec-critical “loud failure” paths underdefined: unauthenticated tools and non-applicable requested tool/scenario pairs.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- The plan does not explicitly cover or test **M4’s unauthenticated-tool branch**. It tests `tool not found on PATH`, but not the case where a requested tool is installed yet unusable (e.g. no auth / no events / immediate agent failure). Add a deterministic seam or fake-tool/selftest path so this branch is implemented and verified, not left to incidental manual runs.
+- The runner behavior for **requested but non-applicable tool/scenario pairs** is underspecified. The plan says selection is “cartesian, minus applicability,” but for claude-only scenarios like `timeline`/`degraded`, silently omitting `agy`/`codex` would conflict with the spec’s “fail or exclude with an explicit reason naming the tool.” The plan should require explicit reporting or rejection for those requested pairs, and test it.

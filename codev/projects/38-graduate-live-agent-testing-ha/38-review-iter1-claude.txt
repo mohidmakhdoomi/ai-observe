@@ -1,0 +1,36 @@
+Now let me examine the core implementation files:Now let me check the docs, .gitignore, and README changes:Let me now check the README change and verify the git state:Let me verify a few more things — checking for debug code, TODOs, and running a quick grep for any issues:Good — the `print()` calls are all intentional CLI output (to stderr for messages, stdout for JSON), no debug code. Let me check one more thing — whether there are any sequential port constants or other issues the spec warned about:Both results are perfect: `port=0` (OS-assigned ephemeral) and the `sys.path.insert` mention is a docstring warning, not actual code. Let me check the selftest `__init__.py` files:All 52 self-tests pass. Let me also verify the main test suite is unaffected:236 tests, all passing, zero skips — the CI matrix is provably unchanged. Let me do one final check on branch status relative to main:I've completed a thorough review of this PR. Let me provide my verdict.
+
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally well-executed PR — all spec requirements verifiably met, 52/52 self-tests pass, CI matrix provably unchanged (236 tests, 0 skips), clean code with no debug artifacts.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Graduates the round-1/2 live-agent testing harness from `experiments/` into a maintained, opt-in test capability at `tests/agent_sessions/`. The suite drives real coding agents (claude, agy, codex) under `ai-observe` and asserts a three-view oracle — agent-actual files vs. canonical `.jsonl` vs. browser viewer. It is excluded from the default CI matrix by construction (files named `check_*.py`/`selftest_*.py`, never `test_*.py`).
+
+  ## Key Changes
+  - **Core harness** (`harness.py`): checkout-first `resolve_ai_observe`, in-process `ViewerMonitor` on OS-assigned ephemeral port (no port constants), session-then-viewer sequencing
+  - **Oracle** (`oracle.py`): three-view assertion layer + rot-proof known-bug registry (#32/#33/#36) with one-line flip to hard assertion
+  - **Opt-in runner** (`__main__.py`): `--tools`/`--scenarios`/`--json`/`--keep-artifacts`/`--selftest` with loud named tool-unusable failures and a sealed artifact boundary
+  - **7 scenarios** (S1–S7): single_write, ephemeral (#32 home), modify, subprocess, multi_turn (#33 home), timeline, degraded (#36 home)
+  - **Drivers/probes**: multi-turn chained driver (Exp 4) + timeline-sampling probe (Exp 9)
+  - **Documentation**: `docs/agent-sessions.md` (per-tool prereqs, auth, flags, F5/F7 notes), `.gitignore`, README pointer
+  - **Governance**: `arch.md` + `lessons-learned.md` entries for the opt-in suite and the deterministic known-bug-gate pattern
+
+  ## Test Plan
+  - `python3 -m tests.agent_sessions --selftest` passes (52/52 green, tool-free, runnable in CI-like environments)
+  - `python3 -m unittest discover -s tests -p "test_*.py"` = 236 tests, 0 skips (byte-identical to main)
+  - `experiments/` is untouched (`git diff main --stat -- experiments/` is empty)
+  - Full live capstone sweep documented in the review: claude (7 scenarios) + agy (5) fully green; codex loud-fails due to auth lapse (M4 designed behavior)
+
+**Notable quality observations:**
+- The rot-proof known-bug gate design is elegant — it asserts bugs *still reproduce* while active, failing loudly if silently fixed, preventing annotation rot in both directions
+- The deterministic parser-probe pivot (moving #32/#33 gates off live nondeterminism) was a smart deviation that eliminates flakiness without losing live coverage (retained as INFO records)
+- The `--keep-artifacts` boundary logic correctly handles the `ROOT == path` case, symlinks, and only accepts the ignored subtree as the in-repo escape hatch
+- The `ViewerMonitor` correctly handles construction failure (swallowed into the boolean API) and uses the actual host/port from `urlsplit(self.url)` rather than assumptions
+- All 3 untracked files are consultation context artifacts in `codev/projects/` — not deliverables, appropriate to leave uncommitted

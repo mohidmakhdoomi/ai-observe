@@ -75,6 +75,10 @@ while producing a broken canonical diff (reviewers see imports of a file that is
 commit). `git add` new files the moment they are created, and check `git status` for `??`
 entries before signaling a build complete.
 
+## Gate known bugs on deterministic reproductions, not live-agent nondeterminism
+
+When a regression test must tolerate a known-but-open bug, do not gate it on a *live* trigger whose form varies run-to-run (an agent's deletion syscall shape, a sandbox's marker-probe volume): the annotation flaps between "reproduces" and "no longer reproduces" and either flags a phantom fix or masks a real one. Reproduce the bug deterministically through the real underlying component instead — feed the exact syscall forms through the actual `trace_parser`, or assert on a synthetic-but-realistic sidecar dict shaped like the real one — so the gate is stable and tool-free. Pair it with a *rot-proof* gate: while the bug is active, assert it STILL reproduces (a silent upstream fix then fails loudly, demanding the one-line flip); once flipped inactive, assert the corrected behavior (a regression fails loudly). Keep the whole thing an assertion path, never a `unittest.skip`, so it never interacts with a fail-loud-on-skip CI rule. Retain the noisy live signal separately as a non-gating `INFO` record so evidence is not lost.
+
 ## Scope import fallbacks to "package absent", not any ImportError
 
 A shim that prefers an installed package but falls back to a checkout path should catch `ModuleNotFoundError` and fall back **only** when the top-level package itself is missing (`exc.name == "<package>"`). Catching broad `ImportError` (or any `ModuleNotFoundError`) makes a broken/incomplete install silently resolve to the checkout copy, masking the real failure. Test all three states — installed, absent→fallback, and present-but-broken→surface — and force the fallback hermetically (a `sys.meta_path` blocker, or `python -S`) so the test holds even where the package is installed.

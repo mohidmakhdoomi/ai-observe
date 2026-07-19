@@ -1,0 +1,8 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 4 is mostly in place, but the new timeline probe drops wrapper stderr, so the promised `--keep-artifacts` auth/error inspection path does not work for this scenario.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/probes.py:49-51` launches the long-running `ai-observe` process with `stdout/stderr=DEVNULL`. That means if `timeline` is the first/only selected scenario and claude is unauthenticated or errors, the runner still tells the user to rerun with `--keep-artifacts` to inspect stderr (`tests/agent_sessions/__main__.py:111-115`), but this code path never preserves any stderr to inspect. Please persist wrapper stderr/stdout for the timeline probe (e.g. into the scenario outdir) so Phase 4 stays aligned with Decision 4’s loud-fail/debuggability contract.

@@ -1,0 +1,211 @@
+id: '38'
+title: graduate-live-agent-testing-ha
+protocol: spir
+phase: verify
+plan_phases:
+  - id: phase_1
+    title: Core harness + in-process ephemeral-port ViewerMonitor
+    status: complete
+  - id: phase_2
+    title: Oracle, known-bug registry, and opt-in runner (CLI + gating)
+    status: complete
+  - id: phase_3
+    title: 'Single-prompt scenarios S1-S4 + #32 flip-home'
+    status: complete
+  - id: phase_4
+    title: 'Fold in round-2 drivers: multi-turn (Exp4) + timeline (Exp9) + #33 flip-home'
+    status: complete
+  - id: phase_5
+    title: 'Degraded parse-failure scenario (Exp6) + #36 flip-home'
+    status: complete
+  - id: phase_6
+    title: Docs, gitignore, README pointer, acceptance sweep
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-07-17T16:59:41.765Z'
+    approved_at: '2026-07-17T17:01:07.610Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-07-17T17:09:50.975Z'
+    approved_at: '2026-07-17T17:10:54.399Z'
+  pr:
+    status: approved
+    requested_at: '2026-07-19T04:29:26.984Z'
+    approved_at: '2026-07-19T04:52:50.952Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history:
+  - iteration: 1
+    plan_phase: phase_1
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_1-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_1-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_1-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase_2
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter1-claude.txt
+  - iteration: 2
+    plan_phase: phase_2
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter2-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter2-claude.txt
+  - iteration: 3
+    plan_phase: phase_2
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter3-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter3-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_2-iter3-claude.txt
+  - iteration: 1
+    plan_phase: phase_3
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter1-claude.txt
+  - iteration: 2
+    plan_phase: phase_3
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter2-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter2-claude.txt
+  - iteration: 3
+    plan_phase: phase_3
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter3-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter3-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_3-iter3-claude.txt
+  - iteration: 1
+    plan_phase: phase_4
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter1-claude.txt
+  - iteration: 2
+    plan_phase: phase_4
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter2-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter2-claude.txt
+  - iteration: 3
+    plan_phase: phase_4
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter3-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter3-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter3-claude.txt
+started_at: '2026-07-17T16:49:04.061Z'
+updated_at: '2026-07-19T04:53:27.147Z'
+force_advanced:
+  phase: phase_4
+  iteration: 3
+  max_iterations: 3
+  rebuttal_file: 38-phase_4-iter3-rebuttals.md
+  at: '2026-07-19T03:56:07.074Z'
+pr_ready_for_human: false

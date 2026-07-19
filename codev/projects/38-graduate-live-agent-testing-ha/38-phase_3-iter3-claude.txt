@@ -1,0 +1,44 @@
+I'll read the Phase 3 deliverables and their key dependencies to review the implementation.Now let me read the oracle.py and harness.py to verify the helpers these scenarios depend on:Let me check the key harness helper `writes_onto` and `__main__.py`'s `discover_scenarios`:Now let me check the plan's Phase 3 changelog deviation about deterministic `trace_parser` probes, and verify the selftest covers the bug gates:Now let me verify the selftests actually pass:All 18 tests pass. Let me also verify the `--selftest` runner path works and that CI tests are unchanged:All 40 self-tests pass. CI test set (`test_*.py`) is unchanged. Let me verify `experiments/` is untouched:Clean. Now let me review the implementation against the Phase 3 plan requirements systematically.
+
+**Phase 3 Deliverables Check:**
+
+| Deliverable | Status |
+|---|---|
+| `tests/agent_sessions/scenarios/__init__.py` | ✅ Present with `session_dirs`, `viewer_served_all`, `drive` helpers |
+| `scenarios/check_single_write.py` (S1) | ✅ codex #33 annotated |
+| `scenarios/check_ephemeral.py` (S2, #32 home) | ✅ deterministic probe + informational live note |
+| `scenarios/check_modify.py` (S3) | ✅ |
+| `scenarios/check_subprocess.py` (S4) | ✅ codex #33 annotated |
+| `selftest/selftest_drivers.py` | ✅ argv + scenario registration tests |
+
+**Phase 3 Acceptance Criteria Check:**
+
+1. **S1–S4 runnable via `--scenarios`**: The scenarios are registered via `discover_scenarios()` and expose the `SCENARIO` protocol object. Self-test confirms discovery. ✅
+2. **S2 records `known-bug:#32`**: The `expect_deletion_captured` call uses the deterministic parser probe; self-test confirms it produces `known-bug:#32` while `OPEN_BUGS[32].active=True`. ✅
+3. **`selftest_drivers` passes tool-free**: Verified — 5/5 tests pass. ✅
+
+**Code Quality Assessment:**
+
+1. **Scenario structure is clean and consistent.** Each scenario follows the same pattern: class with `name`/`applies_to`/`run()`, exposed as `SCENARIO`. Readable and maintainable.
+
+2. **The plan deviation (deterministic trace_parser probes for #32/#33)** is well-motivated and documented. The live scenario records the agent's actual deletion form as an `INFO` note (non-gating) while the bug gate uses the deterministic probe. This eliminates the flapping issue the changelog describes.
+
+3. **`check_ephemeral.py:48`** — `expect_deletion_captured(self.name, tool)` doesn't pass `bug=32` explicitly, but the function signature defaults to `bug=32`, so this is fine — it's the intended call site for #32.
+
+4. **`check_single_write.py:44`** and **`check_subprocess.py:32`** — `expect_no_marker_noise` is called for codex only, which is correct since #33 is a codex-specific issue. However, the call passes `self.name, tool` but NOT the events — the probe is deterministic (parser-based), so it doesn't need live events. Consistent with the deviation.
+
+5. **`scenarios/__init__.py`** `viewer_served_all` accesses `res.disk_events` which could be `None`; it's handled with `(res.disk_events or {}).get("total", 0)`. ✅
+
+6. **Prompt engineering**: The prompts are clear and directive ("Then stop."), which should give deterministic agent behavior. Good.
+
+7. **`check_modify.py`**: Seeds the file before the session, creates the workdir, then drives. The `drive()` call will also create dirs via `run_observed_session`. This could double-create, but `mkdir(parents=True, exist_ok=True)` handles it. ✅
+
+One minor observation: `check_ephemeral.py` doesn't apply to codex (line 26: `applies_to = {"claude", "agy"}`), which is correct per the spec — codex deletes via `unlink(<abs>)` which ai-observe already captures, so the #32 path doesn't apply to codex.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 3 delivers all four single-prompt scenarios (S1–S4) with the #32 flip-home, deterministic parser probes for bug gates, comprehensive tool-free self-tests, and correct scenario applicability — all passing cleanly with CI unchanged.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

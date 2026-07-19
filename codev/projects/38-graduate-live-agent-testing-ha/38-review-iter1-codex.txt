@@ -1,0 +1,22 @@
+Using direct file reads to verify the PR against the actual codebase, spec, and plan.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Implementation looks aligned with the spec, but the branch is not PR-clean: commit hygiene violates the repo’s required format and the worktree still has an untracked file.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- Commit history is not PR-ready per repo policy: the branch is ahead of `main` by 46 commits, and many commits are `chore(porch): ...` instead of the required `[Spec 38][Phase] ...` format.
+- Working tree is dirty: `codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter3-context.md` is currently untracked (`git status --short`), so the branch is not clean for handoff/PR prep.
+- Minor: I could not independently validate the claimed test results in this sandbox because the environment has no usable writable temp directory and appears to block local viewer startup, so test verification here is inconclusive rather than confirming the review doc’s pass claims.
+
+PR_SUMMARY: |
+  ## Summary
+  This PR graduates the experimental live-agent harness into a maintained opt-in test suite under `tests/agent_sessions/`. It adds a stdlib-only harness, scenario runner, three-view oracle, deterministic known-bug gates for #32/#33/#36, and supporting docs.
+
+  ## Key Changes
+  - Added `tests/agent_sessions/` with harness, runner, oracle, drivers, probes, scenarios, and tool-free self-tests.
+  - Documented local usage, auth/prereqs, artifact handling, and CI-by-construction exclusion in `docs/agent-sessions.md`, README, and governance docs.
+
+  ## Test Plan
+  - Run `python3 -m tests.agent_sessions --selftest`
+  - Run `python3 -m tests.agent_sessions --tools <authenticated tools>`
+  - Verify default CI-collected `tests/test_*.py` set remains unchanged and no new skip-based gating was introduced

@@ -1,0 +1,21 @@
+---
+VERDICT: APPROVE
+SUMMARY: The live-agent test harness is implemented cleanly and safely, honoring all plan requirements and isolation constraints.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR graduates the live-agent testing harness from the early experiments phase into a fully maintained, opt-in test suite under `tests/agent_sessions/`. It implements a deterministic three-view oracle to validate agent interactions, integrates rot-proof bug assertions for tracking known issues, and guarantees that the default CI matrix remains provably unchanged by keeping live-testing logic out of the standard `unittest` discovery scope.
+
+  ## Key Changes
+  - Ports the core harness to `tests/agent_sessions/harness.py`, using ephemeral ports for the in-process viewer server to eliminate port collisions.
+  - Implements an oracle (`tests/agent_sessions/oracle.py`) that uses deterministic parser probes for tracking known bugs (#32, #33, #36), ensuring rot-proof assertions once fixes upstream are merged.
+  - Provides a robust CLI runner (`tests/agent_sessions/__main__.py`) with an auto-cleaning artifact boundary that strictly blocks writing inside tracked repository paths.
+  - Refactors testing workflows into a tool-free plumbing test tier (via `--selftest`) and a live-agent testing tier.
+
+  ## Test Plan
+  - Run tool-free regression checks using `python -m tests.agent_sessions --selftest` from the repository root.
+  - Validate the real agent workflows and deterministic bug gates by running `python -m tests.agent_sessions --tools claude,agy,codex` on a machine with all authenticated agents.

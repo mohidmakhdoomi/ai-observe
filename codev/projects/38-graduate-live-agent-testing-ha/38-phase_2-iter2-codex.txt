@@ -1,0 +1,9 @@
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Phase 2 is close, but the runner still preflights explicitly named tools before scenario applicability is known, so the required non-applicable `excluded` behavior is not actually correct or covered end-to-end.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- `tests/agent_sessions/__main__.py:236-259` preflights every `--tools` entry before scenario selection/applicability resolution. That conflicts with the Phase 2 requirement that a requested-but-non-applicable pair be reported as explicit `excluded` rather than hard-failing. Example: `--tools claude,codex --scenarios timeline` should exclude `codex`, but the current order would fail first if `codex` is absent instead of emitting the planned exclusion.
+- `tests/agent_sessions/selftest/selftest_runner.py:50-67` only checks non-applicable handling via `run_suite()` directly, not through the real CLI/main path. Because of that, the ordering bug above is not caught, and the phase’s acceptance criterion for explicit `excluded` behavior in summary/`--json` is not actually verified end-to-end.

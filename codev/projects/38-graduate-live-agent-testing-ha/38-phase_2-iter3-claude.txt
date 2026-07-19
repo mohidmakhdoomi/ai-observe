@@ -1,0 +1,65 @@
+Let me read the Phase 2 deliverables.Let me also check a few things referenced by the Phase 2 code:All 28 tests pass. Let me verify the `--selftest` entry point works too:All 32 self-tests pass (28 from Phase 2 + 4 from Phase 1's `selftest_harness`). Now let me verify the acceptance criteria systematically:Both gating paths work correctly. Let me verify a couple more details:No new `test_*.py` files, `experiments/` is clean. This is a clean Phase 2 implementation. Let me do a final quality check on one nuance:Everything checks out. Here's my review:
+
+---
+
+## Phase 2 Review: Oracle, Known-Bug Registry, and Opt-In Runner
+
+### Spec Adherence
+
+All Phase 2 deliverables are present and match the spec/plan:
+
+- **`oracle.py`** — `KnownBug`, `OPEN_BUGS` (32/33/36 all `active=True`), `CheckResult` with the correct status vocabulary (`pass`/`fail`/`excluded`/`known-bug:#N`), hard-assert helpers, and all three bug-specific gates (`expect_deletion_captured`, `expect_no_marker_noise`, `expect_authority_not_overstated`) built on the single `known_bug_gate` primitive. The rot-proof semantics are correct: active+reproduces→annotated, active+gone→fail("flip the flag"), inactive+correct→pass, inactive+buggy→fail("regressed").
+
+- **`__main__.py`** — Full CLI with `--tools`/`--scenarios`/`--json`/`--keep-artifacts`/`--timeout`/`--selftest`. Preflight is loud and names missing tools. The `--keep-artifacts` boundary correctly uses `is_relative_to(ROOT)` and accepts the ignored subtree. Artifact management uses `TemporaryDirectory` for auto-cleanup. Scenario discovery via `discover_scenarios()` gracefully returns `{}` before Phase 3 adds scenarios.
+
+- **`selftest_oracle.py`** — Covers all four `known_bug_gate` branches plus the three bug-specific gates and `ensure_tool_usable`.
+
+- **`selftest_runner.py`** — Covers `run_suite` applicability, the fake-tool seam (M4 unauthenticated path), `--keep-artifacts` boundary (including `.`-from-root and symlink), temp-dir cleanup, and end-to-end CLI subprocess tests.
+
+### Code Quality
+
+The code is clean, well-documented, and stdlib-only (N1). The `known_bug_gate` primitive is elegant — a single function encodes all four branches, and the bug-specific gates are thin wrappers that compute the buggy/correct signatures. The `Scenario` protocol class is a nice touch for duck-typing without runtime enforcement.
+
+One small observation: `validate_keep_artifacts` uses `is_relative_to` which requires Python ≥3.9, but the plan explicitly calls this out ("Prefer `path.is_relative_to(ROOT)` where available (≥3.9)"). Given the project already uses `from __future__ import annotations` and modern type hints, 3.9+ is a safe assumption — confirmed by the tests passing.
+
+### Test Coverage
+
+**Excellent.** 28 tests covering:
+- All 4 `known_bug_gate` branches (the core rot-proof logic)
+- All 3 bug-specific gates with realistic synthetic data
+- `ToolUnusable` raise/no-raise
+- `run_suite` applicability (applicable runs, explicit non-applicable→excluded, default non-applicable→silent, ToolUnusable→loud fail)
+- Fake-tool seam with real PATH resolution
+- `--keep-artifacts` boundary (repo root, tracked path, symlink, ignored subtree, outside repo)
+- Temp-dir auto-cleanup
+- End-to-end CLI via `main()` with mocked registry (non-applicable absent tool, applicable absent tool, unknown tool)
+- End-to-end subprocess CLI (missing tool, `--keep-artifacts .`)
+
+The fake-tool seam (StubToolSeamTests) is the right approach for deterministically testing the M4 present-but-unusable path.
+
+### Acceptance Criteria Verification
+
+- ✅ `--tools nope` exits 2, names `nope` (S8)
+- ✅ M4 unauth branch tested via fake-tool seam
+- ✅ Non-applicable pair produces explicit `excluded` record
+- ✅ `--selftest` passes tool-free (32 tests, 0 failures)
+- ✅ `--keep-artifacts .` from root rejected (exit 2, clear message)
+- ✅ `--keep-artifacts` symlink into repo rejected
+- ✅ Default temp dir auto-cleans
+- ✅ No new top-level `test_*.py` (M2)
+- ✅ `experiments/` unmodified (I1)
+
+### Minor Notes (non-blocking)
+
+1. The `Scenario` `Protocol` class at line 56 declares `name: str` and `applies_to: set` as class-level annotations, which is the correct `Protocol` pattern — scenarios just need those attributes.
+
+2. The preflight logic (lines 264-271) correctly skips presence-checking for tools that no selected scenario uses — this was a Codex iter-2 fix to avoid hard-failing on an absent tool that wouldn't run anyway. Well implemented.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 oracle, known-bug registry, and runner are complete with excellent test coverage — all acceptance criteria verified, rot-proof bug gates work correctly, gating is loud and named.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

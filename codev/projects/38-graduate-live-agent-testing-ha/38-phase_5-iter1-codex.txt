@@ -1,0 +1,8 @@
+---
+VERDICT: APPROVE
+SUMMARY: Phase 5 is implemented as planned: the claude-only degraded scenario and the tool-free #36 flip-home self-tests are present, aligned with the spec, and `tests.agent_sessions.selftest.selftest_degraded` passes.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

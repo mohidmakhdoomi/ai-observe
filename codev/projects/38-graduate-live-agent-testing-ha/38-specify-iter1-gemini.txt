@@ -1,0 +1,14 @@
+This is a very strong and carefully designed specification. The strategy for integrating a live-agent test suite without polluting the CI matrix or triggering fail-loud unittest skips is elegant, and the `expect_...(bug=N)` oracle pattern is an excellent way to maintain test coverage over known defects without letting the assertions rot.
+
+There are, however, a couple of technical flaws in the execution details (specifically around filesystem cleanup and test-target resolution) that need to be addressed before implementation.
+
+---
+VERDICT: REQUEST_CHANGES
+SUMMARY: Excellent isolation and assertion design, but requires fixes for temporary directory leakage and CLI test-target resolution.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- **System Under Test (CLI Resolution Mismatch)**: Decision 8 states the harness will "prefer an installed ai-observe console script on PATH, fall back to the checkout bin/ai-observe". For a test suite, this is dangerous. If a developer has an older version of `ai-observe` installed globally on their system, the test suite will invoke the old binary while the test runner itself uses the local codebase (via `sys.path.insert(0, ROOT/"src")`). The suite must test the current working tree, so it should prefer the local `bin/ai-observe` executable over the PATH.
+- **Temporary Directory Leakage**: The spec mentions using `tempfile.mkdtemp` for raw artifacts and agent workdirs. Unlike `tempfile.TemporaryDirectory`, `mkdtemp` does not automatically clean up when the process exits. Since the suite will be run frequently by developers, this will silently leak garbage directories on their machines over time. The runner must explicitly clean up these directories (e.g., via `tempfile.TemporaryDirectory` or an explicit `shutil.rmtree` on shutdown) unless the `--keep-artifacts` flag is provided.
+- **Scope of #36 (Open Question 1)**: Strongly recommend including the degraded scenario in v1. The stated value of the oracle is providing a one-line flip-home for the three tracked bugs. Deferring the #36 scenario means that bug lacks a hard assertion and its annotation could silently rot, undermining the suite's purpose.
+- **Auth Probe Heuristic (Minor)**: The heuristic in Decision 4 (a nonzero exit or zero events means "not authenticated?") could mask genuine system crashes or observer bugs. Consider appending a hint to the failure message suggesting the user rerun with `--keep-artifacts` to inspect the raw agent stderr, which will help them distinguish between a real auth failure and an unexpected crash.
