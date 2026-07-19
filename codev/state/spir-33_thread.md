@@ -32,3 +32,10 @@ two spellings). No new env surface, no schema change.
 
 Spec drafted at codev/specs/33-codex-mount-namespace-sandbox-.md → signaling
 porch for 3-way review.
+
+**3-way spec review, iteration 1: unanimous APPROVE, HIGH confidence, zero key
+issues** (gemini / codex / claude). Claude's reviewer independently re-verified
+the root-cause line references and guard logic against source. Folded in its
+one suggestion (explicit `chdir`-into-`/newroot` unit-test scenario) and
+populated the Consultation Log. Gate `spec-approval` reached — notified
+architect, waiting for human approval.
