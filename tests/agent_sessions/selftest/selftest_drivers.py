@@ -47,9 +47,15 @@ class ChainedMultiTurnArgvTests(unittest.TestCase):
                          "claude -c -p 't3' --dangerously-skip-permissions")
 
     def test_agy_chain_continue_and_add_dir(self):
+        # Pin the EXACT 3-turn chained string (parity with claude/codex): locks turn
+        # ordering, the `-c` continue flag on turns 2+, and `--add-dir` on every turn.
         chain = chain_for("agy", self.TURNS, self.WD)
-        self.assertIn("agy -p 't1' --dangerously-skip-permissions --add-dir '/tmp/wd'", chain)
-        self.assertIn("agy -c -p 't2' --dangerously-skip-permissions --add-dir '/tmp/wd'", chain)
+        self.assertEqual(chain,
+                         "agy -p 't1' --dangerously-skip-permissions --add-dir '/tmp/wd' && "
+                         "agy -c -p 't2' --dangerously-skip-permissions --add-dir '/tmp/wd' && "
+                         "agy -c -p 't3' --dangerously-skip-permissions --add-dir '/tmp/wd'")
+        # turn 1 must NOT carry `-c` (no prior session to continue).
+        self.assertNotIn("agy -c -p 't1'", chain)
 
     def test_codex_chain_sandbox_precedes_resume(self):
         chain = chain_for("codex", self.TURNS, self.WD)
