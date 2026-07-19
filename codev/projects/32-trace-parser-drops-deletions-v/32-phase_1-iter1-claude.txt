@@ -1,0 +1,59 @@
+Now let me verify the implementation by running the tests:All 27 unit tests and 56 selftest assertions pass with zero skips. Let me also quickly verify the git diff to confirm the exact changes in the three implementation files:I've read all three implementation files from disk, verified the diff, and confirmed all tests pass. Here's my review:
+
+## Phase 1 Review: Annotated-AT_FDCWD resolution fix + core tests + OPEN_BUGS[32] flip
+
+### Spec Adherence
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| **S1** annotated `unlinkat` emits delete | ✅ | `test_unlinkat_annotated_at_fdcwd_emits_delete` — exact FINDINGS-F2 form, with `watched_roots` |
+| **S3** annotation wins over tracked cwd | ✅ | `test_annotated_at_fdcwd_wins_over_tracked_cwd` — cwd `/tmp/work` + dirfd `AT_FDCWD</elsewhere>` → `/elsewhere/f.txt` |
+| **S4** plain/empty annotation → tracked cwd | ✅ | `test_empty_at_fdcwd_annotation_falls_back_to_tracked_cwd` for `AT_FDCWD<>`; existing tests cover plain `AT_FDCWD` (e.g., `test_delete_rename_chmod_metadata` line 120) |
+| **S5** numeric-dirfd unchanged | ✅ | Existing `test_chdir_fchdir_relative_and_dirfd_at` (line 186: `unlinkat(99, "unknown", 0)` → `None` path) and `test_rename_partial_resolution` (line 195: `renameat(99, ...)`) pass unmodified |
+| **S6** `OPEN_BUGS[32].active = False` | ✅ | One-line flip at oracle.py:57; selftest suite (56 tests) passes, confirming `bug32_signature()` returns `(False, True)` |
+| **S7** `OPEN_BUGS[33]`/`[36]` untouched | ✅ | Both remain `active=True` (default); their selftests pass |
+| **S8** full suite green, zero skips | ✅ | 27/27 unit tests OK, 56/56 selftests OK |
+| **S9** stdlib-only | ✅ | No new imports — only `re` used (already present) |
+| **S10** no provenance/schema changes | ✅ | No changes to `_make_event`; events carry same `source: "strace"`, `confidence: "direct"` |
+
+### Code Quality
+
+**The regex** (`_AT_FDCWD_RE` at line 48) is correctly anchored (`^...$`), placed next to `_FD_ANNOT_RE` for discoverability, and captures exactly what's needed.
+
+**The `_at_path` rework** (lines 484–493) is clean and handles the three cases correctly:
+- `at_fdcwd.group("path")` returns `None` for plain `AT_FDCWD` (group doesn't participate → `None or base` → tracked cwd) ✓
+- Returns `""` for `AT_FDCWD<>` (empty capture → `"" or base` → tracked cwd) ✓
+- Returns the kernel-reported path for `AT_FDCWD</dir>` → uses it as base ✓
+- Non-matching tokens (numeric dirfds) flow to `_dirfd_path` unchanged ✓
+
+The comment on lines 489–490 is concise and correctly explains the precedence rule.
+
+**No edits to `_FD_ANNOT_RE` or its three callers** (`parse_result`, `fd_number`, `fd_path_annotation`) — exactly as the spec mandated.
+
+### Test Coverage
+
+Four new tests cover the plan's Phase 1 requirements:
+1. Core annotated-form fix with `watched_roots` (S1)
+2. Annotation-over-tracked-cwd precedence (S3)
+3. Empty annotation fallback (S4)
+4. Absolute path ignores annotated dirfd (guard case)
+
+Existing tests pin backward compatibility for plain `AT_FDCWD` and numeric dirfds without modification.
+
+### Plan Alignment
+
+The implementation matches the plan letter-for-letter:
+- Module-level regex exactly as specified
+- `_at_path` rework exactly as specified (including `or base` fallback)
+- Oracle flip exactly as specified
+- Diff touches only the three planned files (plus protocol artifacts: spec, plan, status, thread)
+
+No issues found. No concerns about blast radius — the fix is local to `_at_path`, the regex is anchored to the literal `AT_FDCWD` prefix, and all existing code paths are untouched.
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, minimal fix exactly matching spec Approach B and plan Phase 1 — all acceptance criteria pass, full suites green, zero regressions.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

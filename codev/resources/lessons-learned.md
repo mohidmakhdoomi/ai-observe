@@ -82,3 +82,13 @@ When a regression test must tolerate a known-but-open bug, do not gate it on a *
 ## Scope import fallbacks to "package absent", not any ImportError
 
 A shim that prefers an installed package but falls back to a checkout path should catch `ModuleNotFoundError` and fall back **only** when the top-level package itself is missing (`exc.name == "<package>"`). Catching broad `ImportError` (or any `ModuleNotFoundError`) makes a broken/incomplete install silently resolve to the checkout copy, masking the real failure. Test all three states — installed, absent→fallback, and present-but-broken→surface — and force the fallback hermetically (a `sys.meta_path` blocker, or `python -S`) so the test holds even where the package is installed.
+
+## Match strace tokens with annotations in mind
+
+With strace path decoding active (`-y`/`-yy`), any token can carry a `<path>` annotation
+(`AT_FDCWD</dir>`, `3</tmp/f>`), so a literal string comparison against the bare token
+silently misclassifies the annotated form — and if the observer itself always enables
+decoding, the annotated form is the *only* form real sessions produce. Match tokens with
+the annotation made explicit (and prefer extracting it: the kernel-reported path beats
+reconstructed state), and source at least some parser test inputs from real tool output
+so plain-form-only fixtures can't hide the gap.

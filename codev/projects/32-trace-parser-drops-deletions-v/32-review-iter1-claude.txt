@@ -1,0 +1,43 @@
+Now let me read the actual source file to verify the implementation in context:Let me check the test file structure and the `parse` helper to verify test quality:Let me verify the fixture and quickly check git log for commit format:Let me check the call sites in trace_parser to verify argument index correctness for the blast-radius matrix:I've completed a thorough review of this PR. Let me verify one final thing — that the lessons-critical.md map stays within the documented cap:I've completed a thorough review of this PR. Here's my assessment:
+
+---
+
+## Review Summary
+
+The fix is surgically precise: 12 lines of production code change in `trace_parser.py`, a 1-line oracle gate flip, plus comprehensive tests (7 new test methods, a 12-row blast-radius matrix, and a committed end-to-end fixture). The implementation exactly matches Approach B from the spec.
+
+**Code correctness verified:**
+- `_AT_FDCWD_RE` regex is correctly anchored and handles all three cases: `AT_FDCWD` (no annotation → None group → falls back to tracked cwd via `or base`), `AT_FDCWD<>` (empty string → falsy → falls back via `or base`), and `AT_FDCWD</path>` (non-empty → becomes base).
+- Numeric dirfds correctly fall through to `_dirfd_path` unchanged.
+- All call-site argument indices in the blast-radius matrix match the source: `symlinkat` uses (path=2, dirfd=1), `linkat` uses (path=3, dirfd=2), `renameat*` uses (old: path=1, dirfd=0; new: path=3, dirfd=2).
+- `_FD_ANNOT_RE` and its callers (`parse_result`, `fd_number`, `fd_path_annotation`) remain untouched.
+
+**Test quality:** Excellent. The mixed-form `renameat2` test (annotation `/a` vs plain with cwd `/b`) proves each dirfd resolves independently. The `openat` row in the matrix deliberately omits the result annotation (`= 3` with no `</path>`) to verify the dirfd is the sole resolution source. No mocking, consistent with house style.
+
+**Governance:** Hot-tier map stays at exactly 12 topics (the cap), 27 lines (cap: 35). Cold-tier lesson is well-scoped and actionable.
+
+---
+VERDICT: APPROVE
+SUMMARY: Surgical, well-tested fix for a critical data-loss bug; all spec criteria met with comprehensive blast-radius coverage.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Fixes silent dropping of `*at`-family syscall events (especially deletions) when strace annotates the `AT_FDCWD` dirfd as `AT_FDCWD</some/dir>` — the form every real ai-observe session produces under its own `-yy` invocation. Files deleted by agents were shown as still existing.
+
+  ## Key Changes
+  - `src/ai_observe/trace_parser.py`: New `_AT_FDCWD_RE` regex + reworked `_at_path` dirfd resolution (12 lines; annotation → base, plain → tracked cwd, numeric → `_dirfd_path`)
+  - `tests/agent_sessions/oracle.py`: `OPEN_BUGS[32].active=False` (converts known-bug gate to regression assertion)
+  - `tests/test_trace_parser.py`: 7 new tests including a 12-row blast-radius matrix covering all affected syscalls
+  - `tests/fixtures/strace/annotated_at_fdcwd.strace`: End-to-end committed fixture (create → modify → delete)
+  - Governance: cold-tier lesson on strace token/annotation matching
+
+  ## Test Plan
+  - Full suite: 222 tests green, zero skips
+  - Opt-in selftests: 56 green; `bug32_signature()` → `(dropped=False, plain_captured=True)`
+  - Blast-radius matrix exercises all affected call sites with `subTest` per syscall
+  - Mixed-form rename guard proves independent resolution per dirfd argument

@@ -1,0 +1,23 @@
+---
+VERDICT: APPROVE
+SUMMARY: Excellent and thorough fix for the annotated AT_FDCWD dropping issue, with comprehensive test coverage.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Fixes a bug where `trace_parser` silently dropped events for `*at`-family syscalls (like `unlinkat` or `renameat`) when strace annotated the dirfd as `AT_FDCWD</path>`. This ensures file modifications and deletions by tools like Claude Code and agy are properly reported and tracked.
+
+  ## Key Changes
+  - Added a new module-level regex `_AT_FDCWD_RE` to correctly parse `AT_FDCWD` tokens that include a path annotation.
+  - Modified `_at_path` in `trace_parser.py` to use the kernel-reported path annotation as the base directory, while preserving legacy tracked cwd fallback for plain or empty `AT_FDCWD` tokens and routing numeric dirfds appropriately.
+  - Flipped the known bug gate for this issue (`OPEN_BUGS[32].active = False`) in the live-agent oracle to serve as a hard regression assertion moving forward.
+  - Introduced extensive unit testing, including a 12-row blast-radius matrix test covering all affected syscalls, and a new committed end-to-end strace fixture.
+
+  ## Test Plan
+  - Unit tests verified explicit precedence and fallback behavior for `AT_FDCWD` annotations.
+  - Matrix test validated permutations of `*at` syscalls, including robustness checks for missing return-value annotations.
+  - E2E tests verified full trace behavior against the new committed fixture (`annotated_at_fdcwd.strace`).
+  - Full test suite verified green with zero skips, plus opt-in oracle selftests confirming the regression gate passes correctly post-fix.

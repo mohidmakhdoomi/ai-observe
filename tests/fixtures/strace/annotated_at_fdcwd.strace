@@ -1,0 +1,5 @@
+# strace 6.8-style fixture, synthetic `-yy` annotated-AT_FDCWD dirfd forms (issue #32)
+123 1714932000.400001 openat(AT_FDCWD</tmp/work>, "ephemeral.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</tmp/work/ephemeral.txt>
+123 1714932000.400002 write(3</tmp/work/ephemeral.txt>, "data", 4) = 4
+123 1714932000.400003 close(3</tmp/work/ephemeral.txt>) = 0
+123 1714932000.400004 unlinkat(AT_FDCWD</tmp/work>, "ephemeral.txt", 0) = 0

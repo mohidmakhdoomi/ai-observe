@@ -1,0 +1,79 @@
+I'll review the plan by verifying its claims against the actual codebase. Let me read the key files referenced.Now let me check the test file and the fixtures directory:Now let me verify the `symlinkat` call site argument ordering, which is unusual:Good, I've now verified the key claims. Let me check one more thing — the `symlinkat` dirfd argument index in the plan's blast-radius matrix:I've now thoroughly verified the plan against the codebase. Here's my review:
+
+---
+
+## Plan Review: Fix trace_parser's annotated `AT_FDCWD` dirfd resolution (spec 32)
+
+### 1. Spec Coverage
+
+**Complete.** Every spec acceptance criterion (S1–S10) is explicitly mapped to a phase, and the plan tracks them in a checklistable success-metrics section. The spec's non-goals are respected — no changes to `_FD_ANNOT_RE`, `parse_result`, `fd_number`, or `fd_path_annotation`; no provenance changes; no sibling-bug gate interference.
+
+### 2. Implementation Approach
+
+**Sound and verified against source.** I read the actual files:
+
+- **Line references are accurate.** `_FD_ANNOT_RE` is at line 47, `_at_path` starts at line 475, the `!= "AT_FDCWD"` check is at line 484, `_dirfd_path` at line 490, and `OPEN_BUGS[32]` at line 57. All match the plan's citations.
+
+- **The proposed regex `_AT_FDCWD_RE`** correctly matches the three forms: `AT_FDCWD` (no annotation), `AT_FDCWD<path>` (annotated), `AT_FDCWD<>` (empty). The `or base` fallback correctly handles the `None` (no group) and `""` (empty annotation) cases.
+
+- **`split_args` preserves `<...>` intact** (verified: angle-depth tracking at lines 521-524), so `AT_FDCWD</tmp/work>` arrives as a single token — the plan's regex will see the full token.
+
+- **Call site table is accurate.** I verified every `_at_path` invocation:
+  - `unlinkat` → `_at_path(pid, args, 1, 0)` at line 344 ✓
+  - `renameat/renameat2` → `_at_path(pid, args, 1, 0)` and `_at_path(pid, args, 3, 2)` at lines 351-352 ✓
+  - `fchmodat` → line 360 ✓
+  - `fchownat/utimensat/futimesat` → line 369 ✓
+  - `mkdirat/mknodat` → line 390 ✓
+  - `symlinkat` → `_at_path(pid, args, 2, 1)` at line 395 ✓
+  - `linkat` → `_at_path(pid, args, 3, 2)` at line 398 ✓
+  - `openat/openat2` → lines 462-464 (rescued via `result_path`) ✓
+
+- **The `symlinkat` matrix row** in Phase 2 uses `symlinkat("t", …, "l")` — correct arg ordering (target, newdirfd, newpath).
+
+- **The `linkat` matrix row** uses `linkat(…, "src", …, "dst", 0)` — dirfd at args[0] and args[2], paths at args[1] and args[3]. The plan tests `path` for `linkat`, which is `_at_path(pid, args, 3, 2)` — the destination path. This is correct per the code (line 398).
+
+### 3. Phase Breakdown and Ordering
+
+**Well-structured.** 
+
+- **Phase 1** (fix + core tests + oracle flip) is the atomic unit — the plan explicitly justifies the same-commit rule for fix and flip, citing the rot-proof gate's bidirectional failure mode. This is architecturally correct: I verified that `bug32_signature()` (oracle.py line 210) feeds the exact annotated form through the real parser, so landing the fix without the flip would immediately fail `test_bug32_reproduction_matches_registry`.
+
+- **Phase 2** (defense matrix + fixture) is genuinely separable — it's tests-only and adds no behavior changes. If the matrix reveals a gap, the plan correctly prescribes fixing it in a Phase-1-style code commit first, then landing the tests.
+
+- Two phases satisfies porch's minimum and each is independently committable.
+
+### 4. Testing Strategy
+
+**Thorough and well-designed.**
+
+- Phase 1 core tests cover the four key behaviors: annotated resolution (S1), precedence over tracked cwd (S3), empty/plain fallback (S4), and numeric-dirfd preservation (S5). The absolute-path guard (annotated dirfd + absolute path arg) is a good defensive addition.
+
+- Phase 2's blast-radius matrix with `subTest` per syscall is exactly what this bug calls for — it pins every `_at_path` call site individually so a future single-arm regression can't hide.
+
+- The mixed-form rename guard (`renameat2(AT_FDCWD</a>, "x", AT_FDCWD, "y", 0)`) is excellent — it proves the two sides resolve independently.
+
+- The committed fixture through `parse_trace_file` exercises the full file-parsing path, not just in-memory line feeding.
+
+- **No existing test needs modification** — verified by grepping: all existing `AT_FDCWD` uses in `test_trace_parser.py` are plain (non-annotated) and will continue to work as-is.
+
+### 5. Risk Assessment
+
+**Adequate.** The key risk (numeric-dirfd regression) is well-mitigated: the new regex is anchored to the literal `AT_FDCWD` prefix, so numeric tokens can never match it. The existing `unlinkat(99, "unknown", 0)` test at line 185 pins numeric-dirfd behavior.
+
+The oracle merge-conflict risk is real but correctly assessed as trivial (one-line change in a dict literal).
+
+### 6. Minor Observations (non-blocking)
+
+- **Phase 2 matrix**: the `openat` row notes "(no result annotation)" but the strace line template isn't shown. The builder will need to craft an `openat` line with a result annotation intentionally *absent* (e.g., `= 3` without `</path>`) to exercise the robustness case. This is clear enough from context but could be more explicit about how to produce a non-annotated result.
+
+- **The plan wisely avoids `_dirfd_path` changes** — there's a subtle correctness point: after the plan's change, `_dirfd_path` never sees `AT_FDCWD*` tokens at all, because `_at_path` handles them before falling through. This invariant is documented implicitly ("no edits") but the builder benefits from understanding *why* no edit is needed there.
+
+- Both points are clear enough that a competent builder will handle them. No plan change needed.
+
+---
+VERDICT: APPROVE
+SUMMARY: Thoroughly verified plan with accurate source references, sound implementation approach, correct call-site coverage, and robust testing strategy — ready for builder execution.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

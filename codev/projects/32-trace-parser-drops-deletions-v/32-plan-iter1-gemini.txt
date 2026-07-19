@@ -1,0 +1,13 @@
+The plan is exceptionally well thought-out and translates the specification's requirements into precise, localized changes. 
+
+The strategy correctly isolates the dirfd parsing fix to `_at_path`, minimizing regression risk for existing functionality like `_dirfd_path` and `_FD_ANNOT_RE`. The use of `at_fdcwd.group("path") or base` elegantly handles all edge cases requested in the spec (plain `AT_FDCWD` and `AT_FDCWD<>` falling back to tracked cwd). Tying the fix and the oracle flag flip `OPEN_BUGS[32].active = False` into a single atomic commit in Phase 1 is the correct way to navigate the rot-proof bug gate, preventing CI failures in either direction.
+
+Phase 2's comprehensive blast-radius matrix accurately implements the spec's call site table and provides a robust lock against future regressions, effectively covering the unannotated `openat` rescue case as well.
+
+---
+VERDICT: APPROVE
+SUMMARY: Excellent implementation plan mirroring the spec with precise surgical changes, robust tests, and a solid safety posture.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

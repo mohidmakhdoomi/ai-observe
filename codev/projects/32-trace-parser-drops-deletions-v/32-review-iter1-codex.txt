@@ -1,0 +1,28 @@
+Using the repo files directly for a PR-ready review, including the provided diff and surrounding spec/plan/tests.I’ve verified the code and docs; doing one more pass on test execution, commit hygiene, and PR readiness.The opt-in selftest failures I hit are environment-related (read-only/tempdir/viewer startup), so I’m checking the parser-specific suite directly and validating against the PR’s scope.---
+VERDICT: REQUEST_CHANGES
+SUMMARY: The parser fix and coverage look correct, but the branch is not PR-clean: there are untracked consultation artifacts left in `codev/projects/32-trace-parser-drops-deletions-v/`.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- `git status --short` is not clean. There are 12 untracked `32-*-iter1-*.txt` consultation artifacts under `codev/projects/32-trace-parser-drops-deletions-v/`; clean them up or intentionally add them before hand-off.
+- Commit hygiene is a little uneven versus the repo guidance: several builder commits are `[Spec 32] ...` without the documented `[Phase: ...]` suffix, so confirm that is acceptable for this workflow before merging.
+
+PR_SUMMARY: |
+  ## Summary
+  This PR fixes `TraceParser._at_path` so `AT_FDCWD` tokens with `strace -yy` annotations like `AT_FDCWD</tmp/work>` resolve correctly instead of being misrouted through numeric-fd handling and dropped. That restores missing delete/rename/metadata/create events for `*at` syscalls and flips the live-agent oracle’s bug-32 gate into regression mode.
+
+  ## Key Changes
+  - Added `_AT_FDCWD_RE` and updated `_at_path` to prefer the annotated cwd when present, while preserving plain `AT_FDCWD` and numeric-dirfd behavior.
+  - Added focused regression tests, a syscall blast-radius matrix, and a committed annotated strace fixture covering create/modify/delete.
+  - Flipped `OPEN_BUGS[32].active` to `False` and documented the work in the spec/plan/review/lessons files.
+
+  ## Test Plan
+  - Run `python -m unittest -v` for the repo test suite.
+  - Run `python -m tests.agent_sessions --selftest` to verify the bug-32 oracle now asserts fixed behavior.
+  - Spot-check `bug32_signature()` and confirm it returns `(False, True)`.
+
+A few supporting notes:
+- The code change itself looks sound and well-scoped. Keeping `_FD_ANNOT_RE`, `parse_result`, and `_dirfd_path` untouched was the right containment choice.
+- Test coverage is strong for the affected surface area, especially the no-result-annotation `openat` row and the mixed-form `renameat2` case.
+- I could verify `bug32_signature() == (False, True)` directly.
+- I could not reproduce the full suite/selftest results in this sandbox because the environment has no usable writable temp dir and no `pytest`; the selftest failures I saw were environment/setup failures, not evidence against this patch.
