@@ -2,7 +2,7 @@
 
 ## Metadata
 - **ID**: plan-2026-07-19-trace-parser-drops-deletions-v
-- **Status**: draft
+- **Status**: completed (both phases implemented, verified, and committed)
 - **Specification**: [codev/specs/32-trace-parser-drops-deletions-v.md](../specs/32-trace-parser-drops-deletions-v.md)
 - **Created**: 2026-07-19
 

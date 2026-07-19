@@ -92,3 +92,15 @@ porch committed and advanced. phase_2 delivered as planned, tests+fixture only:
 
 No product-code gap surfaced (acceptance criterion: no non-test changes).
 Full suite 222 green zero skips; --selftest 56 green. Signaling porch done.
+
+## Review phase
+
+phase_2 consultation unanimous APPROVE (gemini/claude high, codex medium
+confidence; zero issues across the board). Porch advanced to review.
+
+Review doc written with full S1–S10 compliance walk (all met, no deviations).
+Governance routing: one cold-tier lesson added to lessons-learned.md ("Match
+strace tokens with annotations in mind") with a matching map line in
+lessons-critical.md (12/12 topics, 27 lines — within cap); no arch updates
+(parser-internal fix, no system-shape change). Plan status → completed.
+Opening PR next (Fixes #32), then porch done → PR consultation.
