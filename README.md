@@ -157,6 +157,9 @@ The full list lives in
   troubleshooting.
 - [docs/viewer.md](docs/viewer.md) — browser viewer usage, provenance
   badges, artifact banners, privacy posture.
+- [docs/agent-sessions.md](docs/agent-sessions.md) — the opt-in live-agent
+  testing suite (`tests/agent_sessions`): per-tool prerequisites and auth,
+  running it locally, and the known-bug annotations.
 - [RELEASING.md](RELEASING.md) — local release checklist.
 
 ## Development
