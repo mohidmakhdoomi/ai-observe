@@ -185,6 +185,16 @@ runners across Python 3.10/3.12/3.13 (`fail-fast: false`):
   capability CI provisions, so any skip means silently lost coverage.
 - Runners are standard VMs; containerized runners would additionally need `SYS_PTRACE`
   and a relaxed seccomp profile (documented in the workflow header).
+- An **opt-in live-agent test suite** lives at `tests/agent_sessions/` (Spec 38) but is
+  **excluded from this collected set by construction**: its files are named `check_*.py`
+  / `selftest_*.py`, neither of which matches the `test_*.py` discovery glob, so the two
+  CI steps above collect exactly what they did before it existed. It drives real coding
+  agents (claude/agy/codex) under ai-observe and asserts a three-view oracle
+  (agent-actual files vs canonical `.jsonl` vs viewer-served events); a tool-free
+  `--selftest` tier runs anywhere, the live tier is a manual developer opt-in (needs
+  installed+authenticated agents). Known ai-observe bugs (#32/#33/#36) are tolerated via
+  a rot-proof `known-bug` gate that flips to a hard assertion with a one-line edit
+  (`OPEN_BUGS[N].active = False`). See `docs/agent-sessions.md`.
 
 ## Deferred kernel backends
 
