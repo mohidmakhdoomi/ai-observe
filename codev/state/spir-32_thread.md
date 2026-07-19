@@ -57,3 +57,21 @@ reviewer re-verified all eight call-site rows and arg orderings against source.
 Two builder notes captured in the plan's Expert Review (openat robustness row
 needs a result WITHOUT path annotation; _dirfd_path never sees AT_FDCWD tokens
 post-fix). At plan-approval gate — notified architect, waiting.
+
+## Implement phase — phase_1 (resumed session, fresh context)
+
+plan-approval gate approved. Implemented phase_1 exactly per plan:
+
+- `trace_parser.py`: added `_AT_FDCWD_RE` next to `_FD_ANNOT_RE`; `_at_path`
+  now matches the dirfd token against it — non-empty annotation becomes the
+  base (kernel-reported cwd wins), plain `AT_FDCWD`/`AT_FDCWD<>` keep tracked
+  cwd, everything else routes through the untouched `_dirfd_path`.
+- `test_trace_parser.py`: 4 new tests — S1 (annotated unlinkat under watched
+  root), S3 (annotation beats tracked cwd), S4 (empty annotation falls back),
+  and the absolute-path-ignores-dirfd guard. No existing test edited.
+- `oracle.py`: `OPEN_BUGS[32].active=False` (same commit — fix+flip atomic).
+
+Verification: full suite 219 tests green zero skips; `--selftest` 56 green;
+manual matrix — annotated/plain/unlink all emit `delete /tmp/work/f.txt`
+(source=strace, confidence=direct); `bug32_signature()` → (False, True).
+Diff confined to the three planned files. Signaling porch done.

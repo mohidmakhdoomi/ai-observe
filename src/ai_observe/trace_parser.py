@@ -45,6 +45,7 @@ _RESUMED_RE = re.compile(r"^<\.\.\.\s+(?P<name>\w+)\s+resumed>\s*(?P<rest>.*)$")
 _SYSCALL_RE = re.compile(r"^(?P<name>\w+)\((?P<args>.*)\)\s+=\s+(?P<result>.+)$")
 _UNFINISHED_RE = re.compile(r"^(?P<name>\w+)\((?P<partial>.*)<unfinished \.\.\.>$")
 _FD_ANNOT_RE = re.compile(r"^(?P<fd>-?\d+)(?:<(?P<path>[^>]*)>)?$")
+_AT_FDCWD_RE = re.compile(r"^AT_FDCWD(?:<(?P<path>[^>]*)>)?$")
 
 
 def parse_trace_file(
@@ -481,8 +482,15 @@ class TraceParser:
         if os.path.isabs(raw_path):
             return normalize_abs_path(raw_path)
         base: str | None = self._state(pid).cwd
-        if dirfd_index is not None and len(args) > dirfd_index and args[dirfd_index].strip() != "AT_FDCWD":
-            base = self._dirfd_path(pid, args[dirfd_index])
+        if dirfd_index is not None and len(args) > dirfd_index:
+            dirfd_token = args[dirfd_index].strip()
+            at_fdcwd = _AT_FDCWD_RE.match(dirfd_token)
+            if at_fdcwd:
+                # Kernel-reported annotation wins over tracked cwd; plain
+                # AT_FDCWD or an empty annotation keeps the tracked cwd.
+                base = at_fdcwd.group("path") or base
+            else:
+                base = self._dirfd_path(pid, dirfd_token)
         if base is None:
             return None
         return normalize_abs_path(Path(base, raw_path))

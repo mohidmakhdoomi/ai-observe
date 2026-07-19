@@ -198,6 +198,29 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual(events[0]["new_path"], "/tmp/work/new")
         self.assertEqual(events[0]["path"], "/tmp/work/new")
 
+    def test_unlinkat_annotated_at_fdcwd_emits_delete(self):
+        events = self.parse(
+            '123 1714932000.000001 unlinkat(AT_FDCWD</tmp/work>, "f.txt", 0) = 0\n',
+            watched_roots=["/tmp/work"],
+        )
+        self.assertEqual(self.ops(events), ["delete"])
+        self.assertEqual(events[0]["path"], "/tmp/work/f.txt")
+
+    def test_annotated_at_fdcwd_wins_over_tracked_cwd(self):
+        events = self.parse('123 1714932000.000001 unlinkat(AT_FDCWD</elsewhere>, "f.txt", 0) = 0\n')
+        self.assertEqual(self.ops(events), ["delete"])
+        self.assertEqual(events[0]["path"], "/elsewhere/f.txt")
+
+    def test_empty_at_fdcwd_annotation_falls_back_to_tracked_cwd(self):
+        events = self.parse('123 1714932000.000001 unlinkat(AT_FDCWD<>, "f.txt", 0) = 0\n')
+        self.assertEqual(self.ops(events), ["delete"])
+        self.assertEqual(events[0]["path"], "/tmp/work/f.txt")
+
+    def test_absolute_path_ignores_annotated_at_fdcwd_dirfd(self):
+        events = self.parse('123 1714932000.000001 unlinkat(AT_FDCWD</elsewhere>, "/tmp/work/abs.txt", 0) = 0\n')
+        self.assertEqual(self.ops(events), ["delete"])
+        self.assertEqual(events[0]["path"], "/tmp/work/abs.txt")
+
     def test_watched_roots_drop_outside_and_cross_boundary_direct_events(self):
         events = self.parse("""
 123 1714932000.000001 creat("/tmp/work/inside/keep.txt", 0600) = 3</tmp/work/inside/keep.txt>
