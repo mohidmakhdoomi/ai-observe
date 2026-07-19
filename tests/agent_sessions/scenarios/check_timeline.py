@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import types
 
-from ..oracle import CheckResult, check_viewer, ensure_tool_usable, hard_check
+from ..oracle import CheckResult, ToolUnusable, check_viewer, ensure_tool_usable, hard_check
 from ..probes import sample_timeline
 from . import session_dirs
 
@@ -27,10 +27,18 @@ class Timeline:
         report = sample_timeline(tool, f"tl_{tool}", workdir, outdir,
                                  n=12, interval=1.6, timeout=ctx.timeout)
         # M4 gate (Decision 4): an unauthenticated / failed / event-less run is a
-        # loud, named ToolUnusable — not a generic viewer failure.
-        ensure_tool_usable(tool, types.SimpleNamespace(
-            returncode=report["returncode"],
-            disk_events={"total": report["canonical_total"]}))
+        # loud, named ToolUnusable — not a generic viewer failure. Enrich the failure
+        # with the persisted wrapper stderr tail so the reason is visible inline
+        # (JSON/summary), while the full log stays on disk under --keep-artifacts.
+        try:
+            ensure_tool_usable(tool, types.SimpleNamespace(
+                returncode=report["returncode"],
+                disk_events={"total": report["canonical_total"]}))
+        except ToolUnusable as e:
+            tail = (report.get("stderr_tail") or "").strip()
+            if tail:
+                e.detail = f"{e.detail}; wrapper stderr tail: {tail[-400:]}"
+            raise
         out: list[CheckResult] = []
         out.append(hard_check(
             self.name, tool, "viewer", report["incremental_confirmed"],

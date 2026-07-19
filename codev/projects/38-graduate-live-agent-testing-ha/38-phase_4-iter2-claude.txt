@@ -1,0 +1,66 @@
+Let me read the Phase 4 deliverables — the key files are `drivers.py`, `probes.py`, `check_multi_turn.py`, `check_timeline.py`, and `selftest_drivers.py`.Let me check the integration points — the helpers referenced by Phase 4 code.Let me check the harness for `run_observed_command` and `writes_onto`:Now let me also look at the experiment files being ported, to verify the port is faithful:Now let me check the plan's change log deviation note about #32/#33 gates and look at the Phase 4 iter-1 review:Good. Now let me verify the selftest suite runs:All 9 tests pass. Let me also run the full selftest suite to confirm nothing broke:All 44 self-tests pass. Now I have a thorough view of Phase 4. Let me do a focused review.
+
+---
+
+## Phase 4 Review: Fold in round-2 drivers — multi-turn (Exp4) + timeline (Exp9) + #33 flip-home
+
+### 1. Spec/Plan Adherence
+
+**Deliverables checklist (all present):**
+- ✅ `drivers.py` — `chained_multi_turn` → `chain_for` + `chained_command` + `run_multi_turn`, ported from Exp 4's `_chain_for`
+- ✅ `probes.py` — `sample_timeline` ported from Exp 9's `run()`
+- ✅ `scenarios/check_multi_turn.py` (S5) — later-turn ops hard; codex `expect_no_marker_noise(bug=33)`
+- ✅ `scenarios/check_timeline.py` (S6) — ≥3 distinct increasing viewer counts; final completeness
+- ✅ `selftest/selftest_drivers.py` extended — chained argv per tool, scenario registration including `multi_turn` and `timeline`
+
+**Acceptance criteria:**
+- ✅ S5 has codex `expect_no_marker_noise(bug=33)` — the **#33 flip-home**
+- ✅ `selftest_drivers` pins the exact chained shell strings for all three tools (tool-free), including the codex `--sandbox`-before-`resume` ordering with a negative assertion (`assertNotIn("resume --last 't2' --sandbox", chain)`)
+- ✅ S6 is claude-only (`applies_to = {"claude"}`)
+- ✅ Timeline asserts both timeliness (≥3 increasing) and completeness (equality)
+
+### 2. Code Quality
+
+**`drivers.py`** — Clean port. The `chain_for` function is a faithful extraction of the experiment's `_chain_for`, parameterized to accept arbitrary `turns` instead of a module-level `TURNS` constant. `_sh_quote` is identical. The `run_multi_turn` wrapper properly applies the M4 usability gate via `ensure_tool_usable`.
+
+**`probes.py`** — Faithful port of Exp 9. Key improvements over the experiment:
+- Uses `resolve_ai_observe()` (Decision 8 checkout-first) instead of the experiment's `AI_OBSERVE` constant
+- Uses the in-process ephemeral-port `ViewerMonitor` instead of fixed port 7960
+- Completeness is now **equality** (`==`) per the iter-1 review fix, not `>=` (the experiment had `>=`)
+- Returns `returncode` for the M4 gate (iter-1 review fix)
+- No `sys.path.insert` into experiments — ✅ N1
+
+**`check_multi_turn.py`** — Well-structured. Uses `writes_onto` (from harness) for the later-turn-captured checks. The three hard agent-actual checks (turn1 present, turn2 present, seed+append content) match the experiment's `check` dict. The `expect_no_marker_noise(bug=33)` call for codex is the #33 flip-home.
+
+**`check_timeline.py`** — Applies the M4 gate via `ensure_tool_usable` with a `SimpleNamespace` duck-type (per the iter-1 review fix). The two oracle checks (incremental + final completeness) map directly to the Exp 9 oracle.
+
+**One minor observation in `check_multi_turn.py:61`:** `expect_no_marker_noise(self.name, tool)` doesn't pass any events — it's a deterministic parser probe (per the Phase 3 deviation documented in the plan's Change Log). This is consistent with the oracle's implementation where `expect_no_marker_noise` calls `bug33_unpaired_marker_delete()` which feeds synthetic syscall lines through the real `trace_parser`. The design makes the gate tool-free and deterministic, avoiding the live nondeterminism flap that the deviation note documents. This is correct.
+
+### 3. Test Coverage
+
+- ✅ **Tool-free argv assertions** for all three tools' chained shell strings — exact string match for claude and codex, substring checks for agy (which includes a path)
+- ✅ **Codex footgun pin** — the `assertNotIn("resume --last 't2' --sandbox", chain)` explicitly guards the documented ordering issue
+- ✅ **Scenario registration** — `test_all_scenarios_present` includes `multi_turn` and `timeline`; `test_applicability` asserts `multi_turn` applies to all three tools and `timeline` is claude-only
+- ✅ All 44 self-tests pass (confirmed by running them)
+
+### 4. Error Handling
+
+- `run_multi_turn` applies `ensure_tool_usable` after the run — a nonzero return or zero events → `ToolUnusable` (loud, named)
+- `check_timeline.py` applies the same M4 gate via the `SimpleNamespace` adapter
+- `chain_for` raises `ValueError` for unknown tools
+- `sample_timeline` handles `proc.poll()` early exit, timeout bounds, and `proc.kill()` on wait failure
+
+### 5. Plan Alignment
+
+The implementation matches Phase 4's plan description precisely. The Phase 3 deviation (moving #32/#33 gates to deterministic parser probes in the tool-free tier) is properly reflected — `check_multi_turn.py` calls `expect_no_marker_noise` which is a parser probe, not a live-event check. The live scenario retains agent-actual + viewer as HARD checks per the deviation note.
+
+No items from Phase 5 or Phase 6 are prematurely included.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 faithfully ports Exp 4 (multi-turn) and Exp 9 (timeline) into the maintained suite with all plan deliverables, the #33 flip-home, iter-1 review fixes applied, and 44/44 self-tests green.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

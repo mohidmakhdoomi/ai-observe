@@ -45,41 +45,63 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
     env["AI_OBSERVE_DIR"] = str(outdir)
     env["AI_OBSERVE_ROOTS"] = str(workdir)
 
+    # Persist the wrapper's stdout/stderr into the scenario outdir (Decision 4:
+    # loud-fail / debuggability). This is a non-blocking Popen (we sample the viewer
+    # WHILE the run proceeds), so it can't use the blocking core's `capture_output`;
+    # redirecting to files next to the `.jsonl` keeps the same contract — when a run
+    # fails the M4 gate (unauthenticated / errored) the runner tells the user to
+    # rerun with `--keep-artifacts`, and the preserved stderr log is then there to
+    # inspect. On the default auto-cleaning temp dir these logs vanish with the rest.
+    stdout_log = outdir / f"{session}.stdout.log"
+    stderr_log = outdir / f"{session}.stderr.log"
+
     t0 = time.time()
-    proc = subprocess.Popen(cmd, cwd=str(workdir), env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            start_new_session=True)
-
-    # Wait until the .jsonl exists (viewer refuses to start otherwise — F5), then
-    # attach one in-process viewer for the whole run.
-    while not (jsonl.exists() and jsonl.stat().st_size > 0):
-        if proc.poll() is not None:
-            break
-        if time.time() - t0 > timeout:
-            break
-        time.sleep(0.1)
-    mon = ViewerMonitor(jsonl)
-    started = mon.start(timeout=10.0)
-
-    timeline = []
-    while proc.poll() is None:
-        if time.time() - t0 > timeout:
-            break
-        tick = round(time.time() - t0, 1)
-        visible = len(mon.collect_events(max_wait=1.8, settle=0.5)) if started else 0
-        timeline.append({"t": tick, "viewer_visible": visible,
-                         "disk_lines": len(load_events(jsonl)),
-                         "files_written": len(list(workdir.glob("w*.txt")))})
-        elapsed = (time.time() - t0) - tick
-        if elapsed < sample_period:
-            time.sleep(sample_period - elapsed)
-
+    out_fh = open(stdout_log, "w")
+    err_fh = open(stderr_log, "w")
     try:
-        proc.wait(timeout=30)
-    except Exception:
-        proc.kill()
-    returncode = proc.returncode
+        proc = subprocess.Popen(cmd, cwd=str(workdir), env=env,
+                                stdout=out_fh, stderr=err_fh,
+                                start_new_session=True)
+
+        # Wait until the .jsonl exists (viewer refuses to start otherwise — F5), then
+        # attach one in-process viewer for the whole run.
+        while not (jsonl.exists() and jsonl.stat().st_size > 0):
+            if proc.poll() is not None:
+                break
+            if time.time() - t0 > timeout:
+                break
+            time.sleep(0.1)
+        mon = ViewerMonitor(jsonl)
+        started = mon.start(timeout=10.0)
+
+        timeline = []
+        while proc.poll() is None:
+            if time.time() - t0 > timeout:
+                break
+            tick = round(time.time() - t0, 1)
+            visible = len(mon.collect_events(max_wait=1.8, settle=0.5)) if started else 0
+            timeline.append({"t": tick, "viewer_visible": visible,
+                             "disk_lines": len(load_events(jsonl)),
+                             "files_written": len(list(workdir.glob("w*.txt")))})
+            elapsed = (time.time() - t0) - tick
+            if elapsed < sample_period:
+                time.sleep(sample_period - elapsed)
+
+        try:
+            proc.wait(timeout=30)
+        except Exception:
+            proc.kill()
+        returncode = proc.returncode
+    finally:
+        # The wrapper has exited (or been killed) by now; close the log handles so
+        # the persisted stderr is flushed and readable under --keep-artifacts.
+        out_fh.close()
+        err_fh.close()
     run_duration = round(time.time() - t0, 1)
+    try:
+        stderr_tail = stderr_log.read_text()[-800:]
+    except Exception:
+        stderr_tail = ""
 
     final_visible = len(mon.collect_events(max_wait=8, settle=2.0)) if started else 0
     mon.stop()
@@ -97,6 +119,12 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
         "tool": tool,
         "returncode": returncode,
         "run_duration_s": run_duration,
+        # Debuggability (Decision 4): where the wrapper's streams were persisted and
+        # a bounded tail of stderr, so a failed run surfaces the reason inline (JSON
+        # report) and on disk (under --keep-artifacts) — never a silent DEVNULL drop.
+        "stdout_log": str(stdout_log),
+        "stderr_log": str(stderr_log),
+        "stderr_tail": stderr_tail,
         "viewer_started": started,
         "n_samples": len(timeline),
         "timeline": timeline,
