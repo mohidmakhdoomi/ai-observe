@@ -17,11 +17,11 @@ plan_phases:
     status: complete
   - id: phase_5
     title: 'Degraded parse-failure scenario (Exp6) + #36 flip-home'
-    status: in_progress
+    status: complete
   - id: phase_6
     title: Docs, gitignore, README pointer, acceptance sweep
-    status: pending
-current_plan_phase: phase_5
+    status: in_progress
+current_plan_phase: phase_6
 gates:
   spec-approval:
     status: approved
@@ -36,7 +36,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -199,7 +199,7 @@ history:
         file: >-
           /home/user/code/ai-observe_root/ai-observe/.builders/spir-38/codev/projects/38-graduate-live-agent-testing-ha/38-phase_4-iter3-claude.txt
 started_at: '2026-07-17T16:49:04.061Z'
-updated_at: '2026-07-19T04:03:47.875Z'
+updated_at: '2026-07-19T04:07:15.811Z'
 force_advanced:
   phase: phase_4
   iteration: 3
