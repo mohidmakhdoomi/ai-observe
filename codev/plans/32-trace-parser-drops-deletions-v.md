@@ -273,7 +273,25 @@ infrastructure, configuration, or monitoring changes.
 - [ ] Optional live-agent evidence run (see checkpoint 3)
 
 ## Expert Review
-*(To be filled by porch's 3-way review cycle.)*
+
+### Plan, iteration 1 (gemini / codex / claude) — unanimous APPROVE, high confidence
+
+- **codex**: APPROVE, no issues. Two minor suggestions, both already encoded in
+  the plan: keep the Phase 2 matrix granular via `subTest` (specified), and keep
+  `test_committed_fixture_files_parse` easy to extend (the fixture registry is a
+  flat name→ops dict; one entry added).
+- **gemini**: APPROVE, no issues. Independently confirmed the `or base` fallback
+  covers plain/empty-annotation cases and that the same-commit fix+flip rule is
+  the correct navigation of the rot-proof gate.
+- **claude**: APPROVE, no issues. Re-verified every line reference and all eight
+  `_at_path` call-site rows (including `symlinkat`/`linkat` argument ordering)
+  against source; confirmed no existing test requires modification. Two
+  non-blocking notes for the builder, acknowledged: (1) the Phase 2 `openat`
+  robustness row must craft a result *without* a path annotation (`= 3`, no
+  `</path>`) to bypass the rescue; (2) after the fix, `_dirfd_path` never sees
+  `AT_FDCWD*` tokens — that invariant is why it needs no edit.
+
+**Plan Adjustments**: none required by any reviewer.
 
 ## Approval
 - [ ] Expert AI consultation complete (porch 3-way)
