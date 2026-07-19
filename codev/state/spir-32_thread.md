@@ -39,3 +39,13 @@ Unanimous APPROVE (gemini/codex/claude, all high confidence, zero issues).
 Claude's reviewer independently re-verified every code claim against source.
 Consultation log recorded in the spec. Now at the spec-approval gate — notified
 architect, waiting for human approval.
+
+## Plan phase
+
+spec-approval gate approved by architect (verified root-cause claims against
+source themselves). Plan drafted: two phases — (1) the atomic unit: `_at_path`
+fix via a new `_AT_FDCWD_RE` regex + core regression tests + the
+`OPEN_BUGS[32].active=False` flip (same commit, because Spec 38's gate is
+rot-proof in BOTH directions — splitting fix and flip leaves a loudly-failing
+selftest commit either way); (2) the blast-radius defense matrix across all
+affected call sites + a committed end-to-end annotated strace fixture.
