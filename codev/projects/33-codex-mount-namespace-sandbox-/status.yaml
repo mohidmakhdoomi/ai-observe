@@ -1,7 +1,7 @@
 id: '33'
 title: codex-mount-namespace-sandbox-
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-19T23:18:50.966Z'
-updated_at: '2026-07-19T23:29:12.523Z'
+updated_at: '2026-07-19T23:29:30.837Z'
