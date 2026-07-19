@@ -61,7 +61,7 @@ and **viewer** (the sanitized events the browser viewer served, hard for complet
 | `ephemeral` | claude, agy | Create-then-delete; **#32** home (annotated deletion drop). |
 | `modify` | claude, agy | Seed-then-modify; the seed file survives and the modify is captured. |
 | `subprocess` | claude, agy, codex | Writes performed by a child process of the agent. |
-| `multi_turn` | claude, agy, codex | A chained multi-turn conversation under one wrapper; **#33** home (codex marker noise). |
+| `multi_turn` | claude, agy, codex | A chained multi-turn conversation under one wrapper; **#33** home (codex marker noise — fixed, now a hard assertion). |
 | `timeline` | claude | A long paced run; the viewer sees events **incrementally**, then completely. |
 | `degraded` | claude | A forced direct-parser failure (`AI_OBSERVE_TEST_FAIL_AFTER`); **#36** home (sidecar authority). |
 
@@ -99,7 +99,7 @@ rather than hard failures, via a rot-proof gate in
 | Bug | Signature | Home scenario |
 |-----|-----------|---------------|
 | **#32** | Annotated `AT_FDCWD` deletion dropped (the delete is never reported). | `ephemeral` |
-| **#33** | codex `/newroot` mount-namespace probing leaves unpaired `delete` events. | `multi_turn` |
+| **#33** | codex `/newroot` mount-namespace probing left unpaired `delete` events — **fixed**; the gate now hard-asserts pairing. | `multi_turn` |
 | **#36** | On the direct-parser-failure path the sidecar labels a snapshot-only `.jsonl` `authoritative_complete`, overstating fidelity. | `degraded` |
 
 While a bug is **active**, its gate asserts the bug **still reproduces** — so a fix that

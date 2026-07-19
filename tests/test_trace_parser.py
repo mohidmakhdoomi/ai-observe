@@ -42,6 +42,7 @@ class TraceParserTests(unittest.TestCase):
             "fd_yy.strace": ["create"],
             "openat2_pwritev2.strace": ["create", "modify"],
             "annotated_at_fdcwd.strace": ["create", "modify", "delete"],
+            "newroot_sandbox.strace": ["create", "delete", "create", "modify", "delete"],
         }
         fixture_dir = ROOT / "tests" / "fixtures" / "strace"
         for name, expected_ops in fixtures.items():
@@ -390,6 +391,54 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual(
             [(e["operation"], e["path"]) for e in events],
             [("create", "/newroot/tmp/work/.git"), ("delete", "/tmp/work/.git")],
+        )
+
+    def test_cross_namespace_defense_matrix(self):
+        # Pins the sandbox-prefix remap across event-op families and arrival
+        # forms so a future refactor of any dispatch arm (or of the remap
+        # guard) cannot silently re-introduce a namespace split.
+        staged_dirfd = "AT_FDCWD</newroot/tmp/work>"
+        cases = [
+            ('mkdir("/newroot/tmp/work/d", 0755) = 0', "create", "/tmp/work/d", None, None),
+            ('unlink("/newroot/tmp/work/f") = 0', "delete", "/tmp/work/f", None, None),
+            ('truncate("/newroot/tmp/work/f", 0) = 0', "modify", "/tmp/work/f", None, None),
+            ('chmod("/newroot/tmp/work/f", 0600) = 0', "chmod", "/tmp/work/f", None, None),
+            ('chown("/newroot/tmp/work/f", 1000, 1000) = 0', "metadata", "/tmp/work/f", None, None),
+            ('rename("/newroot/tmp/work/a", "/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            ('rename("/tmp/work/a", "/newroot/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            ('rename("/newroot/tmp/work/a", "/newroot/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            (f'mkdirat({staged_dirfd}, "d2", 0755) = 0', "create", "/tmp/work/d2", None, None),
+            (f'symlinkat("t", {staged_dirfd}, "l") = 0', "create", "/tmp/work/l", None, None),
+        ]
+        for line, op, path, old_path, new_path in cases:
+            with self.subTest(line=line):
+                events = self.parse(f"123 1714932000.000001 {line}\n", watched_roots=["/tmp/work"])
+                self.assertEqual(self.ops(events), [op])
+                self.assertEqual(events[0]["path"], path)
+                self.assertEqual(events[0]["old_path"], old_path)
+                self.assertEqual(events[0]["new_path"], new_path)
+        with self.subTest(line="cross-boundary rename stays dropped"):
+            events = self.parse(
+                '123 1714932000.000001 rename("/newroot/tmp/work/in", "/newroot/etc/out") = 0\n',
+                watched_roots=["/tmp/work"],
+            )
+            self.assertEqual(events, [])
+
+    def test_newroot_sandbox_fixture_remaps_to_canonical(self):
+        # End-to-end remap proof over the committed codex session shape,
+        # through the standard parse_trace_file path (the committed-fixtures
+        # registry parses the same file with no watched roots).
+        text = (ROOT / "tests" / "fixtures" / "strace" / "newroot_sandbox.strace").read_text(encoding="utf-8")
+        events = self.parse(text, watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [
+                ("create", "/tmp/work/.git"),
+                ("delete", "/tmp/work/.git"),
+                ("create", "/tmp/work/notes.txt"),
+                ("modify", "/tmp/work/notes.txt"),
+                ("delete", "/tmp/work/notes.txt"),
+            ],
         )
 
     def test_artifact_exclusion_only_active_paths(self):

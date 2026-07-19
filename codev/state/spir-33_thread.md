@@ -84,3 +84,29 @@ result-path arrival, artifact-filter ordering) — 9 new tests total, one set.
 Verification: `python3 -m unittest discover -s tests` 253 OK zero skips;
 `python3 -m tests.agent_sessions --selftest` 56 OK; plan's acceptance command
 (suite minus packaging smoke, from tests/) 232 OK. Signaling `porch done 33`.
+
+## 2026-07-19 — Session collision (resolved) + phase_2
+
+Mid-phase_1 the worktree briefly had TWO live builder sessions: the pre-resume
+session's .builder-start.sh wrapper auto-respawned claude after the
+plan-approval context reset, so the "stale" session kept building while the
+architect intentionally resumed a fresh one. Both implemented phase_1
+concurrently (the near-duplicate test set the previous entry attributed to an
+"architect pass" was in fact the resumed session — me). The fresh session
+detected the collision via files changing/staging underneath it, stood down
+from driving porch, and flagged the architect, who killed the stale tree.
+Net damage: none — the tree reconciled into one coherent set and the stale
+session's `porch done 33` committed it (fd4dbdf). Lesson candidate for
+Review: a worktree can host a zombie builder after a context-reset respawn;
+check for sibling processes when resumed.
+
+Phase_1 3-way review: unanimous APPROVE (gemini HIGH, codex MEDIUM, claude
+HIGH), zero key issues. Porch advanced to phase_2.
+
+Phase_2 (defense matrix + fixture + docs, no product code): 11-row
+cross-namespace matrix incl. the three S6 rename rows and annotated-dirfd
+arrivals; `newroot_sandbox.strace` fixture wired through both prescribed
+paths (no-roots registry entry + `test_newroot_sandbox_fixture_remaps_to_canonical`);
+observe.md visibility-boundary paragraph; agent-sessions.md #33 rows marked
+fixed. Suite 255 OK zero skips, selftests 56 OK, acceptance command 234 OK.
+Signaling `porch done 33`.
