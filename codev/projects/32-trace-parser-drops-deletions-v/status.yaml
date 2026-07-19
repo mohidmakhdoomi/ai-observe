@@ -1,7 +1,7 @@
 id: '32'
 title: trace-parser-drops-deletions-v
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase_1
     title: Annotated-AT_FDCWD resolution fix + core tests + OPEN_BUGS[32] flip
@@ -26,10 +26,10 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-19T22:21:01.828Z'
-updated_at: '2026-07-19T23:16:43.149Z'
+updated_at: '2026-07-19T23:16:48.827Z'
 pr_history:
   - phase: review
     pr_number: 40
