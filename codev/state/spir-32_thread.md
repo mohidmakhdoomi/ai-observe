@@ -113,3 +113,11 @@ hygiene only — untracked consult artifacts. Repo convention (project 1 on main
 is to commit them, so all 15 project-32 consult outputs staged+committed;
 codex's [Phase:] commit-format note rebutted (porch owns phase commits in
 strict mode). Review doc's consultation log updated. Code itself: no findings.
+
+### At pr gate
+
+Rebuttal written (codex hygiene point addressed via committed consult
+artifacts; [Phase:] format point rebutted — porch owns phase commits in strict
+mode). porch done → GATE REQUIRED: pr. Gate requested; waiting for human
+approval (porch approve 32 pr). PR #40 has 2/3 APPROVE + codex's only findings
+resolved on-branch.
