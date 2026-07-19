@@ -58,3 +58,29 @@ plan now prescribes two-path wiring explicitly (registry entry pins the
 no-roots parse; dedicated `test_newroot_sandbox_fixture_remaps_to_canonical`
 method feeds the fixture through `self.parse(..., watched_roots=["/tmp/work"])`).
 Gate `plan-approval` reached — notified architect, waiting.
+
+## Implement phase_1: build complete
+
+Plan-approval gate was approved; porch moved to implement / phase_1.
+
+Implemented the guarded sandbox-prefix remap exactly per plan:
+- `SANDBOX_ROOT_PREFIXES = ("/newroot",)` + `_remap_sandbox_paths` /
+  `_remap_sandbox_path` on `TraceParser`, inserted at the single emission
+  choke point in `_parse_line` before BOTH drop filters. Guard rules 1-3 as
+  specified (in-scope untouched; component-boundary single strip only into a
+  watched root; else untouched for the scope filter).
+- `OPEN_BUGS[33].active = False` — probe `bug33_unpaired_marker_delete()`
+  verified returning False; Spec-38 selftests now exercise the hard-assert
+  branch.
+- Core guard tests in `tests/test_trace_parser.py`: S1-S5, S6/S7 rename,
+  chdir arrival, S9 no-roots pass-through, plus annotated `-yy` result-path
+  arrival and remap-before-artifact-filter ordering.
+
+Note: mid-build an external edit (architect pass?) landed a second,
+near-duplicate sandbox test set in `test_trace_parser.py`; kept that set as
+canonical and deduped mine down to the two scenarios it lacked (annotated
+result-path arrival, artifact-filter ordering) — 9 new tests total, one set.
+
+Verification: `python3 -m unittest discover -s tests` 253 OK zero skips;
+`python3 -m tests.agent_sessions --selftest` 56 OK; plan's acceptance command
+(suite minus packaging smoke, from tests/) 232 OK. Signaling `porch done 33`.

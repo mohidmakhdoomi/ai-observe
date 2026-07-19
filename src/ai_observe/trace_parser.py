@@ -47,6 +47,12 @@ _UNFINISHED_RE = re.compile(r"^(?P<name>\w+)\((?P<partial>.*)<unfinished \.\.\.>
 _FD_ANNOT_RE = re.compile(r"^(?P<fd>-?\d+)(?:<(?P<path>[^>]*)>)?$")
 _AT_FDCWD_RE = re.compile(r"^AT_FDCWD(?:<(?P<path>[^>]*)>)?$")
 
+# Staging-root prefixes used by mount-namespace sandboxes (pivot_root
+# convention, e.g. bubblewrap-style sandboxes such as codex's). Events whose
+# paths arrive under one of these prefixes are remapped to the canonical
+# spelling when the stripped path lands inside a watched root.
+SANDBOX_ROOT_PREFIXES: tuple[str, ...] = ("/newroot",)
+
 
 def parse_trace_file(
     trace_path: str | os.PathLike[str],
@@ -181,6 +187,7 @@ class TraceParser:
         event = self._event_for(pid, ts, name, args, result_value, result_text, body, result_path)
         if event is None:
             return
+        self._remap_sandbox_paths(event)
         if self._drop_out_of_scope_event(event):
             return
         if self._drop_artifact_event(event):
@@ -435,6 +442,33 @@ class TraceParser:
             "raw_syscall": raw_syscall,
             "result": result,
         }
+
+    def _remap_sandbox_paths(self, event: dict[str, Any]) -> None:
+        if not self.watched_roots:
+            return
+        for key in ("path", "old_path", "new_path"):
+            value = event.get(key)
+            if value:
+                event[key] = self._remap_sandbox_path(value)
+
+    def _remap_sandbox_path(self, path: str) -> str:
+        """Project a sandbox-staging spelling back into the canonical namespace.
+
+        Guarded so the rewrite cannot mis-relabel out-of-scope activity:
+        an in-scope path is never touched (protects watched roots that
+        literally live under a sandbox-prefix directory), and a prefix is
+        stripped (once, at a component boundary) only when the stripped
+        spelling lands inside a watched root. Everything else is left for
+        the scope filter to drop as usual.
+        """
+        if self._path_within_watched_roots(Path(path)):
+            return path
+        for prefix in SANDBOX_ROOT_PREFIXES:
+            if path == prefix or path.startswith(prefix + "/"):
+                stripped = path[len(prefix):] or "/"
+                if self._path_within_watched_roots(Path(stripped)):
+                    return stripped
+        return path
 
     def _drop_artifact_event(self, event: dict[str, Any]) -> bool:
         if self.include_log_writes:
