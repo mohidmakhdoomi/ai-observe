@@ -39,3 +39,22 @@ the root-cause line references and guard logic against source. Folded in its
 one suggestion (explicit `chdir`-into-`/newroot` unit-test scenario) and
 populated the Consultation Log. Gate `spec-approval` reached — notified
 architect, waiting for human approval.
+
+## 2026-07-19 — Plan phase
+
+Architect approved the spec (verified scope-filter and oracle claims against
+source; endorsed Approach B, the realpath rejection, and no env knob).
+
+Plan drafted mirroring the accepted spec-32 split: Phase 1 = remap constant +
+choke-point step + core guard tests + `OPEN_BUGS[33]` flip in ONE commit (the
+rot-proof gate fails loudly if fix and flip are split); Phase 2 = 11-row
+cross-namespace defense matrix + committed `newroot_sandbox.strace` fixture +
+docs (observe.md visibility note, agent-sessions.md #33 rows).
+
+**3-way plan review, iteration 1: gemini APPROVE, claude APPROVE, codex
+COMMENT (all HIGH).** Codex's one actionable: the committed-fixture registry
+parses with no watched_roots, so the fixture would never exercise the remap —
+plan now prescribes two-path wiring explicitly (registry entry pins the
+no-roots parse; dedicated `test_newroot_sandbox_fixture_remaps_to_canonical`
+method feeds the fixture through `self.parse(..., watched_roots=["/tmp/work"])`).
+Gate `plan-approval` reached — notified architect, waiting.
