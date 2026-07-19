@@ -5,11 +5,11 @@ phase: implement
 plan_phases:
   - id: phase_1
     title: Sandbox-prefix remap + core guard tests + OPEN_BUGS[33] flip
-    status: in_progress
+    status: complete
   - id: phase_2
     title: Cross-namespace defense matrix + end-to-end fixture + docs
-    status: pending
-current_plan_phase: phase_1
+    status: in_progress
+current_plan_phase: phase_2
 gates:
   spec-approval:
     status: approved
@@ -24,7 +24,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-19T23:18:50.966Z'
-updated_at: '2026-07-19T23:42:39.713Z'
+updated_at: '2026-07-19T23:48:35.776Z'
