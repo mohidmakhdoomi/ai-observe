@@ -49,3 +49,11 @@ fix via a new `_AT_FDCWD_RE` regex + core regression tests + the
 rot-proof in BOTH directions — splitting fix and flip leaves a loudly-failing
 selftest commit either way); (2) the blast-radius defense matrix across all
 affected call sites + a committed end-to-end annotated strace fixture.
+
+### Consultation result (plan, iter 1)
+
+Unanimous APPROVE (gemini/codex/claude, high confidence, zero issues). Claude's
+reviewer re-verified all eight call-site rows and arg orderings against source.
+Two builder notes captured in the plan's Expert Review (openat robustness row
+needs a result WITHOUT path annotation; _dirfd_path never sees AT_FDCWD tokens
+post-fix). At plan-approval gate — notified architect, waiting.
