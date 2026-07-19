@@ -282,7 +282,10 @@ whatever spelling arrived.
 - **Unit (CI-gating)**: new `tests/test_trace_parser.py` cases for criteria
   1–7 and 9, driven through fixture trace lines in the annotated (`-yy`-style)
   forms real sessions produce (lessons-learned: "Match strace tokens with
-  annotations in mind").
+  annotations in mind"). Include a `chdir("/newroot<root>")` +
+  relative-path-operation case: the tracked cwd keeps the raw spelling, the
+  resolved event path arrives as `/newroot/...`, and emission-time remap must
+  recover it (consultation feedback, iteration 1).
 - **Oracle selftest (CI-gating)**: Spec-38 selftest suite green with the flag
   flipped — this is the deterministic end-to-end regression gate for the exact
   #33 signature.
@@ -307,4 +310,20 @@ whatever spelling arrived.
 
 ## Consultation Log
 
-*(pending — populated after 3-way review)*
+### Specify, iteration 1 (gemini / codex / claude) — unanimous APPROVE, HIGH confidence
+
+- **codex** — APPROVE (HIGH): "clear, technically feasible, well-scoped, and
+  has a strong regression-focused test strategy." No key issues.
+- **gemini** — APPROVE (HIGH): confirmed the choke point works with existing
+  state tracking (`state.fds` / `state.cwd` preserving kernel-view spellings)
+  and that `_drop_artifact_event` safely receives canonical paths. No key
+  issues.
+- **claude** — APPROVE (HIGH): independently verified the root-cause line
+  references, the single emission choke point, the guard logic (including
+  that empty `watched_roots` makes both guard steps inert, satisfying
+  criterion 9), and the oracle/selftest integration. Two non-blocking
+  observations, both addressed: (1) call out the `chdir`-into-`/newroot`
+  arrival form as an explicit unit-test scenario — added to Verification
+  scenarios; (2) confirmation (no change needed) that `result_path`
+  annotations like `= 3</newroot/...>` are covered because remap happens at
+  emission over fd-derived paths.
