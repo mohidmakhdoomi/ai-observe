@@ -75,3 +75,20 @@ Verification: full suite 219 tests green zero skips; `--selftest` 56 green;
 manual matrix — annotated/plain/unlink all emit `delete /tmp/work/f.txt`
 (source=strace, confidence=direct); `bug32_signature()` → (False, True).
 Diff confined to the three planned files. Signaling porch done.
+
+## Implement phase — phase_2
+
+phase_1 consultation was unanimous APPROVE (3× high confidence, zero issues);
+porch committed and advanced. phase_2 delivered as planned, tests+fixture only:
+
+- Blast-radius matrix (one test, subTest per row): all 12 spec call-site rows
+  green on first run — including the openat robustness row (result `= 3` with
+  no path annotation, so the dirfd is the only resolution source).
+- Mixed-form rename guard: `renameat2(AT_FDCWD</a>, "x", AT_FDCWD, "y", 0)`
+  with tracked cwd /b → old /a/x, new /b/y (sides resolve independently).
+- No-watched-roots config: annotated renameat2+unlinkat now fully pathed.
+- Committed fixture `annotated_at_fdcwd.strace` (create→modify→delete via
+  annotated forms) registered in test_committed_fixture_files_parse.
+
+No product-code gap surfaced (acceptance criterion: no non-test changes).
+Full suite 222 green zero skips; --selftest 56 green. Signaling porch done.

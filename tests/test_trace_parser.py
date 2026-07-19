@@ -41,6 +41,7 @@ class TraceParserTests(unittest.TestCase):
             "unfinished.strace": ["create"],
             "fd_yy.strace": ["create"],
             "openat2_pwritev2.strace": ["create", "modify"],
+            "annotated_at_fdcwd.strace": ["create", "modify", "delete"],
         }
         fixture_dir = ROOT / "tests" / "fixtures" / "strace"
         for name, expected_ops in fixtures.items():
@@ -220,6 +221,50 @@ class TraceParserTests(unittest.TestCase):
         events = self.parse('123 1714932000.000001 unlinkat(AT_FDCWD</elsewhere>, "/tmp/work/abs.txt", 0) = 0\n')
         self.assertEqual(self.ops(events), ["delete"])
         self.assertEqual(events[0]["path"], "/tmp/work/abs.txt")
+
+    def test_annotated_at_fdcwd_blast_radius_matrix(self):
+        dirfd = "AT_FDCWD</tmp/work>"
+        cases = [
+            (f'unlinkat({dirfd}, "f", 0) = 0', "delete", "/tmp/work/f", None, None),
+            (f'renameat({dirfd}, "a", {dirfd}, "b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            (f'renameat2({dirfd}, "a", {dirfd}, "b", 0) = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            (f'fchmodat({dirfd}, "f", 0600) = 0', "chmod", "/tmp/work/f", None, None),
+            (f'fchownat({dirfd}, "f", 1000, 1000, 0) = 0', "metadata", "/tmp/work/f", None, None),
+            (f'utimensat({dirfd}, "f", NULL, 0) = 0', "metadata", "/tmp/work/f", None, None),
+            (f'futimesat({dirfd}, "f", NULL) = 0', "metadata", "/tmp/work/f", None, None),
+            (f'mkdirat({dirfd}, "d", 0755) = 0', "create", "/tmp/work/d", None, None),
+            (f'mknodat({dirfd}, "n", S_IFREG|0644, 0) = 0', "create", "/tmp/work/n", None, None),
+            (f'symlinkat("t", {dirfd}, "l") = 0', "create", "/tmp/work/l", None, None),
+            (f'linkat({dirfd}, "src", {dirfd}, "dst", 0) = 0', "create", "/tmp/work/dst", None, None),
+            # openat result carries no path annotation, so the dirfd is the
+            # only resolution source (the return-value rescue can't cover it).
+            (f'openat({dirfd}, "n", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3', "create", "/tmp/work/n", None, None),
+        ]
+        for line, op, path, old_path, new_path in cases:
+            with self.subTest(syscall=line.split("(")[0]):
+                events = self.parse(f"123 1714932000.000001 {line}\n")
+                self.assertEqual(self.ops(events), [op])
+                self.assertEqual(events[0]["path"], path)
+                if old_path is not None:
+                    self.assertEqual(events[0]["old_path"], old_path)
+                if new_path is not None:
+                    self.assertEqual(events[0]["new_path"], new_path)
+
+    def test_renameat2_mixed_annotated_and_plain_dirfd_resolve_independently(self):
+        events = self.parse('123 1714932000.000001 renameat2(AT_FDCWD</a>, "x", AT_FDCWD, "y", 0) = 0\n', cwd="/b")
+        self.assertEqual(events[0]["operation"], "rename")
+        self.assertEqual(events[0]["old_path"], "/a/x")
+        self.assertEqual(events[0]["new_path"], "/b/y")
+
+    def test_no_watched_roots_annotated_events_are_fully_pathed(self):
+        events = self.parse("""
+123 1714932000.000001 renameat2(AT_FDCWD</tmp/work>, "a", AT_FDCWD</tmp/work>, "b", 0) = 0
+123 1714932000.000002 unlinkat(AT_FDCWD</tmp/work>, "b", 0) = 0
+""")
+        self.assertEqual(self.ops(events), ["rename", "delete"])
+        self.assertEqual([e["path"] for e in events], ["/tmp/work/b", "/tmp/work/b"])
+        self.assertEqual(events[0]["old_path"], "/tmp/work/a")
+        self.assertEqual(events[0]["new_path"], "/tmp/work/b")
 
     def test_watched_roots_drop_outside_and_cross_boundary_direct_events(self):
         events = self.parse("""
