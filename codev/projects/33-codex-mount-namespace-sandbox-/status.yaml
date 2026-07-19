@@ -1,9 +1,15 @@
 id: '33'
 title: codex-mount-namespace-sandbox-
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase_1
+    title: Sandbox-prefix remap + core guard tests + OPEN_BUGS[33] flip
+    status: in_progress
+  - id: phase_2
+    title: Cross-namespace defense matrix + end-to-end fixture + docs
+    status: pending
+current_plan_phase: phase_1
 gates:
   spec-approval:
     status: approved
@@ -21,4 +27,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-19T23:18:50.966Z'
-updated_at: '2026-07-19T23:36:06.811Z'
+updated_at: '2026-07-19T23:36:08.158Z'
