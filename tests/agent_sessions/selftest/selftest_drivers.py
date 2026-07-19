@@ -29,8 +29,9 @@ class SinglePromptArgvTests(unittest.TestCase):
              "--add-dir", str(self.WD)])
 
     def test_codex_argv_workspace_write(self):
-        self.assertEqual(TOOLS["codex"]("PROMPT", self.WD),
-                         ["codex", "exec", "--sandbox", "workspace-write", "PROMPT"])
+        self.assertEqual(
+            TOOLS["codex"]("PROMPT", self.WD),
+            ["codex", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "PROMPT"])
 
 
 class ChainedMultiTurnArgvTests(unittest.TestCase):
@@ -59,12 +60,14 @@ class ChainedMultiTurnArgvTests(unittest.TestCase):
 
     def test_codex_chain_sandbox_precedes_resume(self):
         chain = chain_for("codex", self.TURNS, self.WD)
-        self.assertEqual(chain,
-                         "codex exec --sandbox workspace-write 't1' && "
-                         "codex exec --sandbox workspace-write resume --last 't2' && "
-                         "codex exec --sandbox workspace-write resume --last 't3'")
-        # the documented footgun: --sandbox must never appear AFTER `resume`.
+        self.assertEqual(
+            chain,
+            "codex exec --sandbox workspace-write --skip-git-repo-check 't1' && "
+            "codex exec --sandbox workspace-write --skip-git-repo-check resume --last 't2' && "
+            "codex exec --sandbox workspace-write --skip-git-repo-check resume --last 't3'")
+        # the documented footgun: the exec global flags must never appear AFTER `resume`.
         self.assertNotIn("resume --last 't2' --sandbox", chain)
+        self.assertNotIn("resume --last 't2' --skip-git-repo-check", chain)
 
     def test_chained_command_wraps_in_bash_lc(self):
         cmd = chained_command("claude", self.TURNS, self.WD)

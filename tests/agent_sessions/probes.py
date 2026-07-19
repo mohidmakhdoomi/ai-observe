@@ -20,7 +20,14 @@ import subprocess
 import time
 from pathlib import Path
 
-from .harness import TOOLS, ViewerMonitor, load_events, resolve_ai_observe, summarize_events
+from .harness import (
+    TOOLS,
+    ViewerMonitor,
+    load_events,
+    resolve_ai_observe,
+    summarize_events,
+    terminate_process_group,
+)
 
 
 def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
@@ -90,7 +97,9 @@ def sample_timeline(tool: str, session: str, workdir: Path, outdir: Path, *,
         try:
             proc.wait(timeout=30)
         except Exception:
-            proc.kill()
+            # Kill the whole process group (strace + shell + agent descendants), not just
+            # the leader — the probe launches with start_new_session=True for exactly this.
+            terminate_process_group(proc)
         returncode = proc.returncode
     finally:
         # The wrapper has exited (or been killed) by now; close the log handles so

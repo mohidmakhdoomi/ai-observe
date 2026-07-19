@@ -9,13 +9,26 @@ agent tool involved. Run from the repo root:
 
 from __future__ import annotations
 
+import os
+import subprocess
+import time
 import unittest
 from pathlib import Path
 
 from .. import ROOT
-from ..harness import ViewerMonitor, load_events, resolve_ai_observe
+from ..harness import ViewerMonitor, load_events, resolve_ai_observe, terminate_process_group
 
 FIXTURE = ROOT / "tests" / "fixtures" / "viewer" / "basic.jsonl"
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 class ViewerMonitorFixtureTests(unittest.TestCase):
@@ -77,6 +90,40 @@ class NoExperimentPathHackTests(unittest.TestCase):
         offenders = [p for p in sys.path if "experiments" in Path(p).parts]
         self.assertEqual(offenders, [], f"experiments/ dir on sys.path: {offenders}")
         self.assertIn(str(ROOT / "src"), sys.path, "package should put ROOT/src on sys.path")
+
+
+class ProcessGroupTeardownTests(unittest.TestCase):
+    """`terminate_process_group` kills the WHOLE tree, not just the leader (review item 3).
+
+    Tool-free (uses `sleep`/`bash`, no agent). Not collected by CI's `test_*.py` glob.
+    """
+
+    def test_reaps_session_leader(self):
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.addCleanup(lambda: terminate_process_group(proc))
+        self.assertIsNone(proc.poll(), "sleep should still be running")
+        terminate_process_group(proc)
+        self.assertIsNotNone(proc.returncode, "leader must be reaped after teardown")
+        self.assertNotEqual(proc.returncode, 0, "a killed process does not exit 0")
+
+    def test_kills_grandchild_in_group(self):
+        # Parent bash backgrounds a grandchild, prints its PID, then waits — both share
+        # the new session's process group. Killing only the leader would orphan the
+        # grandchild; killpg takes out the whole group.
+        proc = subprocess.Popen(
+            ["bash", "-c", "sleep 30 & echo $!; wait"],
+            stdout=subprocess.PIPE, text=True, start_new_session=True)
+        self.addCleanup(lambda: terminate_process_group(proc))
+        grandchild = int(proc.stdout.readline().strip())
+        self.assertTrue(_pid_alive(grandchild), "grandchild should be running")
+        terminate_process_group(proc)
+        # The orphaned grandchild is reparented to init and reaped after the group
+        # SIGKILL; poll briefly for it to disappear.
+        deadline = time.time() + 5
+        while time.time() < deadline and _pid_alive(grandchild):
+            time.sleep(0.1)
+        self.assertFalse(_pid_alive(grandchild),
+                         "grandchild survived group teardown (process tree leaked)")
 
 
 if __name__ == "__main__":

@@ -7,12 +7,13 @@ continuity across turns is each tool's own resume/continue mechanism:
 
   * claude: `claude -p <t1>`            then `claude -c -p <tN>`
   * agy:    `agy -p <t1> --add-dir <wd>` then `agy -c -p <tN> --add-dir <wd>`
-  * codex:  `codex exec --sandbox workspace-write <t1>`
-            then `codex exec --sandbox workspace-write resume --last <tN>`
+  * codex:  `codex exec --sandbox workspace-write --skip-git-repo-check <t1>`
+            then `codex exec --sandbox workspace-write --skip-git-repo-check resume --last <tN>`
 
-The `--sandbox` flag is an `exec` GLOBAL flag: on resume it MUST precede the
-`resume` subcommand (`codex exec --sandbox … resume …`), never after it — a
-documented footgun from the round-2 experiment, pinned by a tool-free argv self-test.
+The `--sandbox` (and `--skip-git-repo-check`) flags are `exec` GLOBAL flags: on resume
+they MUST precede the `resume` subcommand (`codex exec --sandbox … resume …`), never
+after it — a documented footgun from the round-2 experiment, pinned by a tool-free argv
+self-test. `--skip-git-repo-check` lets codex run in a throwaway non-git workdir.
 
 Stdlib only.
 """
@@ -47,9 +48,10 @@ def chain_for(tool: str, turns: list[str], workdir: Path) -> str:
         for t in turns[1:]:
             parts.append(f"agy -c -p {q(t)} --dangerously-skip-permissions --add-dir {q(wd)}")
     elif tool == "codex":
-        parts.append(f"codex exec --sandbox workspace-write {q(turns[0])}")
+        parts.append(f"codex exec --sandbox workspace-write --skip-git-repo-check {q(turns[0])}")
         for t in turns[1:]:
-            parts.append(f"codex exec --sandbox workspace-write resume --last {q(t)}")
+            parts.append(
+                f"codex exec --sandbox workspace-write --skip-git-repo-check resume --last {q(t)}")
     else:
         raise ValueError(f"unknown tool {tool!r}")
     return " && ".join(parts)

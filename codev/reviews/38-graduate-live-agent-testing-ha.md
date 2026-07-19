@@ -214,6 +214,36 @@ first-iteration pass. Codex confirmed `selftest_degraded` passes. No concerns ra
 Verdicts: **Gemini/Codex/Claude all APPROVE (HIGH), zero key issues.** No concerns raised —
 all consultations approved the docs, `.gitignore`, README pointer, and acceptance sweep.
 
+### PR-level review (Review phase, iter 1)
+Verdicts: Gemini APPROVE, Claude APPROVE (both re-ran the suites; zero issues), Codex
+REQUEST_CHANGES (branch hygiene). **Addressed**: removed a stray transient porch context file
+(clean tree). **Rebutted**: the `chore(porch):` commit messages are porch's own orchestration
+commits (strict mode forbids rewriting; the branch squash-merges to one clean `[Spec 38]`
+commit). **N/A**: codex could not run the live tier in its sandbox (no writable temp) — an
+environment limit, verified green locally + by two reviewers. See `38-review-iter1-rebuttals.md`.
+
+### Architect integration review (PR #39) — REQUEST_CHANGES, all addressed
+The architect ran a full 3-way CMAP **plus live verification from the product side** and
+found three harness bugs the PR-level consults missed because they never ran codex live:
+- **Item 1 — codex `--skip-git-repo-check`.** *Addressed.* `codex exec` refuses a non-git
+  temp workdir; added the flag at both invocation sites (`harness._codex_cmd`,
+  `drivers.chain_for`), updated the exact-string argv self-tests, and corrected the M4
+  narrative here and in the PR description. Verified by a green codex-only live sweep
+  (17 pass, 3 known-bug:#33, exit 0).
+- **Item 2 — failure path hid the evidence.** *Addressed.* Generalized the phase-4 iter-2
+  timeline fix to the session path: `run_observed_command` now persists agent stdout/stderr to
+  the session outdir (so the `--keep-artifacts` hint is true), and `ensure_tool_usable` folds
+  the `stderr_tail` into the `ToolUnusable` detail so the reason shows inline. `check_timeline`
+  now uses that same generic mechanism. Tool-free self-tests added.
+- **Item 3 — timeout could orphan the agent process tree.** *Addressed.* Both
+  `run_observed_command` (now `Popen` + `communicate(timeout)`) and `sample_timeline` launch
+  with `start_new_session=True` and tear down via a shared `terminate_process_group` helper
+  that `os.killpg`s the whole group (SIGTERM→SIGKILL), mirroring the product's
+  `ai_observe.observe.wait_for_process`. Tool-free self-tests added (leader + grandchild).
+
+Non-blocking notes recorded as Follow-up Items (atomic bug-flip in fix PRs; `--selftest`-in-CI
+follow-up; the cosmetic `collect_events` `Host:` header).
+
 ## Flaky Tests
 No flaky tests encountered. (The deterministic-probe pivot in Phase 3 specifically eliminated a
 would-be flaky live-agent gate before it could land.)
@@ -229,22 +259,25 @@ Per-phase live verification (this worktree, tools authenticated):
 - **S7 degraded (#36)**: claude 5 agent-actual pass (d1–d5) + `known-bug:#36` with live
   signature `parser_status='parser_failure_partial' authority_overstated=True`, rc0.
 
-Capstone full-suite sweep (`python -m tests.agent_sessions`, this worktree):
-**pass=55, known-bug=3 (#32×2, #36×1), info=2, fail=3** across 63 checks.
-- **claude** (all 7 applicable scenarios) and **agy** (all 5 applicable) — every
-  agent-actual / canonical / viewer check green; `known-bug:#32` annotated on both
-  ephemeral runs; `known-bug:#36` annotated on degraded; the two `info` records retain the
-  nondeterministic live-deletion evidence without gating.
-- **codex** — the 3 `fail`s are all codex (`single_write`, `subprocess`, `multi_turn`):
-  `tool 'codex' produced no events — not authenticated or agent error; agent exited 1`.
-  **codex is not authenticated in this worktree at sweep time**, so this is **M4 behaving
-  exactly as designed** — a loud, named failure that names the tool, never a silent skip or
-  green — not a suite defect. (codex was authenticated and green in Phase 3; its auth has
-  lapsed since.) Re-authenticating codex and re-running would turn those 3 into
-  pass/known-bug:#33 results, as Phase 3/4 already demonstrated live.
+Capstone full-suite sweep (`python -m tests.agent_sessions`, initial run): **pass=55,
+known-bug=3 (#32×2, #36×1), info=2, fail=3** across 63 checks — claude (all 7 scenarios) and
+agy (all 5) fully green; the 3 `fail`s were all codex.
 
-The sweep therefore confirms M1 (single-command oracle-backed pass/fail), the three
-known-bug flip-homes (M3), and M4 (loud named tool-unusable failure) in one run.
+**Root-cause correction (architect integration review, item 1).** The initial diagnosis of
+the codex fails as "unauthenticated" was **wrong**. The architect reproduced them *fully
+logged in*: `codex exec` refuses a non-git working directory with
+`Not inside a trusted directory and --skip-git-repo-check was not specified`, and the
+scenario workdirs are throwaway temp dirs. It was a **harness bug** — a missing
+`--skip-git-repo-check` flag — that M4 correctly caught as a loud, named failure (the M4
+mechanism worked; only its *narrative* was misattributed). Fixed at both invocation sites
+(`_codex_cmd`, `chain_for`) with argv self-tests pinning the flag.
+
+**Post-fix codex-only sweep** (`python -m tests.agent_sessions --tools codex`): **pass=17,
+known-bug:#33=3, excluded=4, exit 0** — `single_write`, `subprocess`, and `multi_turn` all
+green with the expected `known-bug:#33` annotations, viewer completeness 37/37, 15/15, 88/88.
+Combined with the claude+agy capstone, the suite now demonstrates M1 (single-command
+oracle-backed pass/fail), the three known-bug flip-homes (M3), and M4 (loud named
+tool-unusable failure) across **all three** tools.
 
 ## Follow-up Items
 - When each upstream fix merges, flip its gate: `OPEN_BUGS[32|33|36].active = False` in

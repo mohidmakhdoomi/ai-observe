@@ -122,6 +122,26 @@ class EnsureToolUsableTests(unittest.TestCase):
     def test_usable_result_does_not_raise(self):
         ensure_tool_usable("claude", self._result(0, 4))  # no exception
 
+    def test_nonzero_return_surfaces_stderr_tail(self):
+        # The stderr tail (persisted by the harness) is folded into the failure so a
+        # harness misinvocation reads as itself — not a bare "agent exited 1" (review
+        # item 2: the exact gap behind this PR's own codex misdiagnosis).
+        r = types.SimpleNamespace(
+            returncode=1, disk_events={"total": 0},
+            meta={"stderr_tail": "Not inside a trusted directory and "
+                                 "--skip-git-repo-check was not specified."})
+        with self.assertRaises(ToolUnusable) as cm:
+            ensure_tool_usable("codex", r)
+        self.assertIn("stderr tail:", cm.exception.detail)
+        self.assertIn("--skip-git-repo-check", cm.exception.detail)
+
+    def test_zero_events_surfaces_stderr_tail(self):
+        r = types.SimpleNamespace(returncode=0, disk_events={"total": 0},
+                                  meta={"stderr_tail": "some diagnostic text"})
+        with self.assertRaises(ToolUnusable) as cm:
+            ensure_tool_usable("agy", r)
+        self.assertIn("some diagnostic text", cm.exception.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

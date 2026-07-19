@@ -101,16 +101,22 @@ class ToolUnusable(Exception):
 def ensure_tool_usable(tool: str, result) -> None:
     """Raise `ToolUnusable(tool)` if `result` shows the tool did nothing usable.
 
-    `result` is a `harness.SessionResult` (duck-typed: `.returncode`,
-    `.disk_events` with a `total`). A nonzero return code or zero watched-root
-    events means the agent is missing auth or errored — a loud, named failure, not
-    a silent skip (Spec 38, Decision 4 / req 6).
+    `result` is a `harness.SessionResult` (duck-typed: `.returncode`, `.disk_events`
+    with a `total`, and an optional `.meta` carrying a `stderr_tail`). A nonzero return
+    code or zero watched-root events means the agent errored, is unauthenticated, or was
+    misinvoked — a loud, named failure, not a silent skip (Spec 38, Decision 4 / req 6).
+
+    The wrapper's stderr tail (persisted to the session outdir by the harness) is folded
+    into the failure detail so the *reason* shows inline — a harness misinvocation (e.g.
+    codex refusing a non-git workdir) reads as itself, not a bare "agent exited 1".
     """
+    tail = str(((getattr(result, "meta", None) or {}).get("stderr_tail")) or "").strip()
+    suffix = f"; stderr tail: {tail[-400:]}" if tail else ""
     if getattr(result, "returncode", 0) != 0:
-        raise ToolUnusable(tool, f"agent exited {result.returncode}")
+        raise ToolUnusable(tool, f"agent exited {result.returncode}{suffix}")
     total = (getattr(result, "disk_events", None) or {}).get("total", 0)
     if not total:
-        raise ToolUnusable(tool, "produced zero watched-root events")
+        raise ToolUnusable(tool, f"produced zero watched-root events{suffix}")
 
 
 # ---------------------------------------------------------------------------

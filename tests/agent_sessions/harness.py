@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import select
+import signal
 import socket
 import subprocess
 import time
@@ -62,6 +63,38 @@ def resolve_ai_observe() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Process-group teardown (kill the whole tree, not just the wrapper)
+# ---------------------------------------------------------------------------
+
+def terminate_process_group(proc: subprocess.Popen, grace: float = 5.0) -> None:
+    """Tear down a process launched with `start_new_session=True` by its whole group.
+
+    A hung agent leaves `strace`, the shell, and agent descendants running; killing
+    only the direct child (`proc.kill()` / `subprocess.run`'s timeout) orphans them.
+    Mirrors the product's `ai_observe.observe.wait_for_process` group-kill: SIGTERM then
+    SIGKILL on the process group (pgid == pid because of `start_new_session`), with a
+    direct-signal fallback if the group send fails.
+    """
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if proc.poll() is not None:
+            return
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            return
+        except OSError:
+            try:
+                proc.send_signal(sig)
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Tool command builders (non-interactive invocation)
 # ---------------------------------------------------------------------------
 
@@ -78,7 +111,10 @@ def _agy_cmd(prompt: str, workdir: Path) -> list[str]:
 
 def _codex_cmd(prompt: str, workdir: Path) -> list[str]:
     # workspace-write lets codex write inside the cwd without approval prompts.
-    return ["codex", "exec", "--sandbox", "workspace-write", prompt]
+    # --skip-git-repo-check: scenario workdirs are throwaway temp dirs (not git repos),
+    # and `codex exec` refuses to run in an untrusted non-git dir without this flag —
+    # exiting 1 before doing any work regardless of auth.
+    return ["codex", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", prompt]
 
 
 TOOLS: dict[str, Callable[[str, Path], list[str]]] = {
@@ -172,9 +208,11 @@ class ViewerMonitor:
         except Exception:
             return []
         try:
+            # Use the derived host/port in the Host header too (not a hardcoded
+            # 127.0.0.1), staying consistent with the url-derived connection above.
             sock.sendall(
-                b"GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-                b"Accept: text/event-stream\r\nConnection: close\r\n\r\n"
+                f"GET /events HTTP/1.1\r\nHost: {host}:{port}\r\n"
+                "Accept: text/event-stream\r\nConnection: close\r\n\r\n".encode()
             )
             sock.setblocking(False)
             buf = b""
@@ -396,24 +434,45 @@ def run_observed_command(
         env.update(extra_env)
 
     jsonl_path = outdir / f"{session}.jsonl"
+    stdout_log = outdir / f"{session}.stdout.log"
+    stderr_log = outdir / f"{session}.stderr.log"
 
+    # `start_new_session=True` makes the wrapper a process-group leader so a timeout can
+    # tear down the WHOLE tree (strace + shell + agent descendants) via killpg, not just
+    # the direct child the way `subprocess.run(timeout=…)` would — the one failure mode a
+    # "live agent hangs" harness must not leak.
     t0 = time.time()
-    stderr_tail = ""
+    proc = subprocess.Popen(
+        cmd, cwd=str(workdir), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,
+    )
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(workdir), env=env, timeout=timeout,
-            capture_output=True, text=True,
-        )
+        out, err = proc.communicate(timeout=timeout)
         returncode = proc.returncode
-        stdout_tail = (proc.stdout or "")[-1500:]
-        stderr_tail = (proc.stderr or "")[-800:]
         timed_out = False
-    except subprocess.TimeoutExpired as e:
-        returncode = -9
-        stdout_tail = (e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or ""))[-1500:]
-        stderr_tail = "TIMEOUT"
+    except subprocess.TimeoutExpired:
+        terminate_process_group(proc)
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            out, err = "", ""
+        returncode = proc.returncode if proc.returncode is not None else -9
         timed_out = True
     duration = time.time() - t0
+    out, err = (out or ""), (err or "")
+
+    # Persist the wrapper's streams next to the `.jsonl` (Decision-4 debuggability): a
+    # failed / unusable run leaves stderr on disk under --keep-artifacts, and the
+    # ToolUnusable failure surfaces a tail inline (see oracle.ensure_tool_usable). Without
+    # this the runner's "rerun with --keep-artifacts to inspect stderr" hint is hollow.
+    try:
+        stdout_log.write_text(out)
+        stderr_log.write_text(err + ("\n[TIMEOUT]" if timed_out else ""))
+    except Exception:
+        pass
+    stdout_tail = out[-1500:]
+    stderr_tail = ("TIMEOUT " + err[-800:]).strip() if timed_out else err[-800:]
 
     disk = summarize_events(load_events(jsonl_path), workdir=roots)
 
