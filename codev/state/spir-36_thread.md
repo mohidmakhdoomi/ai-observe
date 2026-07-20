@@ -27,3 +27,11 @@ Source study findings that shape the spec:
 
 Recommending Option A from the issue: new role `authoritative_net`, keep
 `authoritative_event_path` pointing at the promoted `.jsonl`.
+
+## Specify → gate
+
+Spec drafted, 3-way reviewed (gemini APPROVE / claude APPROVE / codex COMMENT),
+codex's two minor items folded in (FR3 warning substring pinned +
+integration-test assertion; explicit coverage-split preamble in Test scenarios).
+Commits: 41854ef (draft), de24831 (with multi-agent review).
+Now WAITING at spec-approval gate; architect notified via afx send.
