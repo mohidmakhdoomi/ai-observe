@@ -62,3 +62,24 @@ Phase 1 (core role derivation) built:
   allow-list boundary, unknown-status direction, rebuilt/no-promotion branches
   unchanged, warning-substring pin, mutation guard). Staged on creation.
 - Full suite: 263 tests, 0 failures, 0 skips.
+
+## Implement — phase_2 build
+
+Phase 1 committed after unanimous 3-way APPROVE (gemini/codex/claude, no issues).
+
+Phase 2 (integration + pinning tests) built — tests only, no product code:
+- `test_observe_cli.py`: post-hoc repro now asserts the full fixed meta shape
+  (status `parser_failure_partial`, authoritative `.jsonl`, `authoritative_net`,
+  `partial_direct`, `rebuilt` absent, warning substring); snapshot-only test pins
+  `backend_disabled` + `authoritative_complete` + no net warning.
+- `test_live_trace.py`: existing live TEST_FAIL_AFTER test extended into the
+  no-promotion guard (null authority, `inferred_or_empty_placeholder`, no
+  warning); NEW live truncate-then-promote repro with strace+snapshot backends.
+- `test_viewer_server.py`: NEW session-endpoint pinning — `authoritative_net`
+  passes through verbatim, `authoritative_artifact`/`default_artifact` = jsonl.
+- Gotcha worth remembering (strace parsing & path identity lesson confirmed):
+  the parser resolves relative syscall args against initial_cwd, not the fd
+  annotation, and watched-roots scope-drop runs BEFORE the fail-after counter —
+  live-repro fixtures need absolute in-root path arguments or the injected
+  failure never fires and the test silently exercises the healthy path.
+- Full suite: 265 tests, 0 failures, 0 skips.

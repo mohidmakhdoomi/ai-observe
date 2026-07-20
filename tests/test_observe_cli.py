@@ -291,6 +291,18 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             )
             self.assertEqual((obs / "snapshot-only.trace").read_text(encoding="utf-8"), "")
 
+            # Pin snapshot-only mode's meta labels: the user opted out of the
+            # direct layer, so the promoted .jsonl stays authoritative_complete
+            # with no net-fallback degradation warning (spec FR2).
+            meta = json.loads((obs / "snapshot-only.meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["parser"]["status"], "backend_disabled")
+            self.assertEqual(meta["artifacts"]["authoritative_event_path"], "snapshot-only.jsonl")
+            self.assertEqual(meta["artifacts"]["jsonl"]["role"], "authoritative_complete")
+            self.assertFalse(
+                any("snapshot fallback: net events only" in warning for warning in meta["warnings"]),
+                meta["warnings"],
+            )
+
     def test_strace_only_mode_disables_snapshot_reconciliation(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -535,6 +547,17 @@ class ObserveCliIntegrationTests(unittest.TestCase):
             self.assertEqual([(event["path"], event["source"]) for event in partial_events], [(str(direct_path), "strace")])
             self.assertTrue(any(event["path"] == str(extra_path) and event["source"] == "snapshot" for event in jsonl_events))
             self.assertTrue(all(event["source"] == "snapshot" for event in jsonl_events))
+
+            meta = json.loads((obs / "pf-snapshot.meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["parser"]["status"], "parser_failure_partial")
+            self.assertEqual(meta["artifacts"]["authoritative_event_path"], "pf-snapshot.jsonl")
+            self.assertEqual(meta["artifacts"]["jsonl"]["role"], "authoritative_net")
+            self.assertEqual(meta["artifacts"]["partial"]["role"], "partial_direct")
+            self.assertEqual(meta["artifacts"]["rebuilt"]["role"], "absent")
+            self.assertTrue(
+                any("snapshot fallback: net events only" in warning for warning in meta["warnings"]),
+                meta["warnings"],
+            )
 
 
 if __name__ == "__main__":
