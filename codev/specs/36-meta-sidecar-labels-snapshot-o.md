@@ -211,9 +211,13 @@ expects the fix to land. Option C is deferred (see Open Questions).
 
 3. **FR3 — degraded promotion is recorded in warnings (SHOULD)**: when the
    promotion happens while the direct parser failed, append a warning to the
-   sidecar's `warnings` (e.g. "snapshot fallback: .jsonl contains net (inferred)
-   events only; direct-layer detail was lost") so the viewer's warning count and
-   banner surface the degradation. Mechanism (a return-flag from
+   sidecar's `warnings` so the viewer's warning count and banner surface the
+   degradation. The warning text must contain the stable substring
+   `"snapshot fallback: net events only"` (matching the phrasing the harness's
+   synthetic fixed shape already uses in `selftest_degraded.py`); wording around
+   it may elaborate (e.g. "…; direct-layer detail was lost"). If FR3 is
+   implemented, the promoted-failure integration tests MUST assert the presence
+   of that substring in `meta["warnings"]`. Mechanism (a return-flag from
    `merge_snapshot_events`, a state field, or derivation in the meta builder) is a
    plan-phase decision.
 
@@ -303,17 +307,36 @@ Additionally on the promoted-failure rows: `partial` role
 
 ### Test scenarios
 
+Coverage split — where the broad failure set is exercised vs. where
+`parser_failure_partial` specificity is deliberate:
+
+- The **unit role-matrix test is the home of the broad failure set**: all six
+  affected statuses from the table above, the allow-list boundary statuses, and
+  the unknown-status case are asserted there.
+- The **integration repro tests are `parser_failure_partial`-specific by
+  construction** (the in-tree `AI_OBSERVE_TEST_FAIL_AFTER` hook can only produce
+  that status); they exist to prove the end-to-end path, not status breadth.
+- The **oracle predicate and docs known-bug wording stay `parser_failure_*`-scoped
+  deliberately** (see Out of scope): after FR1 no failure status can produce
+  `authoritative_complete`, so the gate's original signature remains sufficient
+  for its scenario.
+
+Scenarios:
+
 - **Unit — role matrix**: `build_session_meta` called directly across the status ×
-  authoritative-path matrix above; every before→after cell asserted, including the
-  allow-list boundary statuses (`ok`, `live_error_rebuilt`, `backend_disabled`) and
-  a hypothetical unknown status with `.jsonl` authority (must yield
-  `authoritative_net`, proving the allow-list direction).
+  authoritative-path matrix above; every before→after cell asserted — all six
+  affected failure statuses, the allow-list boundary statuses (`ok`,
+  `live_error_rebuilt`, `backend_disabled`), and a hypothetical unknown status
+  with `.jsonl` authority (must yield `authoritative_net`, proving the allow-list
+  direction).
 - **Integration — post-hoc repro**: extend
   `test_snapshot_parser_failure_keeps_partial_direct_and_writes_inferred_jsonl`
-  (`tests/test_observe_cli.py`) with `.meta.json` assertions (criterion 1).
+  (`tests/test_observe_cli.py`) with `.meta.json` assertions (criterion 1),
+  including the FR3 warning substring if FR3 is implemented.
 - **Integration — live repro**: the live-parser-failure equivalent (fake strace +
   `TEST_FAIL_AFTER` with live parse enabled, snapshot events present) asserting the
-  same meta shape, covering the truncate-then-promote path.
+  same meta shape (and FR3 warning substring), covering the truncate-then-promote
+  path.
 - **Integration — no-promotion failure**: parse failure with no snapshot events →
   `authoritative_event_path` null, roles unchanged (guards against over-reach).
 - **Pinning — snapshot-only mode**: `AI_OBSERVE_BACKENDS=snapshot` session meta
@@ -358,4 +381,23 @@ Additionally on the promoted-failure rows: `partial` role
 
 ## Consultation Log
 
-*(populated by the porch-driven 3-way review)*
+### Specify iteration 1 (Gemini / Codex / Claude)
+
+- **Gemini — APPROVE (high confidence)**: no issues. Endorsed the allow-list
+  direction, the `partial_direct` pairing with `authoritative_net`, and keeping
+  the oracle predicate unbroadened.
+- **Claude — APPROVE (high confidence)**: independently re-verified the root
+  cause, the `inferred_or_empty_placeholder` unreachability, the allow-list
+  membership, and the FR4 selftest impact against source. Non-blocking: suggested
+  matching FR3's warning phrasing to `selftest_degraded.py`'s synthetic shape.
+- **Codex — COMMENT (high confidence)**: (1) FR3's warning needed a concrete
+  observable check in the acceptance criteria; (2) requested explicit wording on
+  which tests/docs cover the broad failure-status set vs. remain
+  `parser_failure_*`-specific.
+
+**Changes made in response**: FR3 now pins a stable warning substring
+(`"snapshot fallback: net events only"`, per Claude's phrasing suggestion) and
+requires integration tests to assert it when FR3 is implemented; the Test
+scenarios section gained an explicit coverage-split preamble (unit matrix = broad
+failure set; integration repros = `parser_failure_partial` by construction;
+oracle/docs deliberately `parser_failure_*`-scoped).
