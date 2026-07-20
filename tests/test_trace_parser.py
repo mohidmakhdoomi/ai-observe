@@ -42,6 +42,7 @@ class TraceParserTests(unittest.TestCase):
             "fd_yy.strace": ["create"],
             "openat2_pwritev2.strace": ["create", "modify"],
             "annotated_at_fdcwd.strace": ["create", "modify", "delete"],
+            "newroot_sandbox.strace": ["create", "delete", "create", "modify", "delete"],
         }
         fixture_dir = ROOT / "tests" / "fixtures" / "strace"
         for name, expected_ops in fixtures.items():
@@ -279,6 +280,164 @@ class TraceParserTests(unittest.TestCase):
             [
                 ("create", "/tmp/work/inside/keep.txt"),
                 ("rename", "/tmp/work/inside/new.txt"),
+            ],
+        )
+
+    def test_sandbox_prefix_annotated_result_path_remapped(self):
+        # -yy arrival form: the kernel's fd annotation reports the staging
+        # spelling even when the argument path was relative; the annotation
+        # wins and the emitted paths must still land canonical.
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "f.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</newroot/tmp/work/f.txt>
+123 1714932000.000002 write(3</newroot/tmp/work/f.txt>, "x", 1) = 1
+""", watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/tmp/work/f.txt"), ("modify", "/tmp/work/f.txt")],
+        )
+
+    def test_sandbox_prefix_remap_runs_before_artifact_filter(self):
+        events = self.parse(
+            '123 1714932000.000001 creat("/newroot/tmp/work/log.trace", 0600) = 3\n',
+            artifacts=["/tmp/work/log.trace"],
+            watched_roots=["/tmp/work"],
+        )
+        self.assertEqual(events, [])
+
+    def test_sandbox_prefix_marker_pair_lands_in_canonical_namespace(self):
+        # The codex marker probe: mkdir arrives in the /newroot staging
+        # spelling, rmdir in the canonical one; both must pair up canonically.
+        events = self.parse("""
+123 1714932000.000001 mkdir("/newroot/tmp/work/.git", 0755) = 0
+123 1714932000.000002 rmdir("/tmp/work/.git") = 0
+""", watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/tmp/work/.git"), ("delete", "/tmp/work/.git")],
+        )
+        self.assertIn('"/newroot/tmp/work/.git"', events[0]["raw_syscall"])
+
+    def test_sandbox_prefix_fd_propagation_recovers_create_and_write(self):
+        # Blast radius beyond marker noise: an open through the staging
+        # spelling must lose neither the create nor writes through its fd.
+        events = self.parse("""
+123 1714932000.000001 openat(AT_FDCWD, "/newroot/tmp/work/f.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3
+123 1714932000.000002 write(3, "x", 1) = 1
+""", watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/tmp/work/f.txt"), ("modify", "/tmp/work/f.txt")],
+        )
+
+    def test_sandbox_prefix_outside_watched_roots_still_dropped(self):
+        events = self.parse(
+            '123 1714932000.000001 mkdir("/newroot/etc/x", 0755) = 0\n',
+            watched_roots=["/tmp/work"],
+        )
+        self.assertEqual(events, [])
+
+    def test_watched_root_under_literal_newroot_is_not_rewritten(self):
+        # A watched root that genuinely lives under /newroot keeps its
+        # spelling: the in-scope guard fires before any prefix strip.
+        events = self.parse(
+            '123 1714932000.000001 creat("/newroot/data/f", 0600) = 3\n',
+            watched_roots=["/newroot/data"],
+        )
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/newroot/data/f")],
+        )
+
+    def test_sandbox_prefix_requires_component_boundary(self):
+        events = self.parse(
+            '123 1714932000.000001 creat("/newrootfoo/tmp/work/f", 0600) = 3\n',
+            watched_roots=["/tmp/work"],
+        )
+        self.assertEqual(events, [])
+
+    def test_rename_fields_remap_independently_across_spellings(self):
+        # old_path/new_path/path remap independently at the one choke point:
+        # a rename whose ends arrive in different spellings of the watched
+        # tree emits fully canonical; a rename with one end genuinely outside
+        # is still dropped.
+        events = self.parse("""
+123 1714932000.000001 rename("/newroot/tmp/work/a", "/tmp/work/b") = 0
+123 1714932000.000002 rename("/newroot/tmp/work/in", "/newroot/etc/out") = 0
+""", watched_roots=["/tmp/work"])
+        self.assertEqual(self.ops(events), ["rename"])
+        self.assertEqual(events[0]["old_path"], "/tmp/work/a")
+        self.assertEqual(events[0]["new_path"], "/tmp/work/b")
+        self.assertEqual(events[0]["path"], "/tmp/work/b")
+
+    def test_chdir_into_sandbox_prefix_remaps_relative_operations(self):
+        # The tracked cwd keeps the raw staging spelling; the resolved event
+        # path arrives as /newroot/... and is remapped at emission.
+        events = self.parse("""
+123 1714932000.000001 chdir("/newroot/tmp/work") = 0
+123 1714932000.000002 mkdir("d", 0755) = 0
+""", watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/tmp/work/d")],
+        )
+
+    def test_no_watched_roots_sandbox_spellings_pass_through_unchanged(self):
+        # Without watched roots there is no validation basis for a remap, so
+        # the parser's output stays identical to its pre-remap behavior.
+        events = self.parse("""
+123 1714932000.000001 mkdir("/newroot/tmp/work/.git", 0755) = 0
+123 1714932000.000002 rmdir("/tmp/work/.git") = 0
+""")
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [("create", "/newroot/tmp/work/.git"), ("delete", "/tmp/work/.git")],
+        )
+
+    def test_cross_namespace_defense_matrix(self):
+        # Pins the sandbox-prefix remap across event-op families and arrival
+        # forms so a future refactor of any dispatch arm (or of the remap
+        # guard) cannot silently re-introduce a namespace split.
+        staged_dirfd = "AT_FDCWD</newroot/tmp/work>"
+        cases = [
+            ('mkdir("/newroot/tmp/work/d", 0755) = 0', "create", "/tmp/work/d", None, None),
+            ('unlink("/newroot/tmp/work/f") = 0', "delete", "/tmp/work/f", None, None),
+            ('truncate("/newroot/tmp/work/f", 0) = 0', "modify", "/tmp/work/f", None, None),
+            ('chmod("/newroot/tmp/work/f", 0600) = 0', "chmod", "/tmp/work/f", None, None),
+            ('chown("/newroot/tmp/work/f", 1000, 1000) = 0', "metadata", "/tmp/work/f", None, None),
+            ('rename("/newroot/tmp/work/a", "/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            ('rename("/tmp/work/a", "/newroot/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            ('rename("/newroot/tmp/work/a", "/newroot/tmp/work/b") = 0', "rename", "/tmp/work/b", "/tmp/work/a", "/tmp/work/b"),
+            (f'mkdirat({staged_dirfd}, "d2", 0755) = 0', "create", "/tmp/work/d2", None, None),
+            (f'symlinkat("t", {staged_dirfd}, "l") = 0', "create", "/tmp/work/l", None, None),
+        ]
+        for line, op, path, old_path, new_path in cases:
+            with self.subTest(line=line):
+                events = self.parse(f"123 1714932000.000001 {line}\n", watched_roots=["/tmp/work"])
+                self.assertEqual(self.ops(events), [op])
+                self.assertEqual(events[0]["path"], path)
+                self.assertEqual(events[0]["old_path"], old_path)
+                self.assertEqual(events[0]["new_path"], new_path)
+        with self.subTest(line="cross-boundary rename stays dropped"):
+            events = self.parse(
+                '123 1714932000.000001 rename("/newroot/tmp/work/in", "/newroot/etc/out") = 0\n',
+                watched_roots=["/tmp/work"],
+            )
+            self.assertEqual(events, [])
+
+    def test_newroot_sandbox_fixture_remaps_to_canonical(self):
+        # End-to-end remap proof over the committed codex session shape,
+        # through the standard parse_trace_file path (the committed-fixtures
+        # registry parses the same file with no watched roots).
+        text = (ROOT / "tests" / "fixtures" / "strace" / "newroot_sandbox.strace").read_text(encoding="utf-8")
+        events = self.parse(text, watched_roots=["/tmp/work"])
+        self.assertEqual(
+            [(e["operation"], e["path"]) for e in events],
+            [
+                ("create", "/tmp/work/.git"),
+                ("delete", "/tmp/work/.git"),
+                ("create", "/tmp/work/notes.txt"),
+                ("modify", "/tmp/work/notes.txt"),
+                ("delete", "/tmp/work/notes.txt"),
             ],
         )
 

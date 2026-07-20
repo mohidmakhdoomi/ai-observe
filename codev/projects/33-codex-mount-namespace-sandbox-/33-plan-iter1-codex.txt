@@ -1,0 +1,9 @@
+Using local files to verify the plan against the actual codebase.---
+VERDICT: COMMENT
+SUMMARY: Strong, spec-aligned plan with solid phase ordering and tests; only notable gap is making the committed-fixture watched-root wiring explicit.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The plan correctly notices that `test_committed_fixture_files_parse()` currently calls `self.parse(text)` with no `watched_roots`, so the new committed fixture would not actually exercise the remap unless that harness path is adjusted. Make that implementation step explicit, not just a note to “verify.”
+- Phase 2’s fixture proof depends on `parse_trace_file` running with `watched_roots=["/tmp/work"]`; specify exactly whether this is done by extending `self.parse`, special-casing the fixture table, or adding a dedicated fixture test, so a builder does not have to infer the mechanism.
+- Otherwise none.

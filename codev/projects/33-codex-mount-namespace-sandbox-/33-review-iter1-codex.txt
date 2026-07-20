@@ -1,0 +1,16 @@
+I’m using direct file inspection to review the PR against the spec/plan, code, tests, and docs.I also checked the advertised test commands; the selftest command does not pass in this read-only environment because it needs writable temp dirs / local viewer startup, so I’m treating that result as environment-limited rather than a PR regression unless the changed code itself points otherwise.Strong PR overall.
+
+- **Correctness/code quality:** The remap is placed at the right choke point in `TraceParser._parse_line`, before both scope and artifact filtering, which matches the spec and minimizes blast radius. The guard logic is conservative and preserves raw evidence in `raw_syscall`.
+- **Spec/plan alignment:** The implementation, oracle flip, fixture, docs, and review artifacts all line up with Spec 33 / Plan 33.
+- **Tests:** Coverage for the new behavior is solid: marker pairing, fd propagation, literal `/newroot` watched roots, component-boundary safety, rename behavior, `chdir`, `-yy` annotation paths, artifact-filter ordering, no-roots pass-through, and fixture replay are all present.
+- **Docs:** The user-facing docs and live-agent docs were updated appropriately.
+
+I could not independently reproduce the claimed full green test runs in this sandbox because the environment is read-only and lacks a usable writable temp directory, and many existing tests depend on `tempfile`. I did, however, verify the core parser behavior directly with an in-memory script against the new `/newroot` cases, and it behaved as intended.
+
+---
+VERDICT: APPROVE
+SUMMARY: The sandbox-path remap is well-scoped, matches the spec/plan, and is backed by strong regression coverage; no blocking issues found.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES: None

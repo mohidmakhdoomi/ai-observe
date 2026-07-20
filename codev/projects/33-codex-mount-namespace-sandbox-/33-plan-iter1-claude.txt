@@ -1,0 +1,90 @@
+I need to verify the plan's technical claims against the actual codebase. Let me read the key files referenced.Now let me verify the `parse` helper's watched_roots handling and the test patterns:Good — confirmed there's exactly one `self.events.append` at line 188. Now let me check a crucial detail: how the `parse` helper passes `watched_roots` and whether the committed-fixture test uses it:Now let me verify one important detail — the `parse` helper's default `watched_roots` value. Looking at the helper: `def parse(self, text, cwd="/tmp/work", artifacts=(), **kw)` — it passes `**kw` through. The `parse_trace_file` default is `watched_roots: Iterable[...] = ()`. So existing fixture tests call `self.parse(text)` without `watched_roots`, meaning they parse with empty roots. The plan's fixture test will need to explicitly pass `watched_roots`. Let me check the plan's note about this:Good. I've now verified all the critical file references, line numbers, and code patterns. Let me compile my review.
+
+---
+
+## Plan Review: Spec 33 — Guarded sandbox-prefix remap for mount-namespace paths
+
+### 1. Spec Coverage
+
+**Thorough.** Every functional criterion (S1–S9) and every non-functional constraint from the spec is explicitly mapped to a phase, with success metrics tied to acceptance criteria. The plan covers:
+- The core fix (Approach B from the spec) ✓
+- Oracle flip (Spec 38 rot-proof gate) ✓
+- Defense matrix across event-op families ✓
+- End-to-end fixture through `parse_trace_file` ✓
+- Doc updates (`observe.md`, `agent-sessions.md`) ✓
+- No scope creep beyond the spec ✓
+
+### 2. Phase Breakdown
+
+**Solid decomposition.** Two phases with a clear dependency edge:
+- Phase 1 (fix + core tests + oracle flip) is the atomic behavior change — appropriately bundled so fix and flip travel together.
+- Phase 2 (defense matrix + fixture + docs) is tests-and-docs-only, genuinely separable.
+
+The rationale for keeping fix + flip in one commit is well-argued and aligns with the oracle's rot-proof design.
+
+### 3. Technical Approach — Verified Against the Codebase
+
+**Line references verified and accurate:**
+- `_AT_FDCWD_RE` is indeed at line 48; the constant placement "after line 48" is correct. ✓
+- Lines 181–188 match the actual `_parse_line` flow: `_event_for` → null check → `_drop_out_of_scope_event` → `_drop_artifact_event` → `self.events.append`. ✓
+- There is exactly one `self.events.append` (line 188) — the plan's "single choke point" claim holds. ✓
+- `oracle.py` line 58: `OPEN_BUGS[33]` is there, currently `active=True` (implicit — no `active=False` keyword). ✓
+- `_drop_out_of_scope_event` (line 445) and `_path_within_watched_roots` (line 454) are correctly referenced. ✓
+
+**Remap logic is sound:**
+- Guard rule 1 (in-scope stays untouched) prevents false remaps when a watched root literally lives under `/newroot`.
+- Guard rule 2 (strip only into a watched root) bounds the remap to paths whose stripped form is actually monitored.
+- Component-boundary safety (`prefix + "/"`) prevents `/newrootfoo/...` matches.
+- Single strip / no recursion is the right call.
+- Empty `watched_roots` short-circuit (no remap) preserves byte-identical output.
+
+**One observation on the `_remap_sandbox_path` implementation sketch:**
+
+The plan shows:
+```python
+stripped = path[len(prefix):] or "/"
+```
+For `path == "/newroot"` this yields `""` → `"/"`, which is correct. For `path == "/newroot/tmp/work/f"` this yields `/tmp/work/f`, also correct. The guard `path == prefix or path.startswith(prefix + "/")` ensures the split is always component-safe. This is clean.
+
+**State tables:** The plan correctly identifies that `state.cwd` and `state.fds` keep raw kernel-view spellings, and that remapping at emission time is sufficient because event paths are drawn from those tables at construction. Verified: `_event_for` builds paths from `self._state(pid).fds[fd]` and `self._state(pid).cwd`, and the remap would operate on the already-assembled event dict. ✓
+
+### 4. Testability
+
+**Strong test strategy:**
+- Phase 1 tests pin every guard rule and acceptance criterion with inline strace text through the existing `self.parse` helper — consistent with house style.
+- The `chdir` arrival form (consultation feedback) is explicitly included.
+- S9 (empty roots byte-identical) is tested as a regression pin.
+- The plan explicitly states "No existing test may be edited" — good discipline.
+
+**Phase 2 matrix:**
+- 11-row `subTest` matrix covers all event-op families and rename consistency.
+- The genuine cross-boundary rename drop is included as a negative test.
+- The committed fixture test correctly notes the need to thread `watched_roots` through the parse call — the existing `test_committed_fixture_files_parse` calls `self.parse(text)` without `watched_roots`, so the new fixture entry will need `watched_roots=["/tmp/work"]` passed explicitly. The plan acknowledges this ("verify the committed-fixtures test's parse configuration and thread watched roots through it"). This will require either a small adjustment to the fixture test structure or a separate test method for the new fixture. **This is a minor detail the builder will need to work out at implementation time**, but the plan correctly flags it.
+
+### 5. Risk Assessment
+
+**Risks well-identified:**
+- False remap (bounded by two guards + tests) ✓
+- Choke-point coverage (verified: single append) ✓
+- Merge conflict with other oracle.py edits (correctly minimized — one line in a dict literal) ✓
+- Perf (O(1) prefix × O(roots) string ops — negligible) ✓
+
+**No missing risks I can identify.** The plan is conservative and well-bounded.
+
+### 6. Minor Observations (Non-blocking)
+
+1. **Fixture test integration (Phase 2):** The existing `test_committed_fixture_files_parse` calls `self.parse(text)` with no `watched_roots`, meaning `watched_roots=()`. The new `newroot_sandbox.strace` fixture needs `watched_roots=["/tmp/work"]` to exercise the remap. The plan notes this but doesn't specify whether the builder should (a) add a separate entry with an explicit `watched_roots` kwarg in the fixture dict, (b) restructure the test to support per-fixture kwargs, or (c) write a separate test method. Any of these work — this is an implementation-time detail, not a plan gap.
+
+2. **`docs/agent-sessions.md` line references:** The plan says "scenario table line 64, known-bug table line 102." I verified line 64 is the `multi_turn` row and line 102 is the `#33` known-bug row. Both are correct. ✓
+
+3. **`docs/observe.md` line references:** The plan says "near lines 105–110." The visibility-boundary section is indeed at lines 103–109. Correct. ✓
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Meticulously detailed plan with verified line references, sound guard logic, comprehensive test coverage, and clean phase decomposition — ready for a builder.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

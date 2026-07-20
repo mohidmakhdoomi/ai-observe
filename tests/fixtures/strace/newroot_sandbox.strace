@@ -1,0 +1,7 @@
+# strace 6.8-style fixture, synthetic codex mount-namespace sandbox session: /newroot staging spellings paired with canonical ones (issue #33)
+123 1714932000.500001 mkdir("/newroot/tmp/work/.git", 0755) = 0
+123 1714932000.500002 rmdir("/tmp/work/.git") = 0
+123 1714932000.500003 openat(AT_FDCWD, "/newroot/tmp/work/notes.txt", O_WRONLY|O_CREAT|O_EXCL, 0600) = 3</newroot/tmp/work/notes.txt>
+123 1714932000.500004 write(3</newroot/tmp/work/notes.txt>, "hello", 5) = 5
+123 1714932000.500005 close(3</newroot/tmp/work/notes.txt>) = 0
+123 1714932000.500006 unlink("/tmp/work/notes.txt") = 0

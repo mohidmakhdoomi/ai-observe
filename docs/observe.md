@@ -108,6 +108,14 @@ In the default layered mode, those watched roots are also the visibility
 boundary for direct `strace` events: direct events outside the watched roots are
 not emitted into the session JSONL.
 
+Direct events whose paths arrive under a known sandbox-staging prefix
+(currently `/newroot/...`, the pivot_root staging convention used by
+mount-namespace sandboxes such as codex's) are remapped to the canonical
+spelling when the stripped path falls inside a watched root, so both sides of
+a sandbox create/delete pair land in the same namespace. The original staging
+spelling stays visible in each event's `raw_syscall`; with no watched roots
+configured, no remap occurs.
+
 - `AI_OBSERVE_ROOTS` is a path list; on Linux use `:` separators, for example:
 
   ```bash

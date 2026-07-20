@@ -92,3 +92,21 @@ decoding, the annotated form is the *only* form real sessions produce. Match tok
 the annotation made explicit (and prefer extracting it: the kernel-reported path beats
 reconstructed state), and source at least some parser test inputs from real tool output
 so plain-form-only fixtures can't hide the gap.
+
+## Canonicalize cross-namespace path spellings at one guarded choke point
+
+When a sandbox splits one logical file across two path spellings (mount-namespace
+staging like `/newroot/<path>`), lexical scope filters silently drop one side and
+consumers see unpaired events. Remap spellings at the single event-emission choke
+point, guarded by watched-root membership so out-of-scope activity is never
+mis-relabeled; pairing symmetry (creates matching deletes for net-zero churn) is the
+right test oracle but the wrong mechanism — suppressing unpaired events hides real
+activity, and realpath cannot resolve another namespace's paths at all.
+
+## Treat a resumed worktree as possibly still owned by a live predecessor
+
+A builder resume can leave the prior session's wrapper alive (auto-respawn after a
+context reset), producing two agents editing and staging the same tree. If files
+change underneath you mid-build, stop editing, verify sole ownership (check for
+sibling processes), and have the architect kill the stale session before driving the
+orchestrator — double-driving duplicates consultations and thrashes shared state.

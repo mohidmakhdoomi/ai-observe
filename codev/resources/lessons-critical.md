@@ -23,4 +23,4 @@ MAINTAIN polices the cap and keeps the map in sync with lessons-learned.md's sec
 - Performance testing — consult when writing CI-stable performance tests (shape over wall-clock).
 - CI output-grep gates — consult when gating CI on test-output text (skips, tool markers).
 - Orchestrator commit sweep — consult when creating new deliverable files under porch.
-- Strace token/annotation matching — consult when comparing strace tokens literally or choosing parser test-input forms.
+- Strace parsing, annotations & path identity — consult when comparing strace tokens literally, choosing parser test-input forms, or when one file appears under multiple path spellings (sandbox namespaces).

@@ -1,0 +1,54 @@
+I've reviewed the specification against the actual codebase. Let me verify a few more details about the event emission path and how the remap would interact with existing mechanisms.I've now thoroughly reviewed the specification against the actual codebase. Here's my assessment:
+
+---
+
+## Review
+
+### Completeness ✓
+
+The spec is exceptionally thorough:
+- Root cause is precisely identified with line references that I verified are accurate (`_drop_out_of_scope_event` at line 445, `normalize_abs_path` at line 620, the single emission path at lines 181-188).
+- The blast-radius analysis goes beyond the issue text — correctly identifying that fd-table propagation means *any* event opened via `/newroot/...` spelling is lost, not just `mkdir`.
+- Nine functional acceptance criteria covering symmetric pairs, blast-radius recovery, out-of-scope, guard rules, component boundaries, renames, all path fields, oracle flip, and empty-roots behavior.
+- Non-functional criteria (no schema change, lexical-only, stdlib-only) are appropriate and aligned with the codebase constraints.
+
+### Correctness ✓
+
+I verified several claims against the source:
+
+1. **Single choke point** — Confirmed. Lines 181-188 show exactly one path to `self.events.append`. The proposed insertion between event construction and scope-filter is clean.
+2. **fd-table stores raw spellings** — Confirmed at line 244: `state.fds[result_value] = path` stores whatever `_path_from_arg` or `result_path` returns, which preserves `/newroot/...`.
+3. **`_path_within_watched_roots`** — Confirmed at line 454-455: pure `is_relative_to` check, no namespace awareness.
+4. **Oracle probe** — Confirmed the exact `bug33_unpaired_marker_delete()` function at line 241-252 and the selftest assertions at lines 81-91.
+5. **Guard logic soundness** — Step 1 (already-in-scope stays untouched) prevents mis-rewriting a literal `/newroot` watched root. Step 2's "stripped path must land inside a watched root" bounds false positives. With empty `watched_roots`, neither step 1 nor step 2 can evaluate to True (both rely on `_path_within_watched_roots` which returns False over empty roots), so no remap fires, while `_drop_out_of_scope_event` passes everything (line 446: `if not self.watched_roots: return False`). Behavior unchanged. ✓
+
+### Feasibility ✓
+
+- The implementation is scoped to one module (`trace_parser.py`) plus one flag flip in the oracle and new test cases — realistic for a single PR.
+- The remap is O(prefixes × watched_roots) string comparisons per event, bounded by a tuple of length 1 × typical root count (1-3). Trivially cheap.
+- No external dependencies, no schema changes, no env-var additions.
+
+### Clarity ✓
+
+The three-step algorithm is precisely defined with unambiguous guard conditions. A builder would know exactly:
+- Where to insert (between `_event_for` and `_drop_out_of_scope_event`)
+- The algorithm (three steps with clear precedence)
+- What to test (criteria 1-9 with concrete trace-line examples)
+- The oracle flip (one-line `active=False`)
+
+### Minor Observations (non-blocking)
+
+1. **`chdir` interaction**: If a process `chdir`s to `/newroot/tmp/work`, subsequent relative-path operations resolve against that cwd, producing `/newroot/...` paths that correctly get remapped at emission. The spec implicitly covers this ("Process-state tables keep the raw spellings") but doesn't call out `chdir` as an explicit test scenario. The builder could reasonably infer this from criteria 2 (blast-radius recovery), but a hint might help.
+
+2. **`result_path` annotation path**: When strace annotates a result like `= 3</newroot/tmp/work/f.txt>`, that path gets stored in the fd table (line 241-242). The spec's mechanism correctly handles this since emission-time remap covers all fd-derived paths. Not a gap, just confirming the spec's implicit claim.
+
+---
+
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally thorough spec with verified root cause, precisely scoped lexical fix, comprehensive acceptance criteria, and correct oracle integration — ready for planning.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

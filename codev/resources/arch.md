@@ -27,6 +27,18 @@ Out of scope:
 - byte-level attribution for `mmap`
 - fanotify / inotify / eBPF in this release
 
+### Sandbox path canonicalization
+
+Mount-namespace sandboxes (codex's bubblewrap-style pivot_root setup) emit the
+same logical file under two spellings: canonical (`/tmp/work/x`) and staging
+(`/newroot/tmp/work/x`). `TraceParser` remaps event paths arriving under a
+known staging prefix (`SANDBOX_ROOT_PREFIXES`, currently `/newroot`) back to
+the canonical spelling at the single emission choke point, before the
+watched-root and artifact filters. The remap is guarded: in-scope paths are
+never rewritten, and a prefix is stripped only when the stripped path lands
+inside a watched root — with no watched roots configured there is no remap.
+`raw_syscall` keeps the original staging spelling as evidence.
+
 ## Backend abstraction
 
 `src/ai_observe/backends/` defines the first concrete backend seam.
