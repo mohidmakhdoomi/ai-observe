@@ -557,6 +557,16 @@ def build_snapshot_summary(plan: SnapshotPlan) -> dict[str, Any]:
     }
 
 
+# Statuses under which an authoritative .jsonl genuinely holds everything the
+# session promised: full direct stream ("ok", "live_error_rebuilt") or net-only
+# by configuration ("backend_disabled", snapshot-only mode). Expressed as an
+# ALLOW-list so an unanticipated future status understates fidelity
+# (authoritative_net) instead of overstating it (spec FR1).
+_JSONL_COMPLETE_STATUSES = frozenset({"ok", "live_error_rebuilt", "backend_disabled"})
+
+NET_FALLBACK_WARNING = "snapshot fallback: net events only; direct-layer detail was lost"
+
+
 def build_session_meta(
     logs: LogPaths,
     parser_status: str,
@@ -578,9 +588,21 @@ def build_session_meta(
         rebuilt_role = "authoritative_complete"
         partial_role = "absent_or_parser_failure_partial"
     elif authoritative_path == logs.jsonl_path:
-        jsonl_role = "authoritative_complete"
-        rebuilt_role = "absent"
-        partial_role = "absent_or_parser_failure_partial"
+        if parser_status in _JSONL_COMPLETE_STATUSES:
+            jsonl_role = "authoritative_complete"
+            rebuilt_role = "absent"
+            partial_role = "absent_or_parser_failure_partial"
+        else:
+            # An authoritative .jsonl with a non-allow-listed status is
+            # reachable only via merge_snapshot_events' empty-file promotion:
+            # every strace failure branch nulls authoritative_path, and without
+            # the snapshot backend nothing restores it. So this branch means
+            # "snapshot fallback promoted after a direct-layer failure" and
+            # needs no promotion flag.
+            jsonl_role = "authoritative_net"
+            rebuilt_role = "absent"
+            partial_role = "partial_direct"
+            warnings = [*warnings, NET_FALLBACK_WARNING]
     else:
         if parser_status.startswith("live_timeout") or parser_status.startswith("live_error"):
             jsonl_role = "partial_live"

@@ -46,3 +46,19 @@ reachable via snapshot promotion). 3-way reviewed (gemini APPROVE / claude
 APPROVE / codex COMMENT); codex's viewer pass-through pinning test added to
 Phase 2. Commits: a4cdd4c (draft), 1bb509e (with multi-agent review).
 Now WAITING at plan-approval gate; architect notified.
+
+## Implement — phase_1 build
+
+Plan approved by architect (session restarted fresh at the gate). Note: `porch run`
+is removed in this porch version — the loop is `porch next` → work → `porch done`.
+
+Phase 1 (core role derivation) built:
+- `build_session_meta` now consults `parser_status` on the `.jsonl`-authoritative
+  branch: allow-list `_JSONL_COMPLETE_STATUSES = {ok, live_error_rebuilt,
+  backend_disabled}` keeps today's roles; anything else → `authoritative_net` +
+  `partial_direct` + `NET_FALLBACK_WARNING` appended via rebind (caller's list
+  not mutated). Reachability argument documented in a code comment.
+- NEW `tests/test_session_meta.py`: 8-test role matrix (six failure statuses,
+  allow-list boundary, unknown-status direction, rebuilt/no-promotion branches
+  unchanged, warning-substring pin, mutation guard). Staged on creation.
+- Full suite: 263 tests, 0 failures, 0 skips.
