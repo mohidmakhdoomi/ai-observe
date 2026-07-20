@@ -1,0 +1,69 @@
+I'll read the key files for this Phase 2 review. Let me start with the changed implementation and test files.Now let me read the trace_parser.py implementation (Phase 1 code that Phase 2 builds on) and the full test file to see the Phase 2 tests:Now let me see the remap methods in the trace parser:Good. Now let me verify the docs changes and the fixture against the plan requirements. Let me look at the specific docs sections that were changed:Now let me run the tests to verify they pass:All 42 tests pass with zero skips. Let me now check the selftests:All 56 selftests pass. Now let me verify the Phase 2 deliverables against the plan systematically.
+
+**Phase 2 Plan Deliverables Check:**
+
+### 1. Cross-namespace defense matrix (`test_cross_namespace_defense_matrix`)
+
+The plan specifies this matrix:
+
+| Planned row | Present? |
+|---|---|
+| `mkdir` (create) | ✅ |
+| `unlink` (delete) | ✅ |
+| `truncate` (modify) | ✅ |
+| `chmod` (chmod) | ✅ |
+| `chown` (metadata) | ✅ |
+| `rename` mixed spelling (S6) old→new | ✅ |
+| `rename` mixed spelling, other side | ✅ |
+| `rename` fully staged spelling | ✅ |
+| `mkdirat` with `-yy` annotated dirfd | ✅ |
+| `symlinkat` with `-yy` annotated dirfd | ✅ |
+| Cross-boundary rename stays dropped (S3/S6 guard) | ✅ |
+
+All 11 rows from the plan's matrix table are present. The implementation uses `subTest` per row as specified.
+
+### 2. Committed fixture (`tests/fixtures/strace/newroot_sandbox.strace`)
+
+✅ First line contains the string `strace` (fixture-header assertion requirement met).
+✅ Contains the codex session shape: marker `mkdir("/newroot/tmp/work/.git")` → canonical `rmdir("/tmp/work/.git")`, plus a real-file sequence (`openat` create via `/newroot` spelling with `-yy` result annotation, `write` through that fd, canonical `unlink`).
+
+### 3. Fixture wiring — two explicit paths
+
+✅ **Registry entry (no-roots path)**: `newroot_sandbox.strace` added to the `test_committed_fixture_files_parse` dict at line 44, parsed with no `watched_roots`. Expected ops: `["create", "delete", "create", "modify", "delete"]`.
+
+✅ **Dedicated end-to-end method (remap path)**: `test_newroot_sandbox_fixture_remaps_to_canonical` reads the same fixture, feeds it through `self.parse(text, watched_roots=["/tmp/work"])`, and asserts the exact `(operation, path)` sequence with every path canonical and the marker create/delete pair present.
+
+### 4. `docs/observe.md` visibility-boundary note
+
+✅ One paragraph added at lines 111–117, in the visibility-boundary section (after line 110). Correctly describes: known sandbox-staging prefix, currently `/newroot/...`, pivot_root convention, remapping to canonical when stripped path falls inside a watched root, original spelling in `raw_syscall`, no remap without watched roots.
+
+### 5. `docs/agent-sessions.md` #33 status rows
+
+✅ Scenario table row (line 64): updated from "codex marker noise" to "codex marker noise — fixed, now a hard assertion".
+✅ Known-bug table row (line 102): updated from present tense "leaves" to past tense "left unpaired `delete` events — **fixed**; the gate now hard-asserts pairing."
+✅ #32 and #36 rows are untouched.
+
+### 6. No product-code changes in this phase
+
+✅ The diff shows changes only in `tests/test_trace_parser.py`, `tests/fixtures/strace/newroot_sandbox.strace`, `docs/observe.md`, and `docs/agent-sessions.md`. No changes to `src/ai_observe/trace_parser.py` in this phase.
+
+### 7. Test verification
+
+✅ Full unit suite: 42 tests, 0 skips, all pass.
+✅ Selftest suite: 56 tests, 0 skips, all pass.
+
+### Minor observations (non-blocking):
+
+1. **Fixture fd annotation consistency**: The fixture uses `-yy` style result annotations (`= 3</newroot/tmp/work/notes.txt>`) and fd annotations on `write`/`close` — this matches real strace `-yy` output and is consistent with the plan's requirement to use "annotated `-yy`-style forms real sessions produce."
+
+2. **Doc wording**: The `docs/observe.md` paragraph phrases the prefix as "currently `/newroot/...`" which appropriately scopes it as a convention, not a universal guarantee, matching the spec's non-goals.
+
+3. **The `close` line** in the fixture (line 6: `close(3</newroot/tmp/work/notes.txt>) = 0`) doesn't produce an event and that's correct — it exercises the fd-tracking path end without being a distinct event, making the fixture realistic.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 2 delivers all planned items — enumerated cross-namespace defense matrix, committed fixture with two-path wiring, and doc updates — all tests green with zero skips.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

@@ -1,0 +1,79 @@
+I'll read the core implementation files to review Phase 1. Let me start by reading all the relevant source and test files.Now let me verify the selftest file to confirm the oracle flip is consistent, and also check for any existing tests that might be affected:Good. Let me now run the test suites to verify everything passes:All 232 tests pass (zero skips), and all 15 oracle selftests pass. Let me now verify there are no changes outside the three listed Phase 1 deliverable files:Exactly the three Phase 1 deliverable files. Now let me do a detailed code quality review of the implementation by re-reading the critical sections more carefully:Good. Let me now systematically walk through the spec acceptance criteria against the implementation and tests:I now have a complete picture. Here's my review:
+
+---
+
+## Phase 1 Review: Sandbox-prefix remap + core guard tests + OPEN_BUGS[33] flip
+
+### Spec Adherence
+
+Walking through each Phase 1 acceptance criterion:
+
+| Criterion | Status | Evidence |
+|-----------|--------|---------|
+| **S1** marker pair symmetry | ✅ | `test_sandbox_prefix_marker_pair_lands_in_canonical_namespace` — `mkdir("/newroot/tmp/work/.git")` + `rmdir("/tmp/work/.git")` → paired `create`+`delete`, both canonical. Also asserts `raw_syscall` preserves original `/newroot` text. |
+| **S2** blast-radius recovery | ✅ | `test_sandbox_prefix_fd_propagation_recovers_create_and_write` — `openat` via `/newroot` + `write` through that fd → `create`+`modify`, both canonical. |
+| **S3** out-of-scope stays out | ✅ | `test_sandbox_prefix_outside_watched_roots_still_dropped` — `/newroot/etc/x` with root `/tmp/work` → no events. Existing `test_watched_roots_drop_outside_and_cross_boundary_direct_events` passes unchanged. |
+| **S4** literal `/newroot` watched root | ✅ | `test_watched_root_under_literal_newroot_is_not_rewritten` — `watched_roots=["/newroot/data"]`, `creat("/newroot/data/f")` → path stays `/newroot/data/f`. |
+| **S5** component-boundary safety | ✅ | `test_sandbox_prefix_requires_component_boundary` — `/newrootfoo/tmp/work/f` → no events. |
+| **S7** all three path fields | ✅ | `test_rename_fields_remap_independently_across_spellings` — mixed-spelling rename emits both `old_path` and `new_path` canonical; cross-boundary rename dropped. |
+| **S8** oracle flip | ✅ | `OPEN_BUGS[33].active=False` in `oracle.py:58`. Selftest `test_bug33_reproduction_matches_registry` and `test_marker_noise_gate_tracks_registry` both pass. |
+| **S9** no-roots identity | ✅ | `test_no_watched_roots_sandbox_spellings_pass_through_unchanged` — same lines, no `watched_roots`, output byte-identical to pre-remap behavior. |
+| **chdir arrival** (consultation) | ✅ | `test_chdir_into_sandbox_prefix_remaps_relative_operations` — `chdir("/newroot/tmp/work")` + relative `mkdir("d")` → `create /tmp/work/d`. |
+
+### Code Quality
+
+**The implementation is clean, precise, and well-documented.** Key observations:
+
+1. **Correct choke-point placement** (line 190): `_remap_sandbox_paths` is inserted between `_event_for` and `_drop_out_of_scope_event`, exactly before both filters. There is only one `self.events.append` in `_parse_line` (line 195), so the remap covers every emission path.
+
+2. **Guard logic is correct** (`_remap_sandbox_path`, lines 454–471):
+   - Guard rule 1 (line 464): in-scope paths are never rewritten — protects literal `/newroot`-rooted watched roots.
+   - Component-boundary check (line 467): `path == prefix or path.startswith(prefix + "/")` — `/newrootfoo/...` never matches.
+   - Guard rule 2 (line 469): strip only if the stripped spelling lands inside a watched root.
+   - Degenerate case (line 468): `path[len(prefix):] or "/"` — handles `path == "/newroot"` correctly.
+   - Single strip (no recursion) — correct for `/newroot/newroot/...` cases.
+
+3. **State tables untouched**: `_update_process_state` stores raw kernel-view spellings in `state.cwd` and `state.fds` — remap only at emission, which is the spec's design.
+
+4. **No schema/env/dependency changes**: `SANDBOX_ROOT_PREFIXES` is a module-level constant. No new env vars, no new imports, stdlib-only.
+
+5. **Docstring is excellent** — explains the guard logic clearly.
+
+### Test Coverage
+
+**Thorough and well-structured.** The tests follow house style (inline strace text through `self.parse`, ops/path assertions), and cover:
+
+- All spec arrival forms: syscall args, fd-table propagation, `-yy` result-path annotations, `chdir`-derived cwd
+- All three guard rules independently
+- The rename mixed-spelling case (S6 preview, with the genuine cross-boundary case in the same test)
+- The artifact filter ordering (`test_sandbox_prefix_remap_runs_before_artifact_filter`) — a bonus test not explicitly in the plan but valuable for confirming remap order
+
+**No existing tests were modified** — all pre-existing tests pass unchanged, confirming no regression.
+
+### Minor Observation (Non-blocking)
+
+The `test_sandbox_prefix_annotated_result_path_remapped` test (line 285) covers the `-yy` result-path annotation form (`= 3</newroot/tmp/work/f.txt>`), which is a distinct arrival mechanism from the fd-propagation test. Good to see both fd-table and result-path annotation arrival forms covered.
+
+### Plan Alignment
+
+The implementation matches the plan exactly:
+- `SANDBOX_ROOT_PREFIXES` constant placed after line 48 (the regex constants) ✅
+- Remap inserted in `_parse_line` at the right position ✅
+- Two new methods `_remap_sandbox_paths` and `_remap_sandbox_path` on `TraceParser` ✅
+- Oracle flip on the exact line ✅
+- No edits to `_drop_out_of_scope_event`, `_path_within_watched_roots`, `_drop_artifact_event`, or `normalize_abs_path` ✅
+- Changes confined to exactly the three listed files ✅
+
+### Suite Results
+
+- **232 unit tests**: all pass, zero skips ✅
+- **15 oracle selftests**: all pass ✅
+
+---
+VERDICT: APPROVE
+SUMMARY: Clean, spec-faithful implementation of the guarded sandbox-prefix remap with thorough test coverage across all acceptance criteria; all 247 tests green, zero skips.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

@@ -110,3 +110,15 @@ paths (no-roots registry entry + `test_newroot_sandbox_fixture_remaps_to_canonic
 observe.md visibility-boundary paragraph; agent-sessions.md #33 rows marked
 fixed. Suite 255 OK zero skips, selftests 56 OK, acceptance command 234 OK.
 Signaling `porch done 33`.
+
+## 2026-07-19 — Review phase
+
+Phase_2 3-way review: unanimous APPROVE (all HIGH), zero issues. Porch
+advanced to review. Wrote codev/reviews/33-*.md (spec-compliance walk,
+collision post-mortem, consultation log for all four rounds). Governance-doc
+routing via update-arch-docs skill: arch.md gained a "Sandbox path
+canonicalization" subsection (cold); lessons-learned.md gained the
+namespace-split choke-point lesson and the zombie-worktree lesson (cold);
+lessons-critical.md map line broadened to cover path identity (no new hot
+entries — situational, not universal). Committing, opening PR (Fixes #33),
+then porch done.

@@ -1,0 +1,8 @@
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 is implemented as planned: the parser remaps `/newroot` paths at the correct choke point, the #33 oracle is flipped, and the added tests cover the scoped guard/remap cases for this phase.
+CONFIDENCE: MEDIUM
+---
+
+KEY_ISSUES:
+- None
