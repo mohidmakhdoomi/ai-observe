@@ -1,0 +1,110 @@
+I'll start by reading the core implementation files and the diff in parallel to understand the full picture.Let me continue reading the diff and the test files:Let me read the new sandbox-related tests, the oracle changes, and the review document:Now let me read the sandbox test methods in full, the fixture file, and the doc changes:Let me check the remaining pieces — the agent-sessions docs, arch.md changes, and run the tests:Let me now verify the test suite runs and check the git log for the implementation commits:Let me do final checks — look for debug code, TODOs, and verify doc changes:I now have a thorough picture. Let me compile my review.
+
+---
+
+## PR Review: [Spec 33] Remap sandbox-staging (/newroot) paths before watched-root filtering
+
+### Code Quality and Correctness
+
+**The implementation is excellent.** The core change is small (~30 lines of production code) and surgically placed:
+
+1. **`SANDBOX_ROOT_PREFIXES` constant** (line 54): Clean module-level tuple, well-commented. Using a tuple (immutable, cheap) is the right choice.
+
+2. **`_remap_sandbox_paths` / `_remap_sandbox_path`** (lines 446–471): The three-rule guard logic is correct and well-reasoned:
+   - Guard 1 (line 464): in-scope paths are never rewritten — protects a watched root that literally lives under `/newroot`.
+   - Component-boundary check (line 467): `path == prefix or path.startswith(prefix + "/")` prevents `/newrootfoo/...` from matching.
+   - Guard 2 (lines 468–469): strip only when the stripped path lands inside a watched root.
+   - Degenerate case (line 468): `path[len(prefix):] or "/"` — handles `path == "/newroot"` correctly producing `"/"`.
+   - Single-strip: no recursion — `/newroot/newroot/...` strips once, correct.
+
+3. **Choke-point placement** (line 190): The remap runs between event construction and both drop filters. There is exactly one `self.events.append` in `_parse_line`, so this covers every emission path. The ordering (remap → scope filter → artifact filter) is correct — the artifact filter needs to see canonical paths to match.
+
+4. **State tables untouched**: `state.cwd` and `state.fds` keep raw kernel-view spellings. Remap at emission catches fd-propagated and cwd-derived paths naturally. This is the right design — the spec calls this out and the tests confirm it.
+
+**No issues found in the logic.** The `_path_within_watched_roots` calls within the guard do create two `Path()` allocations per path per remap call (once for the guard-1 check, once for the stripped path), but this is negligible for a text parser — far below the cost of the I/O it reads from.
+
+### Alignment with Spec/Plan
+
+Every functional acceptance criterion (1–9) is implemented and tested:
+
+| Criterion | Status | Test coverage |
+|-----------|--------|--------------|
+| S1 Marker pair symmetry | ✅ | `test_sandbox_prefix_marker_pair_lands_in_canonical_namespace` |
+| S2 Blast-radius (fd propagation) | ✅ | `test_sandbox_prefix_fd_propagation_recovers_create_and_write` |
+| S3 Out-of-scope stays out | ✅ | `test_sandbox_prefix_outside_watched_roots_still_dropped` |
+| S4 Literal `/newroot` root safe | ✅ | `test_watched_root_under_literal_newroot_is_not_rewritten` |
+| S5 Component-boundary | ✅ | `test_sandbox_prefix_requires_component_boundary` |
+| S6 Rename consistency | ✅ | `test_rename_fields_remap_independently_across_spellings` + matrix rows |
+| S7 Three fields, one choke point | ✅ | Structural: single `events.append` path |
+| S8 Oracle flip | ✅ | `OPEN_BUGS[33].active = False` |
+| S9 No-roots identity | ✅ | `test_no_watched_roots_sandbox_spellings_pass_through_unchanged` |
+
+Non-functional requirements met: lexical-only (no per-event I/O), stdlib-only, no schema change, `raw_syscall` preserved, no codex-specific conditionals.
+
+**Plan deviations** are strictly additive: two extra tests beyond the plan's enumerated list (annotated result-path and artifact-filter ordering), both pinning spec-asserted behavior.
+
+### Test Coverage and Quality
+
+**Outstanding.** 12 new test methods + an 11-row defense matrix + end-to-end fixture proof:
+
+- Tests follow house style (inline strace text through `self.parse`, ops/path assertions, no mocking).
+- The **cross-namespace defense matrix** (`test_cross_namespace_defense_matrix`) covers every relevant syscall family (`mkdir`, `unlink`, `truncate`, `chmod`, `chown`, `rename` ×3 variants, `mkdirat`, `symlinkat`) plus a cross-boundary-rename guard row.
+- The **end-to-end fixture** (`newroot_sandbox.strace`) is a compact 7-line shape that exercises the marker pair + real-write + fd-propagation pattern. It's wired through two paths: the no-roots fixture registry and a dedicated remap test.
+- The `chdir` arrival form (consultation feedback) is covered.
+- Artifact-filter ordering is explicitly tested.
+- **No existing tests modified** — all pre-existing tests pass unchanged.
+- 42 tests, zero skips confirmed.
+
+### Edge Cases and Error Handling
+
+Well-covered:
+- `/newrootfoo/...` (component boundary) — tested
+- `/newroot` (the prefix itself, no suffix) — handled by `or "/"` 
+- `/newroot/newroot/...` (double prefix) — single strip by design, correct
+- Empty watched roots — early return, no remap
+- Mixed-spelling renames — both fields remapped independently
+- Cross-boundary renames (one end genuinely outside) — still dropped by scope filter post-remap
+
+### Documentation and Comments
+
+- **Code docstring** on `_remap_sandbox_path` is clear and comprehensive.
+- **`docs/observe.md`**: concise visibility-boundary paragraph, accurately scoped ("currently `/newroot/...`").
+- **`docs/agent-sessions.md`**: two #33 table rows updated from active-bug to fixed status.
+- **Review document** (`codev/reviews/33-codex-mount-namespace-sandbox-.md`): thorough — covers spec compliance, deviations, lessons learned, all consultation rounds, and follow-up items.
+- **Comment on `SANDBOX_ROOT_PREFIXES`**: explains the convention and where it comes from.
+
+### Security Concerns
+
+None. The remap is a guarded, one-direction, lexical string operation. The guard rules ensure it can only rewrite a path into one that's already within a watched root, which bounds the worst case to observing activity the user already asked to observe.
+
+### Minor Observations (Non-blocking)
+
+1. **Commit messages**: The implementation phase commits are tagged `chore(porch): 33 implement build-complete` (porch auto-commits) rather than the `[Spec 33][Phase: implement]` format the CLAUDE.md convention suggests. This is a porch workflow artifact — the implementation changes are bundled into the porch phase-completion commits. Not a blocker; the PR title and body are properly tagged.
+
+2. **PR includes Spec 32 status changes**: The diff includes `codev/projects/32-trace-parser-drops-deletions-v/status.yaml` moving from `review` to `verified`. This is a status-file update for the *preceding* spec (PR #40 merged during this branch's lifetime). It's housekeeping, not scope contamination, but worth noting.
+
+---
+
+VERDICT: APPROVE
+SUMMARY: Clean, well-guarded sandbox-prefix remap with thorough test coverage (12 tests + 11-row matrix + end-to-end fixture), all spec criteria met, all 42 parser tests green with zero skips.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  Under codex's mount-namespace sandbox, the same logical file appears in strace output under two path spellings — canonical (`/tmp/work/.git`) and sandbox-staging (`/newroot/tmp/work/.git`). The lexical watched-root filter dropped the `/newroot` side, producing dozens of unpaired delete events per session and silently losing real creates/writes. This PR adds a guarded lexical remap at the parser's single event-emission choke point that projects sandbox-staging paths back to canonical spelling before scope filtering.
+
+  ## Key Changes
+  - `src/ai_observe/trace_parser.py`: `SANDBOX_ROOT_PREFIXES` constant + `_remap_sandbox_paths`/`_remap_sandbox_path` methods with three-rule guard (in-scope untouched; strip only at component boundary into a watched root; else leave for scope filter)
+  - `tests/test_trace_parser.py`: 12 new tests covering all guard rules, arrival forms (syscall args, fd propagation, `-yy` annotations, `chdir`-derived cwd), an 11-row cross-namespace defense matrix, and end-to-end fixture proof
+  - `tests/agent_sessions/oracle.py`: `OPEN_BUGS[33].active = False` flips the known-bug gate into a hard regression assertion
+  - `tests/fixtures/strace/newroot_sandbox.strace`: committed codex session shape fixture
+  - `docs/observe.md` and `docs/agent-sessions.md`: visibility-boundary note and #33 status updated
+
+  ## Test Plan
+  - All 42 trace parser unit tests pass with zero skips
+  - Oracle selftests green (56 tests) with `bug33_unpaired_marker_delete()` returning `False`
+  - Cross-namespace defense matrix pins remap across all event-op families (mkdir, unlink, truncate, chmod, chown, rename ×3, mkdirat, symlinkat) plus a cross-boundary guard row

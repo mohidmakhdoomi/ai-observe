@@ -1,0 +1,23 @@
+---
+VERDICT: APPROVE
+SUMMARY: The sandbox-staging path remap is implemented cleanly and safely, backed by an exceptionally robust test matrix.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+PR_SUMMARY: |
+  ## Summary
+  This PR resolves issue #33 by introducing a guarded lexical remap for paths arriving under known sandbox-staging prefixes (like `/newroot`). This ensures that codex mount-namespace events are properly paired in the canonical namespace, preventing unpaired `delete` events and recovering real file writes.
+
+  ## Key Changes
+  - Intercepts paths in `TraceParser._parse_line` right before the scope and artifact filters to apply a safe sandbox-prefix stripping (`_remap_sandbox_paths`).
+  - Implements three robust guard rules: in-scope paths are never rewritten, stripping strictly requires a component boundary match, and stripping is only applied if the resulting path lands inside a watched root.
+  - Flips the #33 known bug oracle gate (`OPEN_BUGS[33].active = False`) to act as a hard regression assertion.
+  - Introduces comprehensive test coverage including an 11-row cross-namespace defense matrix and an end-to-end synthetic codex strace fixture.
+  - Updates `docs/observe.md` and `docs/agent-sessions.md` to explain the visibility boundary behavior around sandbox prefixes.
+
+  ## Test Plan
+  - Run the full `unittest` suite to verify all new guard behaviors, renames, and various arrival forms (syscall arguments, fd propagation, `chdir`-derived cwd, and `-yy` result annotations).
+  - Verify the end-to-end behavior using the new `newroot_sandbox.strace` fixture, confirming canonical path pairing.
+  - Run the `tests.agent_sessions` oracle tests to ensure the bug #33 reproduction correctly triggers the now-hard assertion gate.
