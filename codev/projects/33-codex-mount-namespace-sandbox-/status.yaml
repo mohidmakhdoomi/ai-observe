@@ -1,7 +1,7 @@
 id: '33'
 title: codex-mount-namespace-sandbox-
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase_1
     title: Sandbox-prefix remap + core guard tests + OPEN_BUGS[33] flip
@@ -29,7 +29,7 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-19T23:18:50.966Z'
-updated_at: '2026-07-20T00:29:42.181Z'
+updated_at: '2026-07-20T00:29:43.515Z'
 pr_history:
   - phase: review
     pr_number: 41
