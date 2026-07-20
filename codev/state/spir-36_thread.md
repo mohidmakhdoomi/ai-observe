@@ -35,3 +35,14 @@ codex's two minor items folded in (FR3 warning substring pinned +
 integration-test assertion; explicit coverage-split preamble in Test scenarios).
 Commits: 41854ef (draft), de24831 (with multi-agent review).
 Now WAITING at spec-approval gate; architect notified via afx send.
+
+## Plan → gate
+
+Spec approved by architect (verified promotion/role-derivation claims against
+source). Plan drafted with 4 phases; key decision: NO plumbing changes — both the
+role downgrade and the net-fallback warning derive from one predicate in
+build_session_meta (jsonl-authoritative + status outside allow-list is only
+reachable via snapshot promotion). 3-way reviewed (gemini APPROVE / claude
+APPROVE / codex COMMENT); codex's viewer pass-through pinning test added to
+Phase 2. Commits: a4cdd4c (draft), 1bb509e (with multi-agent review).
+Now WAITING at plan-approval gate; architect notified.
