@@ -98,3 +98,19 @@ Phase 3 (harness known-bug flip, spec FR4):
 - Grep audit: `selftest_degraded.py` and `check_degraded.py` are
   registry-explicit — untouched, still green (23 selftest-package tests OK).
 - Full suite: 265 tests, 0 failures, 0 skips.
+
+## Implement — phase_4 build
+
+Phase 3 committed after unanimous 3-way APPROVE.
+
+Phase 4 (docs, spec FR5) — written from the phase-2 test assertions, not the spec:
+- `docs/observe.md`: "Artifacts and precedence" now documents `authoritative_net`
+  (when it appears, net-only meaning, `.jsonl.partial` as surviving direct
+  evidence, the pinned warning substring, snapshot-only mode explicitly NOT
+  degraded); new Troubleshooting bullet for degraded sessions.
+- `docs/agent-sessions.md`: #36 known-bugs row marked **fixed** (mirroring #33's
+  phrasing), `degraded` scenario row updated, and the known-bugs intro reworded
+  to be registry-state-neutral ("while a bug is open…" instead of "three open
+  bugs are tolerated" — that sentence had already gone stale when #33 flipped).
+- Grep audits: no stale while-open #36 phrasing; `authoritative_net` aligned
+  across src + tests + harness + docs. Full suite: 265 tests, 0 skips.
