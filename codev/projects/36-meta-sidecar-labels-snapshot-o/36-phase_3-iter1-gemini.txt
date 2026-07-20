@@ -1,0 +1,7 @@
+---
+VERDICT: APPROVE
+SUMMARY: The implementation accurately flips the known bug gate for #36 and correctly updates the self-tests to use registry-tracking assertions, exactly as planned.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

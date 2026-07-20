@@ -56,7 +56,7 @@ class KnownBug:
 OPEN_BUGS: dict[int, KnownBug] = {
     32: KnownBug(32, "annotated AT_FDCWD deletion dropped (claude/agy delete never reported)", active=False),
     33: KnownBug(33, "codex /newroot mount-namespace marker-noise: unpaired delete events", active=False),
-    36: KnownBug(36, "sidecar labels snapshot-only .jsonl authoritative_complete after direct-parser failure"),
+    36: KnownBug(36, "sidecar labels snapshot-only .jsonl authoritative_complete after direct-parser failure", active=False),
 }
 
 

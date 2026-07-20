@@ -339,6 +339,75 @@ class LiveModeWrapperTests(unittest.TestCase):
                 self.assertIn("parser failed", proc.stderr)
                 self.assertIn("original exit", proc.stderr)
 
+                # Strace-only failure: no snapshot events, no promotion, so the
+                # sidecar keeps the null authority + placeholder role and gains
+                # no net-fallback warning (spec FR2 over-reach guard).
+                meta = json.loads((root / "obs" / "pf.meta.json").read_text(encoding="utf-8"))
+                self.assertEqual(meta["parser"]["status"], "parser_failure_partial")
+                self.assertIsNone(meta["artifacts"]["authoritative_event_path"])
+                self.assertEqual(meta["artifacts"]["jsonl"]["role"], "inferred_or_empty_placeholder")
+                self.assertEqual(meta["artifacts"]["partial"]["role"], "partial_direct")
+                self.assertFalse(
+                    any("snapshot fallback: net events only" in warning for warning in meta["warnings"]),
+                    meta["warnings"],
+                )
+
+    def test_test_fail_after_live_mode_with_snapshot_promotes_net_fallback_meta(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            work = root / "work"
+            work.mkdir()
+            # Path arguments must be absolute and inside the watched root:
+            # the parser resolves relative args against initial_cwd (not the
+            # fd annotation), and out-of-root events are scope-dropped before
+            # the fail-after threshold can trigger.
+            trace = (
+                f'123 1714932000.000001 creat("{work / "x"}", 0600) = 3<{work / "x"}>\n'
+                f'123 1714932000.000002 creat("{work / "y"}", 0600) = 4<{work / "y"}>\n'
+            )
+            _install_fake_strace(root, trace)
+            real = _install_real(root, f"""
+                from pathlib import Path
+                Path({str(work)!r}, "net.txt").write_text("net", encoding="utf-8")
+            """)
+            env = _wrapper_env(root, {
+                "CODEV_OBSERVE_REAL_CODEX": str(real),
+                "CODEV_OBSERVE_SESSION_ID": "pfsnap",
+                "CODEV_OBSERVE_TEST_FAIL_AFTER": "1",
+                "AI_OBSERVE_BACKENDS": "strace,snapshot",
+                "AI_OBSERVE_ROOTS": str(work),
+            })
+            proc = self._run_wrapper(env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            obs = root / "obs"
+            partial_events = [
+                json.loads(line)
+                for line in (obs / "pfsnap.jsonl.partial").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(partial_events), 1)
+            jsonl_events = [
+                json.loads(line)
+                for line in (obs / "pfsnap.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(
+                [(event["path"], event["source"], event["operation"]) for event in jsonl_events],
+                [(str(work / "net.txt"), "snapshot", "create")],
+            )
+
+            # Live truncate-then-promote path: the sidecar keeps the promoted
+            # .jsonl authoritative but must describe it honestly (spec FR1/FR3).
+            meta = json.loads((obs / "pfsnap.meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["parser"]["status"], "parser_failure_partial")
+            self.assertEqual(meta["artifacts"]["authoritative_event_path"], "pfsnap.jsonl")
+            self.assertEqual(meta["artifacts"]["jsonl"]["role"], "authoritative_net")
+            self.assertEqual(meta["artifacts"]["partial"]["role"], "partial_direct")
+            self.assertEqual(meta["artifacts"]["rebuilt"]["role"], "absent")
+            self.assertTrue(
+                any("snapshot fallback: net events only" in warning for warning in meta["warnings"]),
+                meta["warnings"],
+            )
+
     def test_live_parser_fallback_to_post_hoc(self):
         trace = self._trace_text()
         real_feed = TraceParser.feed_line

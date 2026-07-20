@@ -1,0 +1,55 @@
+I'll review this spec by first verifying the claims against the actual source code. Let me read the key files referenced.Good. Let me now check the oracle's `authority_overstated` function and the selftest files.Let me check the selftest_oracle.py #36 expectations and a couple more verification points.Now let me read the full `selftest_degraded.py` to confirm the FIXED_SHAPE and expectations match the spec.I've now verified all the spec's claims against the actual source code. Here's my review:
+
+---
+
+## Spec 36 Review
+
+### Completeness — Excellent
+
+The spec is thorough to an unusual degree. Every claim is traceable to specific source lines, and I've verified the critical ones:
+
+- **Root cause (3-step chain)**: Confirmed. `merge_snapshot_events` at lines 530–532 promotes a snapshot-only `.jsonl` to authoritative when the file exists and is empty. `build_session_meta` at lines 580–583 derives `authoritative_complete` from path identity alone (`authoritative_path == logs.jsonl_path`), never consulting `parser_status`. The `.jsonl` is pre-created empty at line 1059 via `exclusive_touch`, guaranteeing the promotion fires.
+
+- **`inferred_or_empty_placeholder` unreachability**: Confirmed. The else-branch at line 588 is reached only when `authoritative_path` is neither `.rebuilt_path` nor `.jsonl_path`. But `merge_snapshot_events` flips it *to* `.jsonl_path` whenever snapshot events exist and `.jsonl` is empty — so the role designed for this case is dead code on exactly the path it was meant for.
+
+- **FIXED_SHAPE alignment**: Confirmed. `selftest_degraded.py` line 52 already uses `_meta("authoritative_net")` as the anticipated fixed shape. The spec lands exactly where the harness expects.
+
+- **selftest_oracle.py changes (FR4)**: Confirmed two tests (lines 93–97 and 99–105) use the default `OPEN_BUGS` registry and will break after flipping `active=False` — their expectations need inverting. `selftest_degraded.py` is registry-explicit and needs no change. Matches spec's description exactly.
+
+### Correctness — Verified
+
+- **Allow-list `{"ok", "live_error_rebuilt", "backend_disabled"}`**: Correct. These are the only statuses where `.jsonl` is genuinely authoritative-complete. `live_timeout_rebuilt` uses `.rebuilt_path` (not `.jsonl_path`), so it takes the different branch at line 576 and is unaffected.
+
+- **Allow-list direction (understating on unknown status)**: Sound. A new future status not in the allow-list degrades to `authoritative_net` rather than overstating — the safe failure mode. The unit test scenario for "hypothetical unknown status" in the test plan validates this boundary.
+
+- **`partial_direct` role on degraded paths**: Consistent. Currently line 583 assigns `absent_or_parser_failure_partial` when `.jsonl` is authoritative. After the fix, on degraded paths the partial file contains surviving direct evidence and `partial_direct` (which already exists on the else-branch at line 590) is the correct label. The `exists` field in the sidecar already handles the case where no partial file was written.
+
+- **Snapshot-only mode exclusion**: Justified. `backend_disabled` sessions opted out of the direct layer — nothing was overstated — and `parser.source = "none"` already makes the mode discoverable. The deferred question about vocabulary uniformity is appropriately noted in Open Questions.
+
+- **Oracle scope**: The `authority_overstated` predicate (line 272) only checks `parser_failure*` prefixes, not `live_error_rebuild*` / `live_timeout_rebuild*`. The spec correctly notes this is sufficient because after the allow-list fix, *no* failure status can produce `authoritative_complete` — the oracle doesn't need to detect all failure modes, just the original bug signature.
+
+### Feasibility — High
+
+The code change is narrow: one new conditional branch in `build_session_meta`'s existing if/elif/else chain, plus a flag/warning from `merge_snapshot_events`. The test infrastructure (oracle, selftests, integration tests) already exists and is designed for this exact flip. Low risk, low complexity.
+
+### Clarity — A builder can work from this
+
+FR1 specifies the exact allow-list, the exact roles to emit, and the defensive direction. FR4 specifies exactly which files/tests to update. The delta summary table is unambiguous. The "Behavior after the fix" matrix covers every parser status. A builder can implement this without needing to ask clarifying questions.
+
+### Minor Observations (non-blocking)
+
+1. **FR3 warning text**: The spec suggests a warning like "snapshot fallback: .jsonl contains net (inferred) events only..." and `selftest_degraded.py` line 45 already uses `"snapshot fallback: net events only"` in its synthetic shape. A builder may want to match that exact phrasing for consistency, but the spec correctly leaves mechanism to the plan phase.
+
+2. **`parser_failure_empty_partial` visibility**: The affected-statuses table lists this status, but it's less obvious from the source where it's emitted. The spec references `src/ai_observe/backends/strace.py` for the failure-status inventory, which is appropriate — a plan-phase or implementation-phase builder can verify the exhaustive list there.
+
+---
+
+```
+---
+VERDICT: APPROVE
+SUMMARY: Exceptionally well-grounded spec — root cause verified against source, solution is minimal and safe (allow-list + label-only change), aligns perfectly with existing harness anticipation, and edge cases are thoroughly handled.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+```

@@ -1,0 +1,51 @@
+I'll read the Phase 2 deliverable files and the core implementation they test against. Let me start with all the key files in parallel.Now let me run the tests to verify they pass:All 13 Phase 2 tests pass. Let me also quickly verify the full test suite doesn't have regressions:All 265 tests pass with zero skips and zero failures.
+
+Here's my review:
+
+## Phase 2 Review: Integration and pinning tests over the real CLI degraded paths
+
+### Spec Adherence
+
+All five planned deliverables are implemented correctly:
+
+1. **Post-hoc repro** (`test_observe_cli.py:512-560`): Extended `test_snapshot_parser_failure_keeps_partial_direct_and_writes_inferred_jsonl` with `.meta.json` assertions — `parser_failure_partial` status, `authoritative_net` role, `partial_direct`, `absent`, and the FR3 warning substring. Satisfies **Spec Success Criterion 1**.
+
+2. **Live repro** (`test_live_trace.py:355-409`): New `test_test_fail_after_live_mode_with_snapshot_promotes_net_fallback_meta` — fake strace with `TEST_FAIL_AFTER=1`, strace+snapshot backends, snapshot root with a changed file. Exercises the truncate-then-promote path through a real subprocess run. Same meta shape asserted.
+
+3. **No-promotion guard** (`test_live_trace.py:342-353`): Extended `test_test_fail_after_under_live_mode_writes_partial_truncates_jsonl` — strace-only failure pins `authoritative_event_path` null, `inferred_or_empty_placeholder` role, no net-fallback warning. Guards against over-reach.
+
+4. **Snapshot-only pinning** (`test_observe_cli.py:296-304`): Extended `test_snapshot_only_mode_runs_without_strace_and_emits_inferred_events` — `backend_disabled` status, `authoritative_complete` role, no net-fallback warning. Satisfies **Spec Success Criterion 3** (no healthy-path drift) and the backend-scope test-pinning lesson.
+
+5. **Viewer pass-through** (`test_viewer_server.py:299-327`): New `test_session_endpoint_passes_authoritative_net_role_through` — synthetic `.meta.json` with `authoritative_net`, verifies viewer serves it verbatim with correct `default_artifact` and `authoritative_artifact` selection. Pins the tolerance NFR4 relies on.
+
+### Code Quality
+
+- Tests are well-structured, following existing patterns in each file.
+- Informative comments explain the purpose of each assertion block (e.g., "Live truncate-then-promote path: the sidecar keeps the promoted .jsonl authoritative but must describe it honestly (spec FR1/FR3)").
+- The live repro test carefully sets up absolute paths inside the watched root, which is necessary because the parser resolves relative args against `initial_cwd` — the comment at line 360 documents this subtlety.
+
+### Test Coverage
+
+All five scenarios from the plan are covered. The coverage split is correctly maintained: integration tests are `parser_failure_partial`-specific by construction (the `TEST_FAIL_AFTER` hook can only produce that status); the broad failure-status set lives in Phase 1's unit matrix.
+
+### Error Handling / Edge Cases
+
+- No-promotion guard correctly asserts the absence of the warning (not just role values).
+- Snapshot-only pinning uses `assertFalse(any(...))` to verify no warning contains the stable substring — defensive against future additions.
+- The viewer test verifies both role pass-through AND artifact selection semantics (`default_artifact`, `authoritative_artifact`).
+
+### Plan Alignment
+
+All five items from Phase 2's implementation details are delivered, matching both file locations and assertion content. No Phase 3/4 work has leaked into this phase.
+
+### Suite Health
+
+265 tests pass, zero skips, zero failures — satisfying the CI fail-loud rule.
+
+---
+VERDICT: APPROVE
+SUMMARY: All five Phase 2 integration/pinning tests are implemented correctly, match the plan, and pass alongside the full 265-test suite with zero skips.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

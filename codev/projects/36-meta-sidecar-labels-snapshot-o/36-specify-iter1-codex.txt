@@ -1,0 +1,8 @@
+Using direct file reads to verify the spec against the actual codebase.Checking the remaining referenced code/docs to verify edge cases and consumer impact.One more direct read to verify the existing CLI test coverage the spec proposes to extend.---
+VERDICT: COMMENT
+SUMMARY: Strong, source-verified spec with feasible scope; only minor clarity gaps around warning assertions and cross-status test wording.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- FR3 adds a new degraded-promotion warning, but the acceptance criteria/test scenarios do not explicitly require asserting that warning text or at least warning presence; if FR3 stays, add a concrete observable check.
+- The spec correctly fixes more than `parser_failure_*` statuses in `build_session_meta`, but some downstream wording/examples still center only on `parser_failure_*`; consider explicitly saying which tests/docs remain `parser_failure_*`-specific versus which must cover the broader failure set to avoid builder ambiguity.

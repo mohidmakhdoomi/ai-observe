@@ -118,6 +118,17 @@ Sidecar responsibilities:
 
 This keeps session-wide diagnostics out of the event stream itself.
 
+Role derivation consults `parser_status`, not just path identity. When `.jsonl` is
+authoritative but the status is outside the allow-list of complete statuses
+(`ok`, `live_error_rebuilt`, `backend_disabled`), the `.jsonl` was promoted from the
+snapshot fallback after a direct-layer failure: its role is `authoritative_net`
+(net/inferred events only; surviving direct evidence is `.jsonl.partial`, role
+`partial_direct`) and the warnings list carries an entry containing
+`snapshot fallback: net events only`. The allow-list direction makes an
+unanticipated future status understate fidelity rather than overstate it.
+Invariant: a sidecar recording a direct-parser failure never labels any artifact
+`authoritative_complete`.
+
 ## Provenance model
 
 Schema-v2 raw events add:

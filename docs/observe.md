@@ -182,6 +182,19 @@ Meaning:
 
 The sidecar records which event artifact is authoritative.
 In normal sessions that is `.jsonl`. In live-timeout rebuild sessions it can be `.jsonl.rebuilt`.
+
+When the direct parser fails but the snapshot layer produced events, the empty `.jsonl`
+is backfilled with those net (inferred) events and remains the artifact that
+`artifacts.authoritative_event_path` names — but its role is **`authoritative_net`**,
+not `authoritative_complete`: the file holds net changes only, so ephemeral/transient
+operations (create-then-delete, temp files, transient renames) are missing. The
+surviving direct evidence lives in `.jsonl.partial` (role `partial_direct`), and the
+sidecar's `warnings` list gains an entry containing
+`snapshot fallback: net events only`. Snapshot-only mode
+(`AI_OBSERVE_BACKENDS=snapshot`) is not degraded — the direct layer was never promised
+there — so its `.jsonl` keeps `authoritative_complete` with
+`parser.status = "backend_disabled"`.
+
 The browser viewer reads `<session>.meta.json` and exposes non-sensitive banner state for rebuilt / partial artifacts and snapshot diagnostics.
 
 ## Event schema and provenance
@@ -331,3 +344,4 @@ Important caveats:
 - **Recursion / wrong binary**: set an absolute `AI_OBSERVE_REAL_<PROGRAM>` path before prepending `bin/` to `PATH`.
 - **No usable roots remain**: inspect `<session>.meta.json` for `missing_root`, `overlapping_root`, and related snapshot diagnostics.
 - **Partial or rebuilt artifacts**: inspect `.jsonl.partial`, `.jsonl.rebuilt`, and `.meta.json`; the viewer banner will also surface artifact status.
+- **Degraded session (`jsonl` role `authoritative_net`)**: the `.jsonl` named by `authoritative_event_path` holds net snapshot events only — transient operations are missing. Check `.jsonl.partial` for the surviving direct events and `.trace` for the raw stream.

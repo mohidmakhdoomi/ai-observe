@@ -90,19 +90,32 @@ class BugSpecificGateTests(unittest.TestCase):
         expected = known_bug_status(33) if OPEN_BUGS[33].active else PASS
         self.assertEqual(r.status, expected)
 
-    def test_authority_overstated_is_known_bug_36(self):
+    def test_authority_overstated_gate_tracks_registry(self):
+        # The overstated sidecar shape (#36's signature). Unlike the #32/#33
+        # parser probes, this synthetic meta cannot follow the product fix, so
+        # once #36 flips inactive the shape must read as a hard regression.
         meta = {"parser": {"status": "parser_failure_partial"},
                 "artifacts": {"jsonl": {"role": "authoritative_complete"}}}
         r = expect_authority_not_overstated("degraded", "claude", meta)
-        self.assertEqual(r.status, known_bug_status(36))
+        if OPEN_BUGS[36].active:
+            self.assertEqual(r.status, known_bug_status(36))
+        else:
+            self.assertEqual(r.status, FAIL)
+            self.assertIn("regressed", r.detail)
 
-    def test_authority_ok_when_parser_healthy(self):
-        # Clean parser_status → not the #36 signature → stale-annotation FAIL
-        # (while #36 is active, the gate expects the bug to reproduce).
+    def test_authority_healthy_gate_tracks_registry(self):
+        # Clean parser_status → not the #36 signature. While #36 is active this
+        # is a stale-annotation FAIL (the gate expects the bug to reproduce);
+        # once flipped inactive it is the asserted-correct PASS.
         meta = {"parser": {"status": "ok"},
                 "artifacts": {"jsonl": {"role": "authoritative_complete"}}}
         r = expect_authority_not_overstated("degraded", "claude", meta)
-        self.assertEqual(r.status, FAIL)
+        if OPEN_BUGS[36].active:
+            self.assertEqual(r.status, FAIL)
+            self.assertIn("flip OPEN_BUGS[36].active=False", r.detail)
+        else:
+            self.assertEqual(r.status, PASS)
+            self.assertIn("#36 fixed: correct behavior asserted", r.detail)
 
 
 class EnsureToolUsableTests(unittest.TestCase):

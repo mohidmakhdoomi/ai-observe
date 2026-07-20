@@ -63,7 +63,7 @@ and **viewer** (the sanitized events the browser viewer served, hard for complet
 | `subprocess` | claude, agy, codex | Writes performed by a child process of the agent. |
 | `multi_turn` | claude, agy, codex | A chained multi-turn conversation under one wrapper; **#33** home (codex marker noise — fixed, now a hard assertion). |
 | `timeline` | claude | A long paced run; the viewer sees events **incrementally**, then completely. |
-| `degraded` | claude | A forced direct-parser failure (`AI_OBSERVE_TEST_FAIL_AFTER`); **#36** home (sidecar authority). |
+| `degraded` | claude | A forced direct-parser failure (`AI_OBSERVE_TEST_FAIL_AFTER`); **#36** home (sidecar authority overstatement — fixed, now a hard assertion). |
 
 ## Per-tool prerequisites
 
@@ -92,15 +92,16 @@ directory whose contents you care about.
 
 ## Known-bug annotations and how to flip one
 
-Three open `ai-observe` bugs are tolerated as **expected-and-annotated** signatures
-rather than hard failures, via a rot-proof gate in
-[`tests/agent_sessions/oracle.py`](../tests/agent_sessions/oracle.py):
+Three `ai-observe` bugs are tracked via a rot-proof gate in
+[`tests/agent_sessions/oracle.py`](../tests/agent_sessions/oracle.py); while a bug is
+open, its signature is tolerated as **expected-and-annotated** rather than a hard
+failure:
 
 | Bug | Signature | Home scenario |
 |-----|-----------|---------------|
 | **#32** | Annotated `AT_FDCWD` deletion dropped (the delete is never reported). | `ephemeral` |
 | **#33** | codex `/newroot` mount-namespace probing left unpaired `delete` events — **fixed**; the gate now hard-asserts pairing. | `multi_turn` |
-| **#36** | On the direct-parser-failure path the sidecar labels a snapshot-only `.jsonl` `authoritative_complete`, overstating fidelity. | `degraded` |
+| **#36** | On the direct-parser-failure path the sidecar labeled a snapshot-only `.jsonl` `authoritative_complete`, overstating fidelity — **fixed**; the gate now hard-asserts the `authoritative_net` role downgrade. | `degraded` |
 
 While a bug is **active**, its gate asserts the bug **still reproduces** — so a fix that
 lands *without* flipping the flag fails loudly ("flip the flag"). When the corresponding

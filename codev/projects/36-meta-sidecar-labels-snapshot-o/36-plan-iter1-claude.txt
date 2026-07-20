@@ -1,0 +1,72 @@
+I'll review the plan by verifying its claims against the actual codebase. Let me read the key files referenced.Good. I've now verified the key files. Let me check a few more details to confirm the plan's line-number references and the existing test structure.Now I have a solid understanding of the codebase. Let me verify a couple more things the plan references — the `selftest_oracle.py` tests that need updating (lines 92–105, specifically how the #36 tests are structured) and whether the existing test at line 338 confirms the `.jsonl` is empty after parser failure (relevant to the promotion path).
+
+The key findings from my code review:
+
+1. **Line references are accurate**: `build_session_meta` starts at line 560, the `.jsonl`-authoritative branch is at lines 580–583 exactly as stated. `merge_snapshot_events` is at line 510, and the empty-file promotion is at lines 530–532.
+
+2. **The root cause is verified**: The plan's description of the three-step conspiracy is confirmed by reading the actual code:
+   - `exclusive_touch(jsonl_path)` at line 1059 pre-creates an empty `.jsonl`
+   - `merge_snapshot_events` at lines 530–532 promotes the empty `.jsonl` to authoritative when snapshot events exist
+   - `build_session_meta` at lines 580–583 derives `authoritative_complete` from path identity alone without consulting `parser_status`
+
+3. **The derivation soundness claim checks out**: The `else` branch (lines 584–590) shows that when `authoritative_path` is `None`, roles go to `partial_live` or `inferred_or_empty_placeholder` — confirming that `.jsonl`-authoritative + non-healthy status is only reachable via the snapshot promotion.
+
+4. **Existing test at line 338**: `test_live_trace.py:338` asserts `.jsonl` size is 0 after parser failure (no snapshot promotion in that test because no snapshot root). This confirms the no-promotion guard path the plan describes.
+
+5. **`selftest_oracle.py` lines 92–105**: The two #36 tests currently assert `known_bug_status(36)` and `FAIL` respectively — these will need updating when `OPEN_BUGS[36].active` flips to `False`.
+
+6. **`selftest_degraded.py` `FIXED_SHAPE`**: Confirmed at line 51 — uses `_meta("authoritative_net")` with `warnings: ["snapshot fallback: net events only"]`, perfectly matching the plan's implementation constants.
+
+7. **The `warnings` parameter**: `build_session_meta` takes `warnings: list[str]` (line 564) and assigns it directly to `meta["warnings"]` at line 607 — the plan correctly notes the caller's list must not be mutated (needs `[*warnings, NET_FALLBACK_WARNING]` rebinding, not `.append()`).
+
+---
+
+Here is my assessment:
+
+**1. Spec Coverage — Excellent**
+
+Every functional requirement (FR1–FR5) and non-functional requirement (NFR1–NFR4) maps to a specific phase. The plan's Phase 1 covers FR1/FR2/FR3, Phase 2 covers integration validation, Phase 3 covers FR4, and Phase 4 covers FR5. Nothing from the spec is missed, and nothing in the plan exceeds spec scope.
+
+**2. Phase Breakdown — Well-structured**
+
+Four phases, each independently committable. The dependency chain (1→2, 1→3→4) is correct — you can't write integration tests before the behavior exists, and you can't document the flipped state before flipping the gate. The choice to serialize phases 2 and 3 (even though they only depend on phase 1) for linear review history is pragmatic and stated explicitly.
+
+Phase sizing is appropriate: Phase 1 is the meat (core derivation + unit tests), Phases 2–4 are progressively smaller.
+
+**3. Technical Approach — Sound**
+
+The single-predicate derivation in `build_session_meta` is the right call. The plan correctly identifies that:
+- The `_JSONL_COMPLETE_STATUSES` allow-list direction (unknown statuses degrade to `authoritative_net`) matches the spec's FR1 intent
+- No plumbing through `merge_snapshot_events` or `BackendState` is needed because the meta builder can derive the degraded-promotion condition from existing inputs
+- The `warnings` list must be rebound, not mutated in-place (verified: line 607 assigns `warnings` directly to the dict)
+
+The plan's `NET_FALLBACK_WARNING` constant and its substring match what `selftest_degraded.py`'s `FIXED_SHAPE` already expects (confirmed at line 44: `"snapshot fallback: net events only"`).
+
+**4. Testing Strategy — Thorough and well-layered**
+
+The coverage split is well-articulated:
+- **Unit matrix** (Phase 1): all 6 failure statuses + 3 allow-list boundary statuses + unknown-status case — this is where breadth lives
+- **Integration** (Phase 2): `parser_failure_partial`-specific because `AI_OBSERVE_TEST_FAIL_AFTER` only produces that status — honest about the limitation
+- **Harness selftests** (Phase 3): verified that the two tests in `selftest_oracle.py` (lines 92–105) match the plan's description; `selftest_degraded.py` needs no changes (confirmed)
+
+The plan correctly identifies that the existing `test_snapshot_parser_failure_keeps_partial_direct_and_writes_inferred_jsonl` (line 500) doesn't currently read `.meta.json` — extending it to do so is the natural integration point.
+
+**5. Risk Assessment — Adequate**
+
+The main risk (warning firing on a non-promotion path) is mitigated by the unit matrix's exhaustive enumeration. The live-repro fixture flakiness risk is honest and mitigated by the fake-strace approach. The allow-list direction handles future status drift.
+
+**6. Minor observations (non-blocking)**
+
+- The plan references `observe.py:580–583` for the branch — actual lines are 580–583 ✓ (confirmed).
+- The plan says `exclusive_touch` is at `observe.py:1059` — actual line is 1059 ✓ (confirmed).
+- Phase 3 notes "grep `OPEN_BUGS[36]` / `known_bug_status(36)` usages before committing" — good hygiene, there are no surprise consumers beyond the files identified.
+- The `partial_role` change from `"absent_or_parser_failure_partial"` → `"partial_direct"` on the degraded branch: the plan correctly specifies this, and it matches the `FIXED_SHAPE` in `selftest_degraded.py` (line 40: `"partial": {"role": "partial_direct"}`).
+
+---
+VERDICT: APPROVE
+SUMMARY: Plan accurately maps every spec requirement to code, file references are verified against the actual codebase, the derivation approach is sound, and the testing strategy covers both breadth (unit matrix) and depth (integration repros).
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

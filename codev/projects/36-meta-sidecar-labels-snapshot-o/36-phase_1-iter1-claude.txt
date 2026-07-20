@@ -1,0 +1,59 @@
+Let me run the tests to verify they pass, and also check the git diff to understand the exact changes:Good — all 8 new tests pass. Let me also run the broader test suite to check for regressions:263 tests pass, zero failures, zero skips. Let me verify the new test file is staged:Good — the file is committed and tracked. Let me now do a final check on the code quality: verify the `warnings` rebind is correct by tracing how the `warnings` parameter flows through the function, and confirm the `else` branch (no-promotion) didn't accidentally pick up a warning append:Everything checks out. Here's my review:
+
+---
+
+## Phase 1 Review: Core role derivation + unit role matrix
+
+### Spec Adherence
+
+**FR1 (honest role on degraded promotion)** — ✅ Fully implemented. The `elif authoritative_path == logs.jsonl_path` branch now consults `parser_status` against the allow-list `_JSONL_COMPLETE_STATUSES`. Non-allow-listed statuses emit `jsonl_role = "authoritative_net"`, `partial_role = "partial_direct"`, `rebuilt_role = "absent"`, and `authoritative_event_path` still points at the `.jsonl`. The allow-list is expressed as a `frozenset` (FR1's "allow-list not deny-list" requirement), so unknown future statuses degrade toward understating fidelity.
+
+**FR2 (healthy paths unchanged)** — ✅ The `rebuilt_path` branch (line 586–589) is untouched. The allow-list branch preserves the original roles verbatim. The `else` branch (no-promotion, line 606–612) is untouched.
+
+**FR3 (warning)** — ✅ `NET_FALLBACK_WARNING` contains the spec-pinned stable substring `"snapshot fallback: net events only"`. It's appended via `warnings = [*warnings, NET_FALLBACK_WARNING]` — a rebind, not a mutation of the caller's list.
+
+**NFR1** — ✅ No changes to event content, exit codes, or file writes. **NFR2** — ✅ `schema_version` stays `1`. **NFR3** — ✅ Full suite: 263 tests, OK, zero skips.
+
+### Code Quality
+
+The implementation is minimal and well-placed:
+- **Single derivation site** — the fix is entirely within `build_session_meta`, exactly as the plan specified. No changes to `merge_snapshot_events` or the strace backend.
+- **Comment quality** — The in-code comment (lines 596–601) explains *why* no promotion flag is needed, documenting the derivation-soundness argument for future maintainers.
+- **Constant placement** — `_JSONL_COMPLETE_STATUSES` and `NET_FALLBACK_WARNING` are at module level adjacent to the function, with a clear docblock explaining the allow-list rationale.
+- **Rebind idiom** — `warnings = [*warnings, NET_FALLBACK_WARNING]` is correct and idiomatic Python; it creates a new list without mutating the caller's.
+
+### Test Coverage
+
+All 7 spec-required test scenarios are present, plus a bonus constant-validation test (8 total):
+
+| Test | Spec scenario | ✓ |
+|------|--------------|---|
+| `test_degraded_promotion_yields_authoritative_net` | All 6 failure statuses × `.jsonl` auth | ✅ |
+| `test_allow_list_statuses_keep_authoritative_complete` | 3 allow-list boundary statuses | ✅ |
+| `test_unknown_status_degrades_to_authoritative_net` | Unknown future status → `authoritative_net` | ✅ |
+| `test_rebuilt_authoritative_branch_unchanged` | `.rebuilt` auth × `live_timeout_rebuilt` | ✅ |
+| `test_no_promotion_parser_failure_keeps_placeholder_role` | `None` auth × `parser_failure_partial` | ✅ |
+| `test_no_promotion_live_failure_keeps_partial_live_role` | `None` auth × `live_timeout_rebuild_failed` | ✅ |
+| `test_caller_warnings_list_not_mutated_by_degraded_call` | Mutation safety | ✅ |
+| `test_warning_constant_contains_spec_pinned_substring` | Pinned substring | ✅ |
+
+The degraded-promotion test is thorough: it passes a pre-existing warning `["pre-existing warning"]` and asserts the output list is `["pre-existing warning", NET_FALLBACK_WARNING]` — proving preservation, appending, and ordering. The mutation test additionally asserts `assertIsNot(meta["warnings"], warnings)` to verify object identity (not just value equality).
+
+### Plan Alignment
+
+Every Phase 1 deliverable and acceptance criterion is met:
+- [x] `src/ai_observe/observe.py` modified with `_JSONL_COMPLETE_STATUSES`, `NET_FALLBACK_WARNING`, and the reworked branch
+- [x] `tests/test_session_meta.py` created, tracked, and passing
+- [x] Existing suite green (263 tests, OK)
+- [x] No test skips
+- [x] Warnings list not mutated
+
+No work from later phases has been pulled forward (integration tests, harness flip, and docs are correctly deferred).
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 is a clean, minimal, spec-faithful implementation — the role derivation fix, warning, allow-list constant, and full unit role-matrix all land correctly with 263 tests passing and zero skips.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

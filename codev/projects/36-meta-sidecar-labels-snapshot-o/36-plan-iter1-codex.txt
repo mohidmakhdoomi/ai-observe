@@ -1,0 +1,11 @@
+Using direct file inspection to verify the referenced code/tests before reviewing the plan.I’m checking the referenced tests and oracle/docs details to validate the plan’s file targets and assumptions.One more verification pass: I’m checking call sites and current docs language for any hidden coupling the plan should account for.I’m verifying whether the new role string has any viewer-side assumptions that the plan should explicitly pin or at least mention.---
+VERDICT: COMMENT
+SUMMARY: Plan is well-aligned and implementable; only minor test-hardening around viewer tolerance for the new role looks worth adding.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- The core plan is sound and matches the current code: `build_session_meta` in `src/ai_observe/observe.py` is the single derivation point, and the referenced CLI/harness/doc files all exist as described.
+- Minor gap: because `authoritative_net` is a new role string, consider explicitly pinning viewer pass-through tolerance with a small `tests/test_viewer_server.py` or `tests/test_viewer_index_js.py` assertion, even though no viewer code change is expected.
+- Phase ordering is good: Phase 1 establishes behavior, Phase 2 proves real CLI paths, Phase 3 flips the rot-proof harness gate, Phase 4 documents the new contract.
+- Testing strategy is strong: the unit matrix covers the full status space, while integration stays intentionally `parser_failure_partial`-specific per the real hook limitations.
+- Risk analysis is credible and grounded in the current code paths; I did not find a missing architectural step or a mismatch with the approved spec.

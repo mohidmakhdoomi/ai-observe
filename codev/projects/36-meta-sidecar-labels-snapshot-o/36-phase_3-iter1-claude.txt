@@ -1,0 +1,60 @@
+I'll read the Phase 3 deliverables and their context. Let me start with the key files.Now let me check what specifically changed in Phase 3 files by looking at the diff:Good. Let me verify these tests actually pass, and also check `selftest_degraded.py` is unaffected:All 23 tests pass. Let me also verify the prior `oracle.py` state — specifically, that the original `OPEN_BUGS[36]` entry defaulted to `active=True` (the `KnownBug` dataclass default), meaning the diff's change from no explicit `active` to `active=False` is indeed the one-line flip:Now let me verify that the selftest_oracle changes are exactly the two tests the plan specified, and check the naming convention matches #32/#33:Let me also quickly run the full test suite to confirm nothing breaks:265 tests, all OK, zero skips. Let me also verify `selftest_degraded.py` was not modified in this phase (plan says it needs no change):Good — no changes to `selftest_degraded.py`, exactly as planned.
+
+Here is my review:
+
+---
+
+## Phase 3 Review: Harness known-bug flip — `OPEN_BUGS[36]` inactive + selftest updates
+
+### Spec Adherence (FR4)
+
+**✅ Complete.** FR4 requires three things:
+
+1. **Flip `OPEN_BUGS[36].active = False`** — Done. The diff is exactly a one-line change: adding `active=False` to the previously-defaulting-True entry (line 59 of `oracle.py`). This mirrors how #32 and #33 are recorded.
+
+2. **Update the two default-registry #36 selftests** — Done. Two tests updated:
+   - `test_authority_overstated_is_known_bug_36` → renamed to `test_authority_overstated_gate_tracks_registry` — with the flipped registry, the buggy synthetic meta now asserts `FAIL` with `"regressed"` in the detail (inactive registry + buggy shape = regression).
+   - `test_authority_ok_when_parser_healthy` → renamed to `test_authority_healthy_gate_tracks_registry` — with the flipped registry, a healthy-parser meta asserts `PASS` with `"#36 fixed: correct behavior asserted"`.
+
+3. **`selftest_degraded.py` needs no change** — Confirmed, zero diff.
+
+### Code Quality
+
+**✅ Clean.** The test names now follow the `_gate_tracks_registry` convention used by the #32/#33 tests (`test_deletion_gate_tracks_registry`, `test_marker_noise_gate_tracks_registry`), which is a nice consistency improvement. The tests use `if OPEN_BUGS[36].active` branching to stay rot-proof in both registry directions — identical pattern to #32/#33's tests.
+
+The comments on each test are clear and explain the logic in both directions.
+
+### Test Coverage
+
+**✅ Adequate.** The two updated tests plus the unchanged `selftest_degraded.py` cover all four quadrants of the known-bug gate:
+
+| Registry state | Shape | Expected | Covered by |
+|---|---|---|---|
+| Active + buggy | `authoritative_complete` | `known-bug:#36` | `selftest_degraded.py:test_active_buggy_is_known_bug` |
+| Active + fixed | `authoritative_net` | `FAIL (flip)` | `selftest_degraded.py:test_active_but_fixed_shape_fails_flip_the_flag` |
+| Inactive + fixed | `authoritative_net` | `PASS` | `selftest_degraded.py:test_flipped_and_fixed_passes` |
+| Inactive + buggy | `authoritative_complete` | `FAIL (regressed)` | `selftest_degraded.py:test_flipped_but_regressed_fails` + `selftest_oracle.py:test_authority_overstated_gate_tracks_registry` |
+| Inactive + healthy parser | `authoritative_complete` (ok) | `PASS (#36 fixed)` | `selftest_oracle.py:test_authority_healthy_gate_tracks_registry` |
+
+The full test suite (265 tests) passes with zero skips.
+
+### Plan Alignment
+
+**✅ Matches exactly.** The plan specified:
+- One-line `active=False` flip — ✓
+- Two `selftest_oracle.py` tests updated to track-registry pattern — ✓
+- `selftest_degraded.py` unchanged — ✓
+- No change to the `authority_overstated` predicate — ✓
+- Full selftest package passes — ✓ (23 tests in the selftest package, all OK)
+
+### No Issues Found
+
+The implementation is a clean, mechanical flip following the established #32/#33 convention. The rot-proof property is preserved in both directions.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 3 is a textbook one-line known-bug flip with matching selftest updates — all 265 tests pass, zero skips, matches the plan and spec FR4 exactly.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

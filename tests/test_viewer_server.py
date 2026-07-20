@@ -296,6 +296,36 @@ class ViewerServerTests(unittest.TestCase):
         self.assertNotIn("/secret/root", serialized)
         self.assertNotIn("internal warning not sent to browser verbatim", serialized)
 
+    def test_session_endpoint_passes_authoritative_net_role_through(self):
+        # Pin the tolerance NFR4 relies on: the viewer passes role strings
+        # through verbatim and selects artifacts via authoritative_event_path,
+        # so the authoritative_net vocabulary needs no viewer change.
+        rebuilt_path = self.path.with_name(self.path.name + ".rebuilt")
+        partial_path = self.path.with_name(self.path.name + ".partial")
+        meta_path = self.path.with_name("events.meta.json")
+        _append_events(self.path, [_make_event(path="/net", idx=0)])
+        _append_events(partial_path, [_make_event(path="/partial", idx=1)])
+        meta_path.write_text(json.dumps({
+            "schema_version": 1,
+            "parser": {"status": "parser_failure_partial", "source": "strace"},
+            "warnings": ["snapshot fallback: net events only; direct-layer detail was lost"],
+            "artifacts": {
+                "authoritative_event_path": self.path.name,
+                "jsonl": {"path": self.path.name, "role": "authoritative_net", "exists": True},
+                "rebuilt": {"path": rebuilt_path.name, "role": "absent", "exists": False},
+                "partial": {"path": partial_path.name, "role": "partial_direct", "exists": True},
+                "meta": {"path": meta_path.name, "role": "metadata", "exists": True},
+            },
+        }), encoding="utf-8")
+        srv = self._server()
+        payload = _get_json(srv.url + "session", timeout=3.0)
+        self.assertEqual(payload["default_artifact"], "jsonl")
+        self.assertEqual(payload["authoritative_artifact"], "jsonl")
+        self.assertEqual(payload["parser_status"], "parser_failure_partial")
+        self.assertEqual(payload["warnings_count"], 1)
+        self.assertEqual(payload["artifacts"]["jsonl"]["role"], "authoritative_net")
+        self.assertEqual(payload["artifacts"]["partial"]["role"], "partial_direct")
+
     def test_sse_can_switch_between_default_rebuilt_and_partial_artifacts(self):
         rebuilt_path = self.path.with_name(self.path.name + ".rebuilt")
         partial_path = self.path.with_name(self.path.name + ".partial")

@@ -1,0 +1,12 @@
+---
+VERDICT: APPROVE
+SUMMARY: The spec is exceptionally well-researched, perfectly mapping the codebase's current state to a clean, targeted fix that integrates seamlessly with the rot-proof harness.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None
+
+**Consultant Notes:**
+- You correctly identified that `authority_overstated` in the oracle only looks at `parser_failure*` statuses, and intelligently scoped out broadening it since fixing the root label generation comprehensively handles the problem and the oracle gate only strictly needs to track its specific scenario.
+- The plan to change `partial_role` to `"partial_direct"` alongside `"authoritative_net"` on the fallback path cleanly matches `selftest_degraded.py`'s `FIXED_SHAPE`.
+- Framing the healthy check in `build_session_meta` as an allow-list (`{"ok", "live_error_rebuilt", "backend_disabled"}`) is a great defensive design that ensures any future unexpected failure status defaults to understating fidelity rather than overstating it.
