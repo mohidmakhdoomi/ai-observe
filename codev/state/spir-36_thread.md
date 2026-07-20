@@ -114,3 +114,18 @@ Phase 4 (docs, spec FR5) — written from the phase-2 test assertions, not the s
   bugs are tolerated" — that sentence had already gone stale when #33 flipped).
 - Grep audits: no stale while-open #36 phrasing; `authoritative_net` aligned
   across src + tests + harness + docs. Full suite: 265 tests, 0 skips.
+
+## Review phase → PR
+
+All four implement phases approved unanimously on iteration 1 (12/12 APPROVE).
+
+Review deliverables:
+- `codev/reviews/36-meta-sidecar-labels-snapshot-o.md` written (spec compliance,
+  deviations, consultation log, flaky tests: none).
+- Governance routing (update-arch-docs skill): arch.md "Artifact contract" gained
+  the role-derivation/allow-list/invariant paragraph (cold); lessons-learned.md
+  gained "Keep failure-injection fixture paths absolute and inside the watched
+  roots" (cold). No hot-tier changes — both hot maps already route to these
+  sections; caps untouched.
+- Plan phases marked completed; spec marked implemented.
+Next: commit, push, open PR (Fixes #36), then porch done → 3-way PR review.

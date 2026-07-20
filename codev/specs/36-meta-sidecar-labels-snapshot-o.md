@@ -4,7 +4,7 @@
 
 - **ID**: 36
 - **Issue**: #36 — "meta sidecar labels snapshot-only .jsonl 'authoritative_complete' after direct-parser failure — role overstates fidelity"
-- **Status**: draft
+- **Status**: implemented
 - **Protocol**: SPIR
 - **Discovered by**: live-agent testing round 2 (#35), finding F6 in `experiments/FINDINGS-round2.md`; minimal repro `experiments/6_degraded_recovery/degraded.py` (`parse_failure_partial`); architect-verified against source
 

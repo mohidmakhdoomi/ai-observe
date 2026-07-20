@@ -3,7 +3,7 @@
 ## Metadata
 
 - **ID**: plan-2026-07-19-meta-sidecar-authoritative-net
-- **Status**: draft
+- **Status**: completed
 - **Specification**: `codev/specs/36-meta-sidecar-labels-snapshot-o.md` (approved)
 - **Created**: 2026-07-19
 
@@ -59,7 +59,7 @@ its selftest updates, (4) docs. Each phase is a green, committable unit.
 ### Phase 1: Core role derivation — `authoritative_net` + net-fallback warning + unit role matrix
 
 **Dependencies**: None
-**Status**: pending
+**Status**: completed
 
 #### Objectives
 
@@ -154,7 +154,7 @@ Single-commit revert; no data or schema migration involved.
 ### Phase 2: Integration and pinning tests over the real CLI degraded paths
 
 **Dependencies**: Phase 1
-**Status**: pending
+**Status**: completed
 
 #### Objectives
 
@@ -233,7 +233,7 @@ Single-commit revert (tests only).
 ### Phase 3: Harness known-bug flip — `OPEN_BUGS[36]` inactive + selftest updates
 
 **Dependencies**: Phase 1 (the fix must exist before the gate hard-asserts it)
-**Status**: pending
+**Status**: completed
 
 #### Objectives
 
@@ -292,7 +292,7 @@ revert cleanly in reverse order).
 ### Phase 4: Documentation — role vocabulary and known-bug table
 
 **Dependencies**: Phase 3 (docs describe the flipped state)
-**Status**: pending
+**Status**: completed
 
 #### Objectives
 

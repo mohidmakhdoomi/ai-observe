@@ -93,6 +93,15 @@ the annotation made explicit (and prefer extracting it: the kernel-reported path
 reconstructed state), and source at least some parser test inputs from real tool output
 so plain-form-only fixtures can't hide the gap.
 
+## Keep failure-injection fixture paths absolute and inside the watched roots
+
+The trace parser resolves a relative syscall path argument against the session's
+initial cwd (the fd annotation is not the event path for `creat`-style calls), and
+watched-root scope-dropping runs *before* the injected fail-after counter. A synthetic
+trace whose paths are relative or out-of-root therefore emits zero events, the injected
+failure never fires, and the test silently exercises the healthy path. Use absolute
+in-root paths in failure fixtures and assert the degraded status actually appears.
+
 ## Canonicalize cross-namespace path spellings at one guarded choke point
 
 When a sandbox splits one logical file across two path spellings (mount-namespace

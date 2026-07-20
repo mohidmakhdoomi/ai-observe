@@ -1,0 +1,50 @@
+I'll review Phase 4 (Documentation) by reading the two doc deliverables and verifying them against the spec/plan requirements.Now let me verify there's no stale "#36" phrasing in the docs and check the git diff to see the exact changes:Good — no stale phrasing. Let me verify the changes are clean by examining the diff for the doc files, and also quickly verify the Phase 1-3 implementation files that the docs should accurately describe:Now let me verify the docs are accurate against the actual implementation constants and the harness flip:All the pieces are in place. Let me do the final audit — checking for any stale references in the whole doc set:That's fine — it's describing what was (past tense "labeled"), not what currently happens.
+
+Here's my review:
+
+---
+
+## Phase 4 Review: Documentation — role vocabulary and known-bug table updates
+
+### Spec Adherence (FR5)
+
+**`docs/observe.md`** — ✅ All required content present:
+- Documents **when** `authoritative_net` appears (direct parser fails + snapshot events exist, lines 188-196)
+- Documents **what it means** (net/inferred events only; ephemeral/transient operations missing)
+- Documents **where direct evidence survives** (`.jsonl.partial`, role `partial_direct`)
+- Documents the **paired sidecar warning** (`snapshot fallback: net events only`)
+- Correctly notes snapshot-only mode keeps `authoritative_complete` with `parser.status = "backend_disabled"` — not degraded
+- Documents unchanged `authoritative_event_path` semantics
+- Adds a degraded-session troubleshooting entry (line 347) — practical and well-worded
+
+**`docs/agent-sessions.md`** — ✅ All required content present:
+- #36 known-bugs table row marked **fixed** using identical phrasing pattern to #33 ("**fixed**; the gate now hard-asserts…")
+- `degraded` scenario description updated (line 66): "fixed, now a hard assertion"
+- Intro paragraph updated from "Three open" → "Three" with "while a bug is open" conditional — more accurate since only #32 remains open
+
+### Code Quality
+- The `observe.md` addition reads clearly and is placed in the right section (Artifacts and precedence, after the existing sidecar explanation)
+- Prose is accurate and precise — uses past tense for the bug description and present tense for the current behavior
+- Consistent with the surrounding documentation style
+
+### Accuracy vs Implementation
+- `_JSONL_COMPLETE_STATUSES = frozenset({"ok", "live_error_rebuilt", "backend_disabled"})` — docs accurately describe all three paths ✓
+- `NET_FALLBACK_WARNING` contains `"snapshot fallback: net events only"` — docs cite the substring correctly ✓
+- `OPEN_BUGS[36]` is `active=False` — docs correctly say "fixed" ✓
+- Roles `authoritative_net` and `partial_direct` — both match the implementation at observe.py:602-604 ✓
+
+### Plan Alignment
+Both deliverables are complete per the Phase 4 specification. The acceptance criteria are met:
+- ✅ Docs accurately reflect implemented behavior
+- ✅ No stale "while #36 is open" phrasing found (grep audit clean)
+
+### No Issues Found
+Clean, well-scoped documentation phase with no omissions or inaccuracies.
+
+---
+VERDICT: APPROVE
+SUMMARY: Phase 4 docs accurately document the `authoritative_net` role and mark #36 fixed, matching implementation and #33's phrasing conventions exactly.
+CONFIDENCE: HIGH
+---
+KEY_ISSUES:
+- None

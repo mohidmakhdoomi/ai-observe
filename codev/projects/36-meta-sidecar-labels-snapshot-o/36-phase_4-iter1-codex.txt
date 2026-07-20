@@ -1,0 +1,8 @@
+Using direct file reads to review Phase 4 docs against the spec/plan.Checking the specific observe doc section that mentions degraded sessions.Verifying the docs against the actual implemented warning/role strings.Pulling line-numbered doc snippets for precise review.---
+VERDICT: APPROVE
+SUMMARY: Phase 4 docs are in scope, complete, and aligned with the implemented `authoritative_net` behavior and the flipped #36 known-bug status.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None
