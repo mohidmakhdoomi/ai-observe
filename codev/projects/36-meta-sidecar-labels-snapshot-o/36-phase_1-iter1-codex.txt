@@ -1,0 +1,8 @@
+---
+VERDICT: APPROVE
+SUMMARY: Phase 1 is implemented as planned: `build_session_meta` now truthfully downgrades degraded `.jsonl` authority to `authoritative_net`, appends the warning without mutating caller input, and the new unit matrix covers the intended status/path cases.
+CONFIDENCE: HIGH
+---
+
+KEY_ISSUES:
+- None

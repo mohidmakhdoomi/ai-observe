@@ -8,14 +8,14 @@ plan_phases:
     status: complete
   - id: phase_2
     title: Integration and pinning tests over the real CLI degraded paths
-    status: in_progress
+    status: complete
   - id: phase_3
     title: 'Harness known-bug flip: OPEN_BUGS[36] inactive + selftest updates'
-    status: pending
+    status: in_progress
   - id: phase_4
     title: 'Documentation: role vocabulary and known-bug table updates'
     status: pending
-current_plan_phase: phase_2
+current_plan_phase: phase_3
 gates:
   spec-approval:
     status: approved
@@ -30,7 +30,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-20T00:32:21.929Z'
-updated_at: '2026-07-20T06:41:23.441Z'
+updated_at: '2026-07-20T06:44:50.436Z'
