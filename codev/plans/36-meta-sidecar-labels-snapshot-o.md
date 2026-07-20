@@ -165,6 +165,7 @@ pin the healthy paths against drift.
 
 - [ ] `tests/test_observe_cli.py` — extended post-hoc repro + snapshot-only pinning
 - [ ] `tests/test_live_trace.py` — live repro + no-promotion guard
+- [ ] `tests/test_viewer_server.py` — viewer pass-through pinning for `authoritative_net`
 
 #### Implementation Details
 
@@ -195,6 +196,13 @@ Phase 1's unit matrix (spec's coverage split).
    `artifacts.jsonl.role == "authoritative_complete"`,
    `authoritative_event_path == "snapshot-only.jsonl"`, no net-fallback warning
    (per the backend-scope test-pinning lesson).
+5. **Viewer pass-through pinning** (Codex plan-review ask) — a small
+   `tests/test_viewer_server.py` case: a `.meta.json` with
+   `jsonl.role == "authoritative_net"` + `authoritative_event_path` naming the
+   `.jsonl` is served with the role string passed through verbatim and
+   `authoritative_artifact == "jsonl"` (modeled on the existing
+   `partial_live`/`authoritative_complete` session-info tests at ~lines 277–293).
+   No viewer code change — this pins the tolerance NFR4 relies on.
 
 #### Acceptance Criteria
 
@@ -378,13 +386,26 @@ infrastructure, config, or monitoring changes.
 
 ## Expert Review
 
-*(populated by the porch-driven 3-way review)*
+### Plan iteration 1 (Gemini / Codex / Claude)
+
+- **Gemini — APPROVE (high confidence)**: no issues. Endorsed the single
+  derivation site, the avoided-plumbing decision, and the warnings rebinding.
+- **Claude — APPROVE (high confidence)**: re-verified all line references, the
+  derivation-soundness claim (`.jsonl`-authoritative + non-healthy status only
+  reachable via promotion), the selftest impact, and the `FIXED_SHAPE`/constant
+  alignment against source. No issues.
+- **Codex — COMMENT (high confidence)**: plan sound and implementable; one minor
+  ask — explicitly pin viewer pass-through tolerance for the new role string.
+
+**Plan adjustments**: added Phase 2 item 5 (viewer pass-through pinning test in
+`tests/test_viewer_server.py`) and the corresponding deliverable.
 
 ## Change Log
 
 | Date | Change | Reason | Author |
 |------|--------|--------|--------|
 | 2026-07-19 | Initial plan | — | builder spir-36 |
+| 2026-07-19 | Added viewer pass-through pinning test to Phase 2 | Codex plan review | builder spir-36 |
 
 ## Notes
 
