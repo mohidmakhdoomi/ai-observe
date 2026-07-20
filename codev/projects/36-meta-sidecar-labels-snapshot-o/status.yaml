@@ -1,7 +1,7 @@
 id: '36'
 title: meta-sidecar-labels-snapshot-o
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: phase_1
     title: 'Core role derivation: authoritative_net + net-fallback warning + unit role matrix'
@@ -31,10 +31,10 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-20T00:32:21.929Z'
-updated_at: '2026-07-20T07:03:21.812Z'
+updated_at: '2026-07-20T07:04:04.571Z'
 pr_history:
   - phase: review
     pr_number: 42
