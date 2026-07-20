@@ -122,3 +122,17 @@ namespace-split choke-point lesson and the zombie-worktree lesson (cold);
 lessons-critical.md map line broadened to cover path identity (no new hot
 entries — situational, not universal). Committing, opening PR (Fixes #33),
 then porch done.
+
+## 2026-07-20 — Merge + verify
+
+PR #41 squash-merged (098e53b; matches #39/#40 convention — noted that the
+verify-task template prefers merge commits, flagged to architect). One CI
+flake en route: test_default_port_collision_falls_back_to_ephemeral on
+py3.10 hit the known CPython Thread.join(timeout) race (assert
+self._is_stopped) — unrelated viewer test, passed in sibling run and on
+rerun; no skip needed. Post-merge: origin/main merged into worktree
+(status.yaml add/add conflict resolved keeping porch's live state), suite
+255 OK zero skips + 56 selftests OK on the integrated tree, and a real
+end-to-end drive (codex-shaped trace → parse_trace_file → JSONL) shows
+paired canonical marker events + recovered create/modify. verify-approval
+gate requested.
