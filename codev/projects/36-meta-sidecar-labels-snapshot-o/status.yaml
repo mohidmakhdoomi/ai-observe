@@ -1,9 +1,21 @@
 id: '36'
 title: meta-sidecar-labels-snapshot-o
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase_1
+    title: 'Core role derivation: authoritative_net + net-fallback warning + unit role matrix'
+    status: in_progress
+  - id: phase_2
+    title: Integration and pinning tests over the real CLI degraded paths
+    status: pending
+  - id: phase_3
+    title: 'Harness known-bug flip: OPEN_BUGS[36] inactive + selftest updates'
+    status: pending
+  - id: phase_4
+    title: 'Documentation: role vocabulary and known-bug table updates'
+    status: pending
+current_plan_phase: phase_1
 gates:
   spec-approval:
     status: approved
@@ -21,4 +33,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-20T00:32:21.929Z'
-updated_at: '2026-07-20T06:27:01.774Z'
+updated_at: '2026-07-20T06:27:51.222Z'
