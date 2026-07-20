@@ -83,3 +83,18 @@ Phase 2 (integration + pinning tests) built — tests only, no product code:
   live-repro fixtures need absolute in-root path arguments or the injected
   failure never fires and the test silently exercises the healthy path.
 - Full suite: 265 tests, 0 failures, 0 skips.
+
+## Implement — phase_3 build
+
+Phase 2 committed after unanimous 3-way APPROVE (no issues from any reviewer).
+
+Phase 3 (harness known-bug flip, spec FR4):
+- `OPEN_BUGS[36].active = False` in `tests/agent_sessions/oracle.py` (one line,
+  matching the #32/#33 flip convention).
+- The two default-registry #36 selftests in `selftest_oracle.py` rewritten in
+  the registry-tracking style (`..._gate_tracks_registry`): buggy shape → FAIL
+  "regressed" when inactive / known-bug when active; healthy shape → PASS
+  "#36 fixed" when inactive / stale-annotation FAIL when active.
+- Grep audit: `selftest_degraded.py` and `check_degraded.py` are
+  registry-explicit — untouched, still green (23 selftest-package tests OK).
+- Full suite: 265 tests, 0 failures, 0 skips.
