@@ -11,11 +11,11 @@ plan_phases:
     status: complete
   - id: phase_3
     title: 'Harness known-bug flip: OPEN_BUGS[36] inactive + selftest updates'
-    status: in_progress
+    status: complete
   - id: phase_4
     title: 'Documentation: role vocabulary and known-bug table updates'
-    status: pending
-current_plan_phase: phase_3
+    status: in_progress
+current_plan_phase: phase_4
 gates:
   spec-approval:
     status: approved
@@ -30,7 +30,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-20T00:32:21.929Z'
-updated_at: '2026-07-20T06:47:22.091Z'
+updated_at: '2026-07-20T06:49:36.722Z'
