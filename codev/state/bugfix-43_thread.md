@@ -46,3 +46,14 @@ Next: signal PHASE_COMPLETE → fix phase.
 - Net diff ~40 lines, one file. Well within BUGFIX scope.
 
 Next: PHASE_COMPLETE → pr phase (push, open PR, CMAP 3-way, `pr` gate).
+
+## PR (phase 3) — in progress
+
+- PR **#44** opened: https://github.com/mohidmakhdoomi/ai-observe/pull/44 (Fixes #43).
+- CMAP 3-way (gemini/codex/claude, `--type pr`) running. Note: consult needs
+  `--project-id bugfix-43 --issue 43` here — bare auto-detect lists all
+  `codev/projects/*` dirs and no-ops (many merged projects on main).
+- CMAP verdicts (unanimous): **gemini=APPROVE, codex=APPROVE, claude=APPROVE**, all
+  HIGH confidence, zero KEY_ISSUES. No REQUEST_CHANGES → no code changes needed.
+- Architect notified. Requesting `pr` gate via `porch done`. **STOPPING for human
+  approval** — do NOT self-merge; merge only after `porch approve bugfix-43 pr`.
