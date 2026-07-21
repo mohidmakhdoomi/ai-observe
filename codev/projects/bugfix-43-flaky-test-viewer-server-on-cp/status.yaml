@@ -1,0 +1,14 @@
+id: bugfix-43
+title: flaky-test-viewer-server-on-cp
+protocol: bugfix
+phase: investigate
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-21T01:11:43.895Z'
+updated_at: '2026-07-21T01:11:43.896Z'
