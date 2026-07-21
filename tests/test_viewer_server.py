@@ -244,8 +244,8 @@ class ViewerServerTests(unittest.TestCase):
         # replay-vs-live correctness below does not depend on this timing.
         time.sleep(0.3)
         _append_events(self.path, [_make_event(path="/live", idx=9)])
-        t1.join(timeout=5.0)
-        t2.join(timeout=5.0)
+        viewer_server._join_thread_safely(t1, timeout=5.0)
+        viewer_server._join_thread_safely(t2, timeout=5.0)
         for s in socks:
             try:
                 s.close()
@@ -405,7 +405,7 @@ class ViewerServerTests(unittest.TestCase):
                 if line.strip() == b"event: shutdown":
                     saw_shutdown = True
                     break
-            stopper.join(timeout=5.0)
+            viewer_server._join_thread_safely(stopper, timeout=5.0)
             self.assertTrue(saw_shutdown)
         finally:
             sock.close()
@@ -558,7 +558,7 @@ class CLITests(unittest.TestCase):
 
         t = threading.Thread(target=run)
         t.start()
-        t.join(timeout=10.0)
+        viewer_server._join_thread_safely(t, timeout=10.0)
         self.assertNotIn("error", result, result)
         self.assertEqual(result.get("rc"), 0)
         self.assertEqual(len(opened_with), 1)
@@ -590,7 +590,7 @@ class CLITests(unittest.TestCase):
 
         t = threading.Thread(target=run)
         t.start()
-        t.join(timeout=10.0)
+        viewer_server._join_thread_safely(t, timeout=10.0)
         self.assertEqual(opened_with, [])
 
     def test_join_thread_safely_tolerates_tstate_lock_race(self):
@@ -626,6 +626,36 @@ class CLITests(unittest.TestCase):
         self.assertTrue(started.wait(timeout=2.0))
         viewer_server._join_thread_safely(th, timeout=2.0)
         self.assertFalse(th.is_alive())
+
+    def test_harness_thread_joins_route_through_race_tolerant_helper(self):
+        # Regression for issue #43: this module's own harness threads must be
+        # joined through viewer_server._join_thread_safely -- the same race-
+        # tolerant path ViewerServer.stop() uses -- never via a raw
+        # Thread.join() call. A raw join can hit the CPython thread-teardown
+        # race (gh-89322 / bpo-45274) and abort an otherwise-passing test,
+        # which is precisely the flake this fix removes. The guard is static
+        # and deterministic: it inspects this module's own source so a
+        # reintroduced raw join fails HERE, loudly, instead of intermittently
+        # in CI.
+        import re
+
+        source = Path(__file__).resolve().read_text(encoding="utf-8")
+        # Thread joins in this module always pass a timeout (a keyword, by
+        # convention, or a positional number); str.join never takes one, so
+        # this pattern isolates thread joins from "".join(...) and from any
+        # mention of .join in a comment.
+        raw_thread_join = re.compile(r"\.join\(\s*(?:timeout\b|\d)")
+        offenders = [
+            source[: m.start()].count("\n") + 1
+            for m in raw_thread_join.finditer(source)
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            f"raw thread joins at lines {offenders} in {Path(__file__).name}; "
+            "route them through viewer_server._join_thread_safely to stay "
+            "race-tolerant (issue #43)",
+        )
 
 
 if __name__ == "__main__":
