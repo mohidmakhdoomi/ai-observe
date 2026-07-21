@@ -57,3 +57,16 @@ Next: PHASE_COMPLETE → pr phase (push, open PR, CMAP 3-way, `pr` gate).
   HIGH confidence, zero KEY_ISSUES. No REQUEST_CHANGES → no code changes needed.
 - Architect notified. Requesting `pr` gate via `porch done`. **STOPPING for human
   approval** — do NOT self-merge; merge only after `porch approve bugfix-43 pr`.
+
+## Merge (gate approved)
+
+- Guarded against prose-only merge auth: architect chat said "merge" twice, but I
+  merged only after porch state confirmed it — `porch pending` dropped bugfix-43 and
+  `porch next` emitted the "Merge the pull request" task (status=complete/verified).
+- Pre-merge: PR #44 mergeable=MERGEABLE but mergeState=**BLOCKED** — required CI
+  checks `test (3.10/3.12/3.13)` still IN_PROGRESS. Did NOT force-merge past required
+  checks (this fix exists to keep CI green). Waited on `gh pr checks 44`.
+- CI now GREEN across py3.10/3.12/3.13 (both runs), mergeState=CLEAN. The py3.10 leg
+  where the flake was originally seen passed. Merging via `gh pr merge 44 --merge`
+  (regular merge commit, no --delete-branch — builder is checked out on this branch),
+  then `porch done bugfix-43` → notify architect merged/ready for cleanup.
