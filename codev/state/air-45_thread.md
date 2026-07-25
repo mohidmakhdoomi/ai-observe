@@ -21,3 +21,14 @@ Builder: air-45 (AIR, strict mode). Issue #45: cut a release covering everything
 3. Clean-venv install outside checkout → one e2e observed session → viewer static-asset smoke.
 4. Commit, PR with review in body, notify architect.
 5. After merge: tag `v0.2.0` on the release commit and publish the GitHub release with notes.
+
+## PR phase
+
+- Full suite re-run green: 266 tests, OK, zero skips (porch check also green).
+- Built `ai_observe-0.2.0` wheel + sdist; wheel contents verified (static assets in, tests/ out,
+  LICENSE/NOTICE in dist-info, no strays).
+- Clean-venv install outside checkout → imports 0.2.0 from the venv; e2e observed session produced
+  direct strace events + snapshot event + `.meta.json`; viewer served `/` and all 5 static assets (200).
+- PR #46 opened with the AIR review in the body (release checklist results included).
+- `porch gate 45`: pr gate requested — waiting for human approval.
+- Remaining after merge: tag `v0.2.0` on the release commit, publish the GitHub release with notes.
