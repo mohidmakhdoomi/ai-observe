@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-25
+
+Second release of `ai-observe`, covering everything merged since v0.1.0:
+a new `agy` observer shim, a graduated live-agent testing harness, honest
+sidecar provenance for snapshot-promoted events, and three observer/test
+bug fixes.
+
+### Added
+
+- `agy` (Antigravity CLI) observer shim alongside the existing
+  `claude`/`codex`/`gemini`/`opencode` checkout-only shims (#27, #28).
+- Sidecar `.meta.json` now records an honest `authoritative_net` role for
+  `.jsonl` events promoted from snapshots after a direct-parser failure, so
+  downstream consumers can tell snapshot-authoritative sessions apart from
+  directly parsed ones (spec 36, #42).
+
+### Fixed
+
+- `trace_parser` no longer drops annotated-`AT_FDCWD` dirfd events, which
+  previously meant file deletions were never reported (spec 32, #40).
+- Sandbox-staging (`/newroot`) paths are now remapped before watched-root
+  filtering, so sandboxed commands report events under their real paths
+  instead of being filtered out (spec 33, #41).
+- `test_viewer_server` harness joins now route through a race-tolerant
+  helper, fixing intermittent teardown failures (#43, #44).
+
+### Testing and maintenance
+
+- Live-agent testing harness graduated from experiment to a maintained,
+  opt-in test capability (spec 38, #39), building on the experiment rounds
+  that validated ai-observe against real agent sessions (#34, #37).
+- Maintenance run 0002: documentation sync for the `agy` shim and
+  `arch.md` updates (#30).
+
 ## [0.1.0] - 2026-07-16
 
 Initial release of `ai-observe`: a Linux-first layered filesystem observer for
@@ -63,4 +97,5 @@ wrapped command sessions, with a local browser viewer. Cut via the local
   install, an end-to-end observed session, and a viewer static-asset smoke test
   (spec 21).
 
+[0.2.0]: https://github.com/mohidmakhdoomi/ai-observe/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mohidmakhdoomi/ai-observe/releases/tag/v0.1.0

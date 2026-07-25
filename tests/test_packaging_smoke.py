@@ -304,7 +304,7 @@ class ArtifactContentTests(unittest.TestCase):
                      cwd=_STATE["tmp"], env=_clean_env())
         self.assertEqual(check.returncode, 0, check.stderr)
         version, location = check.stdout.split()
-        self.assertEqual(version, "0.1.0")
+        self.assertEqual(version, "0.2.0")
         # Installed into the clean venv, not resolved from the checkout src/.
         self.assertIn(str(venv), location)
         self.assertNotIn(str(SRC), location)
@@ -327,7 +327,7 @@ class InstalledPackageTests(unittest.TestCase):
         proc = _run([_STATE["py"], "-c", snippet], cwd=_STATE["tmp"], env=_clean_env())
         self.assertEqual(proc.returncode, 0, proc.stderr)
         version, location = proc.stdout.split()
-        self.assertEqual(version, "0.1.0")
+        self.assertEqual(version, "0.2.0")
         # Resolves to the installed copy in the venv, NOT the checkout src/.
         self.assertIn(str(_STATE["venv"]), location)
         self.assertNotIn(str(ROOT / "src"), location)
