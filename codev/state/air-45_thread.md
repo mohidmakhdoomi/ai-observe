@@ -32,3 +32,13 @@ Builder: air-45 (AIR, strict mode). Issue #45: cut a release covering everything
 - PR #46 opened with the AIR review in the body (release checklist results included).
 - `porch gate 45`: pr gate requested — waiting for human approval.
 - Remaining after merge: tag `v0.2.0` on the release commit, publish the GitHub release with notes.
+
+## PR iteration 1 (architect review)
+
+- Architect requested strict Keep a Changelog 1.1.0 compliance for the `[0.2.0]` section:
+  standard change types only — sidecar `authoritative_net` entry moved to **Changed**, harness
+  graduation (spec 38, #39 + #34/#37 context) moved to **Added**, maintenance 0002 doc sync (#30)
+  moved to **Changed**, non-standard "Testing and maintenance" heading dropped, empty
+  `## [Unreleased]` section added, and bottom links switched to KaC compare links
+  (`[0.1.0]` kept as a tag link). `[0.1.0]` section left untouched (published history).
+- Pushed as 241818e to PR #46; re-notified architect. pr gate still pending.
