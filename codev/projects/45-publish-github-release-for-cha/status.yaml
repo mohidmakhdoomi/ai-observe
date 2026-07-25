@@ -1,7 +1,7 @@
 id: '45'
 title: publish-github-release-for-cha
 protocol: air
-phase: pr
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -13,5 +13,5 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-25T18:45:04.592Z'
-updated_at: '2026-07-25T19:11:48.294Z'
+updated_at: '2026-07-25T19:13:21.153Z'
 pr_ready_for_human: false
