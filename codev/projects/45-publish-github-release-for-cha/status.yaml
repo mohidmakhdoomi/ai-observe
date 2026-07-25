@@ -1,0 +1,14 @@
+id: '45'
+title: publish-github-release-for-cha
+protocol: air
+phase: implement
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-25T18:45:04.592Z'
+updated_at: '2026-07-25T18:45:04.593Z'
