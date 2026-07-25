@@ -42,3 +42,11 @@ Builder: air-45 (AIR, strict mode). Issue #45: cut a release covering everything
   `## [Unreleased]` section added, and bottom links switched to KaC compare links
   (`[0.1.0]` kept as a tag link). `[0.1.0]` section left untouched (published history).
 - Pushed as 241818e to PR #46; re-notified architect. pr gate still pending.
+
+## Complete
+
+- pr gate approved; `porch done 45` → AIR protocol complete.
+- CI green on PR #46 (3.10/3.12/3.13); merged as 8f47bb0. CI on the merge commit green too.
+- Tagged `v0.2.0` on 8f47bb0, pushed, and published the GitHub release with notes from the
+  changelog: https://github.com/mohidmakhdoomi/ai-observe/releases/tag/v0.2.0
+- Issue #45 closed with a completion summary. Worktree ready for architect cleanup.
